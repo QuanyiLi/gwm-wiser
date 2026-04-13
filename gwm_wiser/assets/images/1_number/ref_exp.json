@@ -1,0 +1,8 @@
+{
+  "test_16": ["the image of number 16", "the image of 2 raised to the power of 4"],
+  "test_28": ["the image of number 28", "the results of 4 multiplies 7 "],
+  "test_99": ["the image of number 99", "the image of the figure close most to 100"],
+  "train_7": ["the image of number 7", "the image of a prime number"],
+  "train_9": ["the image of number 9", "the result of 10 minus 1"],
+  "train_42": ["the image of number 42", "the number of the answer of universe according to The Hitchhiker's Guide to the Galaxy"]
+}

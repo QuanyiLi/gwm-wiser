@@ -1,0 +1,70 @@
+#!/bin/bash
+#SBATCH --job-name=xvla_eval
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-node=4
+#SBATCH --nodes=1
+#SBATCH --time=12:00:00
+#SBATCH --mem=100G
+
+# ============================================================
+# Evaluate trained xVLA model on all 24 subsets (train+test)
+# using 4 GPUs on 1 H100 node.
+# ============================================================
+
+SCRIPT_PATH="/work/vita/lanfeng/vlas/vla/gwm_wiser/scripts/lerobot_eval.py"
+RESULT_DIR="/work/vita/lanfeng/vlas/xvla_eval_result"
+mkdir -p $RESULT_DIR
+
+# xVLA-specific args (from submit_xvla.run)
+MODEL_ARGS="\
+    --dataset.repo_id=unused \
+    --dataset.root=/work/vita/lanfeng/vlas/vla/wiser_dataset \
+    --policy.path=/work/vita/lanfeng/vlas/exp_results/xvla_wise_40-0226-092824/checkpoints/000069/pretrained_model \
+    --policy.repo_id=unused \
+    --policy.push_to_hub=false \
+    --policy.pretrained_path=/work/vita/lanfeng/vlas/exp_results/xvla_wise_40-0226-092824/checkpoints/000069/pretrained_model \
+    --policy.dtype=bfloat16 \
+    --policy.device=cuda \
+    --policy.n_action_steps=20 \
+    --policy.chunk_size=40 \
+    --output_dir=/tmp/xvla_eval_dummy \
+    --job_name=xvla_eval \
+"
+
+# Launch 4 processes, one per GPU, each handling 6 subsets
+for GPU_ID in 0 1 2 3; do
+    START=$((GPU_ID * 6))
+    END=$(((GPU_ID + 1) * 6))
+
+    CUDA_VISIBLE_DEVICES=$GPU_ID python $SCRIPT_PATH \
+        --start_subset=$START \
+        --end_subset=$END \
+        --split=both \
+        --result_dir=$RESULT_DIR \
+        --eval_rounds=1 \
+        $MODEL_ARGS \
+        --rename_map="{'observation.images.image_1':'observation.images.image', 'observation.images.wrist_image':'observation.images.image2'}" \
+        > "${RESULT_DIR}/gpu_${GPU_ID}.log" 2>&1 &
+
+    echo "Launched GPU $GPU_ID: subsets $START to $((END - 1))"
+done
+
+echo "Waiting for all 4 GPU processes to finish..."
+wait
+echo "All rollouts complete."
+
+# Final aggregation
+echo "Running final aggregation..."
+python $SCRIPT_PATH \
+    --aggregate_only=true \
+    --result_dir=$RESULT_DIR \
+    --dataset.repo_id=unused \
+    --dataset.root=/work/vita/lanfeng/vlas/vla/wiser_dataset \
+    --output_dir=/tmp/xvla_eval_dummy \
+    --job_name=xvla_eval_agg
+
+echo "Done. Results in $RESULT_DIR"

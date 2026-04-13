@@ -1,0 +1,53 @@
+name: "landscape"
+
+train:
+  cube_colors:
+    - blue
+    - green
+    - red
+    - yellow
+
+  table_images:
+    - path: "14_landscape/train_eiffel_tower.png"
+    - path: "14_landscape/train_pyramids.png"
+    - path: "14_landscape/train_statue_of_liberty.png"
+
+  task_referring_expressions:
+    - ["blue cube", "the image of the Eiffel Tower"]
+    - ["the leftmost cube", "the image of the ancient structures in Giza"]
+    - ["blue cube", "the image of the Statue of Liberty"]
+    - ["the cube between the blue and red cubes", "the image of the famous iron tower in Paris"]
+    - ["green cube", "the image of the Pyramids"]
+    - ["the second cube from the left", "the image of the famous statue in New York harbor"]
+    - ["red cube", "the image of the Eiffel Tower"]
+    - ["the cube to the left of the yellow cube", "the image of the ancient structures in Giza"]
+    - ["red cube", "the image of the Statue of Liberty"]
+    - ["the last cube from the left", "the image of the famous iron tower in Paris"]
+    - ["yellow cube", "the image of the Pyramids"]
+    - ["the cube on the far right", "the image of the famous statue in New York harbor"]
+
+test:
+  cube_colors:
+    - cyan
+    - orange
+    - purple
+    - grey
+
+  table_images:
+    - path: "14_landscape/test_church.png"
+    - path: "14_landscape/test_pisa_tower.png"
+    - path: "14_landscape/test_tower_bridge.png"
+
+  task_referring_expressions:
+    - ["cyan cube", "the image of the cologne church"]
+    - ["the cube on the left side", "the image of the leaning tower in Italy"]
+    - ["cyan cube", "the image of Twoer Bridge"]
+    - ["the cube at position two from the left", "the image of the building in German"]
+    - ["orange cube", "the image of the pisa tower"]
+    - ["the cube sandwiched between cyan and purple", "the image of the famous building in London"]
+    - ["purple cube", "the image of the cologne church"]
+    - ["the cube directly to the left of grey", "the image of the leaning tower in Italy"]
+    - ["purple cube", "the image of Twoer Bridge"]
+    - ["the cube directly to the right of purple", "the image of the building in German"]
+    - ["grey cube", "the image of the pisa tower"]
+    - ["the cube to the right of the purple cube", "the image of the famous building in London"]

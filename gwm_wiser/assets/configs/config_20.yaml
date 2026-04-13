@@ -1,0 +1,53 @@
+name: "num_extra"
+
+train:
+  cube_colors:
+    - yellow
+    - green
+    - red
+    - blue
+
+  table_images:
+    - path: "20_num_extra/train_-5.png"
+    - path: "20_num_extra/train_28.png"
+    - path: "20_num_extra/train_8.png"
+
+  task_referring_expressions:
+    - ["yellow cube", "the image of number -5"]
+    - ["the leftmost cube", "the result of 4 multiplies 7"]
+    - ["yellow cube", "the image of number 8"]
+    - ["the cube between the yellow and red cubes", "the image of result of 1 minus 6"]
+    - ["green cube", "the image of number 28"]
+    - ["the second cube from the left", "the result of $2^3$"]
+    - ["red cube", "the image of number -5"]
+    - ["the cube to the left of the blue cube", "the result of 4 multiplies 7"]
+    - ["red cube", "the image of number 8"]
+    - ["the last cube from the left", "the image of result of 1 minus 6"]
+    - ["blue cube", "the image of number 28"]
+    - ["the cube on the far right", "the result of $2^3$"]
+
+test:
+  cube_colors:
+    - grey
+    - orange
+    - purple
+    - cyan
+
+  table_images:
+    - path: "20_num_extra/test_-10.png"
+    - path: "20_num_extra/test_100.png"
+    - path: "20_num_extra/test_36.png"
+
+  task_referring_expressions:
+    - ["grey cube", "the image of number -10"]
+    - ["the cube on the left side", "the results of 10 x 10 "]
+    - ["grey cube", "the image of number 36"]
+    - ["the cube at position two from the left", "the image of a number smaller than 0"]
+    - ["orange cube", "the image of number 100"]
+    - ["the cube sandwiched between grey and purple", "the image of resul of 4 multiplies 9"]
+    - ["purple cube", "the image of number -10"]
+    - ["the cube directly to the left of cyan", "the results of 10 x 10 "]
+    - ["purple cube", "the image of number 36"]
+    - ["the cube directly to the right of purple", "the image of a number smaller than 0"]
+    - ["cyan cube", "the image of number 100"]
+    - ["the cube to the right of the purple cube", "the image of resul of 4 multiplies 9"]

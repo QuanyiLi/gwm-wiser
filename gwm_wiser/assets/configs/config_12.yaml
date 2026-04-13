@@ -1,0 +1,53 @@
+name: "clothing"
+
+train:
+  cube_colors:
+    - blue
+    - red
+    - green
+    - yellow
+
+  table_images:
+    - path: "12_clothing/train_hat.png"
+    - path: "12_clothing/train_jeans.png"
+    - path: "12_clothing/train_tshirt.png"
+
+  task_referring_expressions:
+    - ["blue cube", "the image of a pink hat"]
+    - ["the cube on the far left", "the image of pants made of denim"]
+    - ["blue cube", "the image of a t-shirt"]
+    - ["the cube to the right of the blue cube", "the image of an accessory worn on the head"]
+    - ["red cube", "the image of a pair of jeans"]
+    - ["the cube between the blue and green cubes", "the image of a short-sleeved casual top"]
+    - ["green cube", "the image of a pink hat"]
+    - ["the cube between the red and yellow cubes", "the image of pants made of denim"]
+    - ["green cube", "the image of a t-shirt"]
+    - ["the rightmost cube", "the image of an accessory worn on the head"]
+    - ["yellow cube", "the image of a pair of jeans"]
+    - ["the last cube from the left", "the image of a short-sleeved casual top"]
+
+test:
+  cube_colors:
+    - cyan
+    - purple
+    - orange
+    - grey
+
+  table_images:
+    - path: "12_clothing/test_jacket.png"
+    - path: "12_clothing/test_shoes.png"
+    - path: "12_clothing/test_skirt.png"
+
+  task_referring_expressions:
+    - ["cyan cube", "the image of a jacket"]
+    - ["the cube directly to the left of purple", "the image of yellow footwear"]
+    - ["cyan cube", "the image of a skirt"]
+    - ["the cube immediately next to the cyan one", "the image of outerwear for the upper body"]
+    - ["purple cube", "the image of a pair of shoes"]
+    - ["the cube at position two from the left", "the one-piece garment that girls love"]
+    - ["orange cube", "the image of a jacket"]
+    - ["the cube sandwiched between purple and grey", "the image of yellow footwear"]
+    - ["orange cube", "the image of a skirt"]
+    - ["the cube on the most right side", "the image of outerwear for the upper body"]
+    - ["grey cube", "the image of a pair of shoes"]
+    - ["the cube directly to the right of orange", "the one-piece garment that girls love"]

@@ -1,0 +1,53 @@
+name: "shapes"
+
+train:
+  cube_colors:
+    - blue
+    - green
+    - yellow
+    - red
+
+  table_images:
+    - path: "15_shapes/train_circle.png"
+    - path: "15_shapes/train_square.png"
+    - path: "15_shapes/train_triangle.png"
+
+  task_referring_expressions:
+    - ["the leftmost cube", "the image of a circle"]
+    - ["blue cube", "the image of a shape with four equal sides"]
+    - ["the first cube from the left", "the image of a triangle"]
+    - ["green cube", "the image of a round shape with no corners"]
+    - ["the second cube from the left", "the image of a square"]
+    - ["green cube", "the image of a shape with three sides"]
+    - ["the cube to the left of the red cube", "the image of a circle"]
+    - ["yellow cube", "the image of a shape with four equal sides"]
+    - ["the second cube from the right", "the image of a triangle"]
+    - ["red cube", "the image of a round shape with no corners"]
+    - ["the cube on the far right", "the image of a square"]
+    - ["red cube", "the image of a shape with three sides"]
+
+test:
+  cube_colors:
+    - cyan
+    - orange
+    - grey
+    - purple
+
+  table_images:
+    - path: "15_shapes/test_diamond.png"
+    - path: "15_shapes/test_heart.png"
+    - path: "15_shapes/test_star.png"
+
+  task_referring_expressions:
+    - ["the cube on the left side", "the image of a diamond"]
+    - ["cyan cube", "the image of a symbol of love"]
+    - ["the cube at position one from the left", "the image of a star"]
+    - ["orange cube", "the image of a rhombus shape"]
+    - ["the cube sandwiched between cyan and grey", "the image of a heart"]
+    - ["orange cube", "the image of a shape with five points"]
+    - ["the cube directly to the left of purple", "the image of a diamond"]
+    - ["grey cube", "the image of a symbol of love"]
+    - ["the cube on the left side of purple", "the image of a star"]
+    - ["purple cube", "the image of a rhombus shape"]
+    - ["the cube to the right of the grey cube", "the image of a heart"]
+    - ["purple cube", "the image of a shape with five points"]

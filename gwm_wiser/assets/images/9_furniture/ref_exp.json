@@ -1,0 +1,26 @@
+{
+    "train_chair": [
+        "the image of a chair",
+        "the furniture for sitting"
+    ],
+    "train_table": [
+        "the image of a table",
+        "the furniture with a flat top"
+    ],
+    "train_sofa": [
+        "the image of a sofa",
+        "the long comfortable seat"
+    ],
+    "test_bed": [
+        "the image of a bed",
+        "the furniture for sleeping"
+    ],
+    "test_toilet": [
+        "the image of a toilet",
+        "the object usually in washroom"
+    ],
+    "test_cabinet": [
+        "the image of a cabinet",
+        "the furniture for storage"
+    ]
+}

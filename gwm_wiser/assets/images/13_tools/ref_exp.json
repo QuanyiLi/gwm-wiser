@@ -1,0 +1,26 @@
+{
+  "train_hammer": [
+    "the image of a hammer",
+    "the image of a tool used to drive nails"
+  ],
+  "train_wrench": [
+    "the image of a wrench",
+    "the image of a tool used to turn nuts and bolts"
+  ],
+  "train_ladder": [
+    "the image of a ladder",
+    "the image of a tool used to climb"
+  ],
+  "test_broom": [
+    "the image of a broom",
+    "the image of a tool used to clean floor"
+  ],
+  "test_drill": [
+    "the image of a drill",
+    "the image of a power tool for making holes"
+  ],
+  "test_pliers": [
+    "the image of pliers",
+    "the image of a tool for gripping objects"
+  ]
+}

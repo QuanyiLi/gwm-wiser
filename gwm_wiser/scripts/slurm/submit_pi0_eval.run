@@ -1,0 +1,70 @@
+#!/bin/bash
+#SBATCH --job-name=pi0_eval
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-node=4
+#SBATCH --nodes=1
+#SBATCH --time=12:00:00
+#SBATCH --mem=100G
+
+# ============================================================
+# Evaluate trained PI0 model on all 24 subsets (train+test)
+# using 4 GPUs on 1 H100 node.
+# ============================================================
+
+SCRIPT_PATH="/work/vita/lanfeng/vlas/vla/gwm_wiser/scripts/lerobot_eval.py"
+RESULT_DIR="/work/vita/lanfeng/vlas/pi0_eval_result"
+mkdir -p $RESULT_DIR
+
+# PI0-specific args (from submit_pi0.run)
+MODEL_ARGS="\
+    --dataset.repo_id=unused \
+    --dataset.root=/work/vita/lanfeng/vlas/vla/wiser_dataset \
+    --policy.type=pi0 \
+    --policy.repo_id=unused \
+    --policy.push_to_hub=false \
+    --policy.pretrained_path=/work/vita/lanfeng/vlas/exp_results/pi0_wise-0218-095233/checkpoints/000029/pretrained_model \
+    --policy.compile_model=false \
+    --policy.dtype=bfloat16 \
+    --policy.device=cuda \
+    --policy.n_action_steps=20 \
+    --policy.chunk_size=20 \
+    --output_dir=/tmp/pi0_eval_dummy \
+    --job_name=pi0_eval \
+"
+
+# Launch 4 processes, one per GPU, each handling 6 subsets
+for GPU_ID in 0 1 2 3; do
+    START=$((GPU_ID * 6))
+    END=$(((GPU_ID + 1) * 6))
+
+    CUDA_VISIBLE_DEVICES=$GPU_ID python $SCRIPT_PATH \
+        --start_subset=$START \
+        --end_subset=$END \
+        --split=both \
+        --result_dir=$RESULT_DIR \
+        --eval_rounds=1 \
+        $MODEL_ARGS \
+        > "${RESULT_DIR}/gpu_${GPU_ID}.log" 2>&1 &
+
+    echo "Launched GPU $GPU_ID: subsets $START to $((END - 1))"
+done
+
+echo "Waiting for all 4 GPU processes to finish..."
+wait
+echo "All rollouts complete."
+
+# Final aggregation
+echo "Running final aggregation..."
+python $SCRIPT_PATH \
+    --aggregate_only=true \
+    --result_dir=$RESULT_DIR \
+    --dataset.repo_id=unused \
+    --dataset.root=/work/vita/lanfeng/vlas/vla/wiser_dataset \
+    --output_dir=/tmp/pi0_eval_dummy \
+    --job_name=pi0_eval_agg
+
+echo "Done. Results in $RESULT_DIR"

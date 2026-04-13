@@ -1,0 +1,53 @@
+name: "tools"
+
+train:
+  cube_colors:
+    - blue
+    - red
+    - yellow
+    - green
+
+  table_images:
+    - path: "13_tools/train_hammer.png"
+    - path: "13_tools/train_ladder.png"
+    - path: "13_tools/train_wrench.png"
+
+  task_referring_expressions:
+    - ["the cube on the far left", "the image of a hammer"]
+    - ["blue cube", "the image of a tool used to climb"]
+    - ["the leftmost cube", "the image of a wrench"]
+    - ["red cube", "the image of a tool used to drive nails"]
+    - ["the cube between the blue and yellow cubes", "the image of a ladder"]
+    - ["red cube", "the image of a tool used to turn nuts and bolts"]
+    - ["the cube between the red and green cubes", "the image of a hammer"]
+    - ["yellow cube", "the image of a tool used to climb"]
+    - ["the cube to the left of the green cube", "the image of a wrench"]
+    - ["green cube", "the image of a tool used to drive nails"]
+    - ["the last cube from the left", "the image of a ladder"]
+    - ["green cube", "the image of a tool used to turn nuts and bolts"]
+
+test:
+  cube_colors:
+    - cyan
+    - purple
+    - grey
+    - orange
+
+  table_images:
+    - path: "13_tools/test_broom.png"
+    - path: "13_tools/test_drill.png"
+    - path: "13_tools/test_pliers.png"
+
+  task_referring_expressions:
+    - ["the cube directly to the left of purple", "the image of a broom"]
+    - ["cyan cube", "the image of a power tool for making holes"]
+    - ["the cube on the left side", "the image of pliers"]
+    - ["purple cube", "the image of a tool used to clean floor"]
+    - ["the cube at position two from the left", "the image of a drill"]
+    - ["purple cube", "the image of a tool for gripping objects"]
+    - ["the cube sandwiched between purple and orange", "the image of a broom"]
+    - ["grey cube", "the image of a power tool for making holes"]
+    - ["the cube directly to the left of orange", "the image of pliers"]
+    - ["orange cube", "the image of a tool used to clean floor"]
+    - ["the cube directly to the right of grey", "the image of a drill"]
+    - ["orange cube", "the image of a tool for gripping objects"]

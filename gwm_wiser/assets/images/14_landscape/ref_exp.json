@@ -1,0 +1,26 @@
+{
+  "train_eiffel_tower": [
+    "the image of the Eiffel Tower",
+    "the image of the famous iron tower in Paris"
+  ],
+  "train_statue_of_liberty": [
+    "the image of the Statue of Liberty",
+    "the image of the famous statue in New York harbor"
+  ],
+  "train_pyramids": [
+    "the image of the Pyramids",
+    "the image of the ancient structures in Giza"
+  ],
+  "test_pisa_tower": [
+    "the image of the pisa tower",
+    "the image of the leaning tower in Italy"
+  ],
+  "test_church": [
+    "the image of the cologne church",
+    "the image of the building in German"
+  ],
+  "test_tower_bridge": [
+    "the image of Twoer Bridge",
+    "the image of the famous building in London"
+  ]
+}

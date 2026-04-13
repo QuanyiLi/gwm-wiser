@@ -1,0 +1,53 @@
+name: "weather"
+
+train:
+  cube_colors:
+    - yellow
+    - red
+    - blue
+    - green
+
+  table_images:
+    - path: "19_weather/train_cloud.png"
+    - path: "19_weather/train_snow.png"
+    - path: "19_weather/train_sun.png"
+
+  task_referring_expressions:
+    - ["the cube on the far left", "the image of a cloud"]
+    - ["yellow cube", "the image of the symbol for snowy weather"]
+    - ["the leftmost cube", "the image of the sun"]
+    - ["red cube", "the image of the symbol for cloudy weather"]
+    - ["the cube between the yellow and blue cubes", "the image of a snowflake"]
+    - ["red cube", "the image of the symbol for sunny weather"]
+    - ["the cube between the red and green cubes", "the image of a cloud"]
+    - ["blue cube", "the image of the symbol for snowy weather"]
+    - ["the cube to the left of the green cube", "the image of the sun"]
+    - ["green cube", "the image of the symbol for cloudy weather"]
+    - ["the last cube from the left", "the image of a snowflake"]
+    - ["green cube", "the image of the symbol for sunny weather"]
+
+test:
+  cube_colors:
+    - grey
+    - purple
+    - cyan
+    - orange
+
+  table_images:
+    - path: "19_weather/test_lightning.png"
+    - path: "19_weather/test_rain.png"
+    - path: "19_weather/test_wind.png"
+
+  task_referring_expressions:
+    - ["the cube directly to the left of purple", "the image of a lightning bolt"]
+    - ["grey cube", "the image of the symbol for rainy weather"]
+    - ["the cube on the left side", "the image of a wind icon"]
+    - ["purple cube", "the image of the symbol for stormy weather"]
+    - ["the cube at position two from the left", "the image of a rain cloud"]
+    - ["purple cube", "the image of the symbol for windy weather"]
+    - ["the cube sandwiched between purple and orange", "the image of a lightning bolt"]
+    - ["cyan cube", "the image of the symbol for rainy weather"]
+    - ["the cube directly to the left of orange", "the image of a wind icon"]
+    - ["orange cube", "the image of the symbol for stormy weather"]
+    - ["the cube directly to the right of cyan", "the image of a rain cloud"]
+    - ["orange cube", "the image of the symbol for windy weather"]

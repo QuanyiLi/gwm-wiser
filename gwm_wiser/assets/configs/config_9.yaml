@@ -1,0 +1,53 @@
+name: "furniture"
+
+train:
+  cube_colors:
+    - green
+    - blue
+    - yellow
+    - red
+
+  table_images:
+    - path: "9_furniture/train_chair.png"
+    - path: "9_furniture/train_sofa.png"
+    - path: "9_furniture/train_table.png"
+
+  task_referring_expressions:
+    - ["the leftmost cube", "the image of a chair"]
+    - ["green cube", "the long comfortable seat"]
+    - ["the first cube from the left", "the image of a table"]
+    - ["blue cube", "the furniture for sitting"]
+    - ["the second cube from the left", "the image of a sofa"]
+    - ["blue cube", "the furniture with a flat top"]
+    - ["the cube to the left of the red cube", "the image of a chair"]
+    - ["yellow cube", "the long comfortable seat"]
+    - ["the second cube from the right", "the image of a table"]
+    - ["red cube", "the furniture for sitting"]
+    - ["the cube on the far right", "the image of a sofa"]
+    - ["red cube", "the furniture with a flat top"]
+
+test:
+  cube_colors:
+    - orange
+    - cyan
+    - grey
+    - purple
+
+  table_images:
+    - path: "9_furniture/test_bed.png"
+    - path: "9_furniture/test_cabinet.png"
+    - path: "9_furniture/test_toilet.png"
+
+  task_referring_expressions:
+    - ["the cube on the left side", "the image of a bed"]
+    - ["orange cube", "the furniture for storage"]
+    - ["the cube at position one from the left", "the image of a toilet"]
+    - ["cyan cube", "the furniture for sleeping"]
+    - ["the cube sandwiched between orange and grey", "the image of a cabinet"]
+    - ["cyan cube", "the object usually in washroom"]
+    - ["the cube directly to the left of purple", "the image of a bed"]
+    - ["grey cube", "the furniture for storage"]
+    - ["the cube on the left side of purple", "the image of a toilet"]
+    - ["purple cube", "the furniture for sleeping"]
+    - ["the cube to the right of the grey cube", "the image of a cabinet"]
+    - ["purple cube", "the object usually in washroom"]

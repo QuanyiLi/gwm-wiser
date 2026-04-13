@@ -1,0 +1,26 @@
+{
+  "train_tshirt": [
+    "the image of a t-shirt",
+    "the image of a short-sleeved casual top"
+  ],
+  "train_jeans": [
+    "the image of a pair of jeans",
+    "the image of pants made of denim"
+  ],
+  "train_hat": [
+    "the image of a pink hat",
+    "the image of an accessory worn on the head"
+  ],
+  "test_skirt": [
+    "the image of a skirt",
+    "the one-piece garment that girls love"
+  ],
+  "test_shoes": [
+    "the image of a pair of shoes",
+    "the image of yellow footwear"
+  ],
+  "test_jacket": [
+    "the image of a jacket",
+    "the image of outerwear for the upper body"
+  ]
+}

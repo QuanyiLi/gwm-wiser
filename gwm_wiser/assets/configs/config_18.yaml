@@ -1,0 +1,53 @@
+name: "kitchenware"
+
+train:
+  cube_colors:
+    - yellow
+    - red
+    - green
+    - blue
+
+  table_images:
+    - path: "18_kitchenware/train_bowl.png"
+    - path: "18_kitchenware/train_fork.png"
+    - path: "18_kitchenware/train_spoon.png"
+
+  task_referring_expressions:
+    - ["yellow cube", "the image of a bowl"]
+    - ["the cube on the far left", "the image of a utensil with prongs"]
+    - ["yellow cube", "the image of a spoon"]
+    - ["the cube to the right of the yellow cube", "the image of a container for soup"]
+    - ["red cube", "the image of a fork"]
+    - ["the cube between the yellow and green cubes", "the image of a utensil for eating soup"]
+    - ["green cube", "the image of a bowl"]
+    - ["the cube between the red and blue cubes", "the image of a utensil with prongs"]
+    - ["green cube", "the image of a spoon"]
+    - ["the rightmost cube", "the image of a container for soup"]
+    - ["blue cube", "the image of a fork"]
+    - ["the last cube from the left", "the image of a utensil for eating soup"]
+
+test:
+  cube_colors:
+    - grey
+    - purple
+    - orange
+    - cyan
+
+  table_images:
+    - path: "18_kitchenware/test_cup.png"
+    - path: "18_kitchenware/test_pan.png"
+    - path: "18_kitchenware/test_plate.png"
+
+  task_referring_expressions:
+    - ["grey cube", "the image of a cup"]
+    - ["the cube directly to the left of purple", "the image of cookware for frying"]
+    - ["grey cube", "the image of a plate"]
+    - ["the cube immediately next to the grey one", "the image of a container for drinking"]
+    - ["purple cube", "the image of a pan"]
+    - ["the cube at position two from the left", "the image of a flat dish for food"]
+    - ["orange cube", "the image of a cup"]
+    - ["the cube sandwiched between purple and cyan", "the image of cookware for frying"]
+    - ["orange cube", "the image of a plate"]
+    - ["the cube on the most right side", "the image of a container for drinking"]
+    - ["cyan cube", "the image of a pan"]
+    - ["the cube directly to the right of orange", "the image of a flat dish for food"]

@@ -1,0 +1,60 @@
+#!/bin/bash
+#SBATCH --job-name=gwm_ac_eval
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita
+#SBATCH --ntasks=12
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus-per-node=1
+#SBATCH --nodes=12
+#SBATCH --time=12:00:00
+#SBATCH --mem=200G
+
+# ============================================================
+# Evaluate Action-Conditioned GWM planner on all 24 subsets
+# (train+test) using 12 nodes, each with 1 GPU (2 configs per node).
+# ============================================================
+
+SCRIPT_PATH="/work/vita/lanfeng/vlas/vla/gwm_wiser/scripts/gwm_eval.py"
+RESULT_DIR="/work/vita/lanfeng/vlas/gwm_ac_eval_result"
+GWM_CKPT="/work/vita/lanfeng/vlas/gwm_ac_ckpt/checkpoint.pt"
+EMBEDDER_PATH="/work/vita/lanfeng/vlas/Qwen3-VL-Embedding-8B"
+DATASET_ROOT="/work/vita/lanfeng/vlas/vla/wiser_dataset/no_noise_demo_1_round"
+USE_GT=false
+mkdir -p $RESULT_DIR
+
+# Build optional args
+EXTRA_ARGS=""
+if [ "$USE_GT" = true ]; then
+    EXTRA_ARGS="--use_gt --dataset_root=$DATASET_ROOT"
+else
+    EXTRA_ARGS="--gwm_ckpt_path=$GWM_CKPT --action_conditioned"
+fi
+
+# Each srun task gets SLURM_PROCID in {0..11}.
+# Compute the subset shard: 2 configs per task.
+srun --ntasks=12 --ntasks-per-node=1 bash -c '
+    START=$((SLURM_PROCID * 2))
+    END=$(((SLURM_PROCID + 1) * 2))
+    echo "[Node $(hostname), PROCID=$SLURM_PROCID] Evaluating subsets $START to $((END - 1))"
+
+    python '"$SCRIPT_PATH"' \
+        '"$EXTRA_ARGS"' \
+        --result_dir='"$RESULT_DIR"' \
+        --start_subset=$START \
+        --end_subset=$END \
+        --split=both \
+        --eval_rounds=1 \
+        --embedder_model_path='"$EMBEDDER_PATH"' \
+        > "'"$RESULT_DIR"'/node_${SLURM_PROCID}.log" 2>&1
+'
+
+echo "All rollouts complete."
+
+# Final aggregation (runs on the first node)
+echo "Running final aggregation..."
+python $SCRIPT_PATH \
+    --aggregate_only \
+    --result_dir=$RESULT_DIR
+
+echo "Done. Results in $RESULT_DIR"

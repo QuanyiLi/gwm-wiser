@@ -1,0 +1,26 @@
+{
+  "train_sun": [
+    "the image of the sun",
+    "the image of the symbol for sunny weather"
+  ],
+    "train_cloud": [
+    "the image of a cloud",
+    "the image of the symbol for cloudy weather"
+  ],
+  "train_snow": [
+    "the image of a snowflake",
+    "the image of the symbol for snowy weather"
+  ],
+  "test_lightning": [
+    "the image of a lightning bolt",
+    "the image of the symbol for stormy weather"
+  ],
+  "test_rain": [
+    "the image of a rain cloud",
+    "the image of the symbol for rainy weather"
+  ],
+  "test_wind": [
+    "the image of a wind icon",
+    "the image of the symbol for windy weather"
+  ]
+}

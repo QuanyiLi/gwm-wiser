@@ -1,0 +1,53 @@
+name: "number"
+
+train:
+  cube_colors:
+    - red
+    - green
+    - yellow
+    - blue
+
+  table_images:
+    - path: "1_number/train_42.png"
+    - path: "1_number/train_7.png"
+    - path: "1_number/train_9.png"
+
+  task_referring_expressions:
+    - ["the cube on the far left", "the image of number 42"]
+    - ["red cube", "the image of a prime number"]
+    - ["the leftmost cube", "the image of number 9"]
+    - ["green cube", "the number of the answer of universe according to The Hitchhiker's Guide to the Galaxy"]
+    - ["the cube between the red and yellow cubes", "the image of number 7"]
+    - ["green cube", "the result of 10 minus 1"]
+    - ["the cube between the green and blue cubes", "the image of number 42"]
+    - ["yellow cube", "the image of a prime number"]
+    - ["the cube to the left of the blue cube", "the image of number 9"]
+    - ["blue cube", "the number of the answer of universe according to The Hitchhiker's Guide to the Galaxy"]
+    - ["the last cube from the left", "the image of number 7"]
+    - ["blue cube", "the result of 10 minus 1"]
+
+test:
+  cube_colors:
+    - purple
+    - orange
+    - grey
+    - cyan
+
+  table_images:
+    - path: "1_number/test_16.png"
+    - path: "1_number/test_28.png"
+    - path: "1_number/test_99.png"
+
+  task_referring_expressions:
+    - ["the cube directly to the left of orange", "the image of number 16"]
+    - ["purple cube", "the results of 4 multiplies 7 "]
+    - ["the cube on the left side", "the image of number 99"]
+    - ["orange cube", "the image of 2 raised to the power of 4"]
+    - ["the cube at position two from the left", "the image of number 28"]
+    - ["orange cube", "the image of the figure close most to 100"]
+    - ["the cube sandwiched between orange and cyan", "the image of number 16"]
+    - ["grey cube", "the results of 4 multiplies 7 "]
+    - ["the cube directly to the left of cyan", "the image of number 99"]
+    - ["cyan cube", "the image of 2 raised to the power of 4"]
+    - ["the cube directly to the right of grey", "the image of number 28"]
+    - ["cyan cube", "the image of the figure close most to 100"]

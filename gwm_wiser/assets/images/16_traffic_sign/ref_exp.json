@@ -1,0 +1,26 @@
+{
+    "train_stop_sign": [
+        "the image of a stop sign",
+        "the red octagon sign"
+    ],
+    "train_yield_sign": [
+        "the image of a yield sign",
+        "the inverted triangle sign"
+    ],
+    "train_speed_limit": [
+        "the image of a speed limit sign",
+        "the sign showing max speed"
+    ],
+    "test_pedestrian_crossing": [
+        "the image of crosswalk warning sign",
+        "the warning sign of pedestrian crossing"
+    ],
+    "test_traffic_light": [
+        "the image of a traffic light",
+        "the signal with red yellow green"
+    ],
+    "test_no_entry": [
+        "the image of a no entry sign",
+        "the red circle with white bar"
+    ]
+}

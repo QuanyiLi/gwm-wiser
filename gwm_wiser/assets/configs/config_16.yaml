@@ -1,0 +1,53 @@
+name: "traffic_sign"
+
+train:
+  cube_colors:
+    - blue
+    - yellow
+    - red
+    - green
+
+  table_images:
+    - path: "16_traffic_sign/train_speed_limit.png"
+    - path: "16_traffic_sign/train_stop_sign.png"
+    - path: "16_traffic_sign/train_yield_sign.png"
+
+  task_referring_expressions:
+    - ["blue cube", "the image of a speed limit sign"]
+    - ["the first cube from the left", "the red octagon sign"]
+    - ["blue cube", "the image of a yield sign"]
+    - ["the second cube from the left", "the sign showing max speed"]
+    - ["yellow cube", "the image of a stop sign"]
+    - ["the cube to the right of the blue cube", "the inverted triangle sign"]
+    - ["red cube", "the image of a speed limit sign"]
+    - ["the second cube from the right", "the red octagon sign"]
+    - ["red cube", "the image of a yield sign"]
+    - ["the cube on the far right", "the sign showing max speed"]
+    - ["green cube", "the image of a stop sign"]
+    - ["the rightmost cube", "the inverted triangle sign"]
+
+test:
+  cube_colors:
+    - cyan
+    - grey
+    - purple
+    - orange
+
+  table_images:
+    - path: "16_traffic_sign/test_no_entry.png"
+    - path: "16_traffic_sign/test_pedestrian_crossing.png"
+    - path: "16_traffic_sign/test_traffic_light.png"
+
+  task_referring_expressions:
+    - ["cyan cube", "the image of a no entry sign"]
+    - ["the cube at position one from the left", "the warning sign of pedestrian crossing"]
+    - ["cyan cube", "the image of a traffic light"]
+    - ["the cube sandwiched between cyan and purple", "the red circle with white bar"]
+    - ["grey cube", "the image of crosswalk warning sign"]
+    - ["the cube immediately next to the cyan one", "the signal with red yellow green"]
+    - ["purple cube", "the image of a no entry sign"]
+    - ["the cube on the left side of orange", "the warning sign of pedestrian crossing"]
+    - ["purple cube", "the image of a traffic light"]
+    - ["the cube to the right of the purple cube", "the red circle with white bar"]
+    - ["orange cube", "the image of crosswalk warning sign"]
+    - ["the cube on the most right side", "the signal with red yellow green"]

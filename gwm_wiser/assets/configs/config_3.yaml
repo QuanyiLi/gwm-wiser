@@ -1,0 +1,53 @@
+name: "logo"
+
+train:
+  cube_colors:
+    - red
+    - blue
+    - yellow
+    - green
+
+  table_images:
+    - path: "3_logo/train_ferrari.png"
+    - path: "3_logo/train_nba.png"
+    - path: "3_logo/train_olympics.png"
+
+  task_referring_expressions:
+    - ["the leftmost cube", "the logo of Ferrari"]
+    - ["red cube", "the professional basketball league of North America"]
+    - ["the first cube from the left", "the logo of the Olympics"]
+    - ["blue cube", "the famous hyper car producer"]
+    - ["the second cube from the left", "the logo of the NBA"]
+    - ["blue cube", "the international sporting event happened every 4 years"]
+    - ["the cube to the left of the green cube", "the logo of Ferrari"]
+    - ["yellow cube", "the professional basketball league of North America"]
+    - ["the second cube from the right", "the logo of the Olympics"]
+    - ["green cube", "the famous hyper car producer"]
+    - ["the cube on the far right", "the logo of the NBA"]
+    - ["green cube", "the international sporting event happened every 4 years"]
+
+test:
+  cube_colors:
+    - purple
+    - cyan
+    - grey
+    - orange
+
+  table_images:
+    - path: "3_logo/test_apple.png"
+    - path: "3_logo/test_mcdonald.png"
+    - path: "3_logo/test_starbucks.png"
+
+  task_referring_expressions:
+    - ["the cube on the left side", "the logo of Apple"]
+    - ["purple cube", "the fast food chain known for the golden arches"]
+    - ["the cube at position one from the left", "the logo of Starbucks"]
+    - ["cyan cube", "the brand making IPhone and Macbook"]
+    - ["the cube sandwiched between purple and grey", "the logo of McDonald's"]
+    - ["cyan cube", "the coffeehouse chain with the green mermaid logo"]
+    - ["the cube directly to the left of orange", "the logo of Apple"]
+    - ["grey cube", "the fast food chain known for the golden arches"]
+    - ["the cube on the left side of orange", "the logo of Starbucks"]
+    - ["orange cube", "the brand making IPhone and Macbook"]
+    - ["the cube to the right of the grey cube", "the logo of McDonald's"]
+    - ["orange cube", "the coffeehouse chain with the green mermaid logo"]

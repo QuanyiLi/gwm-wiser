@@ -1,0 +1,53 @@
+name: "food_extra"
+
+train:
+  cube_colors:
+    - yellow
+    - blue
+    - green
+    - red
+
+  table_images:
+    - path: "23_food_extra/train_cake.png"
+    - path: "23_food_extra/train_cookie.png"
+    - path: "23_food_extra/train_ice_cream.png"
+
+  task_referring_expressions:
+    - ["the first cube from the left", "the image of a cake"]
+    - ["yellow cube", "the small flat baked sweet"]
+    - ["the cube on the far left", "the image of ice cream"]
+    - ["blue cube", "the birthday dessert"]
+    - ["the cube to the right of the yellow cube", "the image of a cookie"]
+    - ["blue cube", "the frozen dairy dessert"]
+    - ["the second cube from the right", "the image of a cake"]
+    - ["green cube", "the small flat baked sweet"]
+    - ["the cube between the blue and red cubes", "the image of ice cream"]
+    - ["red cube", "the birthday dessert"]
+    - ["the rightmost cube", "the image of a cookie"]
+    - ["red cube", "the frozen dairy dessert"]
+
+test:
+  cube_colors:
+    - grey
+    - cyan
+    - orange
+    - purple
+
+  table_images:
+    - path: "23_food_extra/test_cupcake.png"
+    - path: "23_food_extra/test_donut.png"
+    - path: "23_food_extra/test_pie.png"
+
+  task_referring_expressions:
+    - ["the cube at position one from the left", "the image of a cupcake"]
+    - ["grey cube", "the ring-shaped fried dough"]
+    - ["the cube directly to the left of cyan", "the image of a pie"]
+    - ["cyan cube", "the small cake for one person"]
+    - ["the cube immediately next to the grey one", "the image of a donut"]
+    - ["cyan cube", "the fruit filled pastry"]
+    - ["the cube on the left side of purple", "the image of a cupcake"]
+    - ["orange cube", "the ring-shaped fried dough"]
+    - ["the cube sandwiched between cyan and purple", "the image of a pie"]
+    - ["purple cube", "the small cake for one person"]
+    - ["the cube on the most right side", "the image of a donut"]
+    - ["purple cube", "the fruit filled pastry"]

@@ -1,0 +1,8 @@
+{
+  "test_36": ["the image of number 36", "the image of resul of 4 multiplies 9"],
+  "test_100": ["the image of number 100", "the results of 10 x 10 "],
+  "test_-10": ["the image of number -10", "the image of a number smaller than 0"],
+  "train_-5": ["the image of number -5", "the image of result of 1 minus 6"],
+  "train_28": ["the image of number 28", "the result of 4 multiplies 7"],
+  "train_8": ["the image of number 8", "the result of $2^3$"]
+}

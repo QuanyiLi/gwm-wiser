@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH --job-name=planner_xarm
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=l40s
+#SBATCH --qos=vita
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus-per-node=1
+#SBATCH --nodes=1
+#SBATCH --time=1:00:00
+#SBATCH --mem=32G
+
+# Set pythonpath to include the repository root
+export PYTHONPATH=$PYTHONPATH:/root/vla
+
+# Run the planner test script
+printf "y\n" | python /work/vita/lanfeng/vlas/vla/gwm_wiser/test/planner_xarm.py

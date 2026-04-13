@@ -1,0 +1,26 @@
+{
+  "test_guitar": [
+    "the image of a guitar",
+    "the image of a six-stringed instrument"
+  ],
+  "train_piano": [
+    "the image of a piano keyboard",
+    "the image of an instrument with black and white keys"
+  ],
+  "train_violin": [
+    "the image of a violin",
+    "the image of an instrument played with a bow"
+  ],
+  "test_trumpet": [
+    "the image of a trumpet",
+    "the image of a brass instrument with three valves"
+  ],
+  "test_drum": [
+    "the image of a drum",
+    "the image of a percussion instrument played with sticks"
+  ],
+  "train_micphone": [
+    "the image of a microphone",
+    "the image of an instrument for singing or recording"
+  ]
+}

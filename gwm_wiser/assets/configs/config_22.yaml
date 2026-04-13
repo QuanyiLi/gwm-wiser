@@ -1,0 +1,53 @@
+name: "office"
+
+train:
+  cube_colors:
+    - yellow
+    - blue
+    - red
+    - green
+
+  table_images:
+    - path: "22_office/train_keyboard.png"
+    - path: "22_office/train_pen.png"
+    - path: "22_office/train_scissors.png"
+
+  task_referring_expressions:
+    - ["yellow cube", "the image of a keyboard"]
+    - ["the first cube from the left", "the image of a tool for writing with ink"]
+    - ["yellow cube", "the image of a pair of scissors"]
+    - ["the second cube from the left", "the image of a tool used for computer input"]
+    - ["blue cube", "the image of a pen"]
+    - ["the cube to the right of the yellow cube", "the image of a tool for cutting paper"]
+    - ["red cube", "the image of a keyboard"]
+    - ["the second cube from the right", "the image of a tool for writing with ink"]
+    - ["red cube", "the image of a pair of scissors"]
+    - ["the cube on the far right", "the image of a tool used for computer input"]
+    - ["green cube", "the image of a pen"]
+    - ["the rightmost cube", "the image of a tool for cutting paper"]
+
+test:
+  cube_colors:
+    - grey
+    - cyan
+    - purple
+    - orange
+
+  table_images:
+    - path: "22_office/test_calculator.png"
+    - path: "22_office/test_notebook.png"
+    - path: "22_office/test_paperclip.png"
+
+  task_referring_expressions:
+    - ["grey cube", "the image of a calculator"]
+    - ["the cube at position one from the left", "the image of a tool for writing down things"]
+    - ["grey cube", "the image of a paperclip"]
+    - ["the cube sandwiched between grey and purple", "the image of a device for math operations"]
+    - ["cyan cube", "the image of a notebook"]
+    - ["the cube immediately next to the grey one", "the image of a wire for holding papers together"]
+    - ["purple cube", "the image of a calculator"]
+    - ["the cube on the left side of orange", "the image of a tool for writing down things"]
+    - ["purple cube", "the image of a paperclip"]
+    - ["the cube to the right of the purple cube", "the image of a device for math operations"]
+    - ["orange cube", "the image of a notebook"]
+    - ["the cube on the most right side", "the image of a wire for holding papers together"]

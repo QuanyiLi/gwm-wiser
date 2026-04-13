@@ -1,0 +1,26 @@
+{
+  "train_triangle": [
+    "the image of a triangle",
+    "the image of a shape with three sides"
+  ],
+  "train_circle": [
+    "the image of a circle",
+    "the image of a round shape with no corners"
+  ],
+  "train_square": [
+    "the image of a square",
+    "the image of a shape with four equal sides"
+  ],
+  "test_star": [
+    "the image of a star",
+    "the image of a shape with five points"
+  ],
+  "test_heart": [
+    "the image of a heart",
+    "the image of a symbol of love"
+  ],
+  "test_diamond": [
+    "the image of a diamond",
+    "the image of a rhombus shape"
+  ]
+}

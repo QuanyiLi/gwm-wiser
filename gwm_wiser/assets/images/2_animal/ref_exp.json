@@ -1,0 +1,26 @@
+{
+    "test_cheetah": [
+        "the image of a cheetah",
+        "the fastest land animal"
+    ],
+    "test_elephant": [
+        "the image of an elephant",
+        "the animal with a long nose"
+    ],
+    "test_giraffe": [
+        "the image of a giraffe",
+        "the animal with a long neck"
+    ],
+    "train_dog": [
+        "the image of a dog",
+        "the image of man's best friend"
+    ],
+    "train_panda": [
+        "the image of a panda",
+        "the animal eats bamboo"
+    ],
+    "train_parrot": [
+        "the image of a parrot",
+        "the image of a tropical bird"
+    ]
+}

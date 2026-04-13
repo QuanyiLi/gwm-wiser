@@ -1,0 +1,35 @@
+#!/bin/bash
+#SBATCH --job-name=convert-rlds
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=64
+#SBATCH --gpus-per-node=4
+#SBATCH --nodes=1
+#SBATCH --time=12:00:00
+#SBATCH --mem=200G
+
+# -------------------------------------------------------------------
+# Convert LeRobot dataset to RLDS/TFDS format for InstructVLA & OpenVLA-OFT
+#
+# Prerequisites:
+#   1. git submodule update --init --recursive
+#   2. bash scripts/setup_conda_env.sh   (creates gwm-openvla-oft env)
+#
+# Usage:
+#   sbatch submit_convert_dataset.run
+# -------------------------------------------------------------------
+
+REPO_ROOT=/work/vita/lanfeng/vlas/vla
+
+cd "${REPO_ROOT}" && git submodule update --init --recursive
+
+export ENV_PREFIX="${REPO_ROOT}/.conda/envs/gwm-openvla-oft"
+
+MANUAL_DIR=/work/vita/lanfeng/vlas/wise_dataset_0.4.3/merged_train \
+GWM_RLDS_MAX_EPISODES=0 \
+GWM_RLDS_MAX_STEPS_PER_EPISODE=0 \
+NUM_PROCESSES=64 \
+bash "${REPO_ROOT}/gwm_wiser/utils/convert_dataset.sh"
+

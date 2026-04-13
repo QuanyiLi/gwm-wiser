@@ -1,0 +1,26 @@
+{
+    "train_apple": [
+        "the image of an apple",
+        "the image of a red and delicious fruit"
+    ],
+    "train_banana": [
+        "the image of a banana",
+        "the image of a yellow curved fruit"
+    ],
+    "train_orange": [
+        "the image of an orange",
+        "the image of a round citrus fruit"
+    ],
+    "test_grape": [
+        "the image of grapes",
+        "the image of a bunch of small purple fruit"
+    ],
+    "test_strawberry": [
+        "the image of a strawberry",
+        "the image of a red berry with seeds on the outside"
+    ],
+    "test_pineapple": [
+        "the image of a pineapple",
+        "the image of a tropical fruit with spiky leaves"
+    ]
+}

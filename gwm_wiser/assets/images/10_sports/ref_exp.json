@@ -1,0 +1,26 @@
+{
+  "train_basketball": [
+    "the image of a basketball",
+    "the image of an orange ball used in professional basketball"
+  ],
+  "train_soccer": [
+    "the image of a soccer ball",
+    "the image of a ball used in soccer matches"
+  ],
+  "train_tennis": [
+    "the image of a tennis racket",
+    "the image of the equipment for playing tennis"
+  ],
+  "test_football": [
+    "the image of a football (NOT soccer!)",
+    "the image of an oval ball used in American football"
+  ],
+  "test_boxing_glove": [
+    "the image of a boxing glove",
+    "the image of a hand-wearing equipment"
+  ],
+  "test_ping_pong": [
+    "the image of a ping-pong racket",
+    "the image of a equipment used for table tennis"
+  ]
+}

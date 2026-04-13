@@ -1,0 +1,53 @@
+name: "animal_extra"
+
+train:
+  cube_colors:
+    - blue
+    - yellow
+    - green
+    - red
+
+  table_images:
+    - path: "17_animal_extra/train_golden_fish.png"
+    - path: "17_animal_extra/train_shark.png"
+    - path: "17_animal_extra/train_whale.png"
+
+  task_referring_expressions:
+    - ["the first cube from the left", "the image of a golden fish"]
+    - ["blue cube", "the predator of the ocean"]
+    - ["the cube on the far left", "the image of a whale"]
+    - ["yellow cube", "the popular aquarium pet"]
+    - ["the cube to the right of the blue cube", "the image of a shark"]
+    - ["yellow cube", "the largest mammal in the sea"]
+    - ["the second cube from the right", "the image of a golden fish"]
+    - ["green cube", "the predator of the ocean"]
+    - ["the cube between the yellow and red cubes", "the image of a whale"]
+    - ["red cube", "the popular aquarium pet"]
+    - ["the rightmost cube", "the image of a shark"]
+    - ["red cube", "the largest mammal in the sea"]
+
+test:
+  cube_colors:
+    - cyan
+    - grey
+    - orange
+    - purple
+
+  table_images:
+    - path: "17_animal_extra/test_crab.png"
+    - path: "17_animal_extra/test_dolphin.png"
+    - path: "17_animal_extra/test_octopus.png"
+
+  task_referring_expressions:
+    - ["the cube at position one from the left", "the image of a crab"]
+    - ["cyan cube", "the intelligent marine mammal"]
+    - ["the cube directly to the left of grey", "the image of an octopus"]
+    - ["grey cube", "the sea creature with claws"]
+    - ["the cube immediately next to the cyan one", "the image of a dolphin"]
+    - ["grey cube", "the sea creature with 8 arms"]
+    - ["the cube on the left side of purple", "the image of a crab"]
+    - ["orange cube", "the intelligent marine mammal"]
+    - ["the cube sandwiched between grey and purple", "the image of an octopus"]
+    - ["purple cube", "the sea creature with claws"]
+    - ["the cube on the most right side", "the image of a dolphin"]
+    - ["purple cube", "the sea creature with 8 arms"]

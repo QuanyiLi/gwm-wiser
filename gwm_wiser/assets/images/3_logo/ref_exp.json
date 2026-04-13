@@ -1,0 +1,26 @@
+{
+    "test_apple": [
+        "the logo of Apple",
+        "the brand making IPhone and Macbook"
+    ],
+    "test_mcdonald": [
+        "the logo of McDonald's",
+        "the fast food chain known for the golden arches"
+    ],
+    "test_starbucks": [
+        "the logo of Starbucks",
+        "the coffeehouse chain with the green mermaid logo"
+    ],
+    "train_ferrari": [
+        "the logo of Ferrari",
+        "the famous hyper car producer"
+    ],
+    "train_nba": [
+        "the logo of the NBA",
+        "the professional basketball league of North America"
+    ],
+    "train_olympics": [
+        "the logo of the Olympics",
+        "the international sporting event happened every 4 years"
+    ]
+}

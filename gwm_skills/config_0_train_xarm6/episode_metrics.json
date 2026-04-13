@@ -1,0 +1,167 @@
+{
+  "summary": {
+    "near_goal_mean": 1.0,
+    "success_at_end_mean": 1.0,
+    "success_once_mean": 1.0,
+    "is_grasped_mean": 1.0,
+    "return_mean": 37.89289474487305,
+    "tcp_near_goal_mean": 1.0,
+    "rollout_fps": 232.82,
+    "rollout_time": 6.19,
+    "io_time": 44.58,
+    "io_fps": 32.3,
+    "use_expert_action": 1.0
+  },
+  "episodes": [
+    {
+      "round": 0,
+      "env_idx": 0,
+      "global_episode_idx": 0,
+      "task_prompt": "Pick up the red cube and place it onto the national flag of France.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 38.698429107666016,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 1,
+      "global_episode_idx": 1,
+      "task_prompt": "Pick up the cube on the far left and place it onto the country that London belongs to.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 39.33753204345703,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 2,
+      "global_episode_idx": 2,
+      "task_prompt": "Pick up the red cube and place it onto the national flag of the United States.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 31.118860244750977,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 3,
+      "global_episode_idx": 3,
+      "task_prompt": "Pick up the cube to the right of the red cube and place it onto the country that Paris belongs to.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 38.56140899658203,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 4,
+      "global_episode_idx": 4,
+      "task_prompt": "Pick up the green cube and place it onto the national flag of the United Kingdom.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 41.60497283935547,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 5,
+      "global_episode_idx": 5,
+      "task_prompt": "Pick up the cube between the red and blue cubes and place it onto the country that New York belongs to.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 37.83686447143555,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 6,
+      "global_episode_idx": 6,
+      "task_prompt": "Pick up the blue cube and place it onto the national flag of France.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 37.74247741699219,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 7,
+      "global_episode_idx": 7,
+      "task_prompt": "Pick up the cube between the green and yellow cubes and place it onto the country that London belongs to.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 41.579811096191406,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 8,
+      "global_episode_idx": 8,
+      "task_prompt": "Pick up the blue cube and place it onto the national flag of the United States.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 39.08265686035156,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 9,
+      "global_episode_idx": 9,
+      "task_prompt": "Pick up the rightmost cube and place it onto the country that Paris belongs to.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 31.07615852355957,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 10,
+      "global_episode_idx": 10,
+      "task_prompt": "Pick up the yellow cube and place it onto the national flag of the United Kingdom.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 39.33803176879883,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    },
+    {
+      "round": 0,
+      "env_idx": 11,
+      "global_episode_idx": 11,
+      "task_prompt": "Pick up the last cube from the left and place it onto the country that New York belongs to.",
+      "success_once": true,
+      "success_at_end": true,
+      "return": 38.73752212524414,
+      "near_goal": true,
+      "is_grasped": true,
+      "tcp_near_goal": true
+    }
+  ],
+  "config": {
+    "num_envs": 12,
+    "rounds": 1,
+    "max_steps_per_episode": 120,
+    "total_episodes": 12
+  }
+}

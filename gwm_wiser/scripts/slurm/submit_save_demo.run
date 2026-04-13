@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --job-name=vlas
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=l40s
+#SBATCH --qos=vita
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gpus-per-node=1
+#SBATCH --nodes=12
+#SBATCH --time=24:00:00
+#SBATCH --mem=100G
+
+# Each of the 12 nodes handles 2 indices out of 24 total
+ranges=("0 2" "2 4" "4 6" "6 8" "8 10" "10 12" "12 14" "14 16" "16 18" "18 20" "20 22" "22 24")
+
+export PYTHONPATH=$PYTHONPATH:.
+
+# Run distributed tasks across 12 nodes
+for i in {0..11}; do
+    read start end <<< "${ranges[i]}"
+    srun --exclusive --nodes=1 --ntasks=1 --gpus=1 \
+        python /work/vita/lanfeng/vlas/vla/gwm_wiser/scripts/save_demo.py --start_index $start --end_index $end --no_merge &
+done
+
+# Wait for all background tasks to finish
+wait
+
+# Run merge step
+echo "Merging datasets..."
+python /work/vita/lanfeng/vlas/vla/gwm_wiser/scripts/save_demo.py --start_index 0 --end_index 0

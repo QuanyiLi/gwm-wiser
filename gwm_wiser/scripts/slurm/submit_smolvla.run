@@ -1,0 +1,35 @@
+#!/bin/bash
+#SBATCH --job-name=vlas
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita 
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=64
+#SBATCH --gpus-per-node=4
+#SBATCH --nodes=1 
+#SBATCH --time=24:00:00
+#SBATCH --mem=200G
+
+
+accelerate launch \
+    --multi_gpu \
+    --num_processes=4 \
+    --num_machines $SLURM_NNODES \
+    --machine_rank $SLURM_NODEID \
+    /work/vita/lanfeng/vlas/vla/gwm_wiser/scripts/lerobot_train.py \
+    --dataset.repo_id="unused" \
+    --dataset.root="/work/vita/lanfeng/vlas/vla/wiser_dataset" \
+    --policy.path=lerobot/smolvla_base \
+    --job_name="smolvla_wiser" \
+    --output_dir=/work/vita/lanfeng/vlas/exp_results/ \
+    --policy.repo_id="unused" \
+    --policy.push_to_hub=false \
+    --wandb.enable=true \
+    --policy.device=cuda \
+    --policy.n_action_steps=20 \
+    --policy.chunk_size=20 \
+    --eval_rounds=1 \
+    --eval_interval=5 \
+    --total_learning_epoches=20000 \
+    --batch_size=128 \
+    --rename_map="{'observation.images.image_1':'observation.images.camera1', 'observation.images.image_2':'observation.images.camera2', 'observation.images.wrist_image':'observation.images.camera3'}"

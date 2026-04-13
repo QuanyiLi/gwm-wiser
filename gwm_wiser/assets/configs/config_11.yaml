@@ -1,0 +1,53 @@
+name: "vehicles"
+
+train:
+  cube_colors:
+    - green
+    - yellow
+    - blue
+    - red
+
+  table_images:
+    - path: "11_vehicles/train_airplane.png"
+    - path: "11_vehicles/train_car.png"
+    - path: "11_vehicles/train_ship.png"
+
+  task_referring_expressions:
+    - ["the first cube from the left", "the image of an airplane"]
+    - ["green cube", "the image of a four-wheeled vehicle for roads"]
+    - ["the cube on the far left", "the image of a ship"]
+    - ["yellow cube", "the image of a vehicle that flies in the sky"]
+    - ["the cube to the right of the green cube", "the image of a car"]
+    - ["yellow cube", "the image of a vehicle that travels on water"]
+    - ["the second cube from the right", "the image of an airplane"]
+    - ["blue cube", "the image of a four-wheeled vehicle for roads"]
+    - ["the cube between the yellow and red cubes", "the image of a ship"]
+    - ["red cube", "the image of a vehicle that flies in the sky"]
+    - ["the rightmost cube", "the image of a car"]
+    - ["red cube", "the image of a vehicle that travels on water"]
+
+test:
+  cube_colors:
+    - orange
+    - grey
+    - cyan
+    - purple
+
+  table_images:
+    - path: "11_vehicles/test_bicycle.png"
+    - path: "11_vehicles/test_bus.png"
+    - path: "11_vehicles/test_train.png"
+
+  task_referring_expressions:
+    - ["the cube at position one from the left", "the image of a bicycle"]
+    - ["orange cube", "the image of a large public transport vehicle"]
+    - ["the cube directly to the left of grey", "the image of a green train"]
+    - ["grey cube", "the image of a two-wheeled pedal vehicle"]
+    - ["the cube immediately next to the orange one", "the image of a bus"]
+    - ["grey cube", "the image of a vehicle that runs on tracks"]
+    - ["the cube on the left side of purple", "the image of a bicycle"]
+    - ["cyan cube", "the image of a large public transport vehicle"]
+    - ["the cube sandwiched between grey and purple", "the image of a green train"]
+    - ["purple cube", "the image of a two-wheeled pedal vehicle"]
+    - ["the cube on the most right side", "the image of a bus"]
+    - ["purple cube", "the image of a vehicle that runs on tracks"]

@@ -1,0 +1,26 @@
+{
+    "train_cake": [
+        "the image of a cake",
+        "the birthday dessert"
+    ],
+    "train_ice_cream": [
+        "the image of ice cream",
+        "the frozen dairy dessert"
+    ],
+    "train_cookie": [
+        "the image of a cookie",
+        "the small flat baked sweet"
+    ],
+    "test_donut": [
+        "the image of a donut",
+        "the ring-shaped fried dough"
+    ],
+    "test_pie": [
+        "the image of a pie",
+        "the fruit filled pastry"
+    ],
+    "test_cupcake": [
+        "the image of a cupcake",
+        "the small cake for one person"
+    ]
+}

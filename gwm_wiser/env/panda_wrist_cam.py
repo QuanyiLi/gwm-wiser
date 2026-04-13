@@ -1,0 +1,30 @@
+import numpy as np
+import sapien
+from gwm_wiser.env.config import HAND_CAMERA_RESOLUTION
+from mani_skill import PACKAGE_ASSET_DIR
+from mani_skill.agents.registration import register_agent
+from mani_skill.sensors.camera import CameraConfig
+from mani_skill.agents.robots.panda import Panda
+
+
+@register_agent()
+class PandaWristCam(Panda):
+    """Panda arm robot with the real sense camera attached to gripper"""
+
+    uid = "my_panda_wristcam"
+    urdf_path = f"{PACKAGE_ASSET_DIR}/robots/panda/panda_v3.urdf"
+
+    @property
+    def _sensor_configs(self):
+        return [
+            CameraConfig(
+                uid="hand_camera",
+                pose=sapien.Pose(p=[0, 0, 0], q=[1, 0, 0, 0]),
+                width=HAND_CAMERA_RESOLUTION[0],
+                height=HAND_CAMERA_RESOLUTION[1],
+                fov=np.pi / 2,
+                near=0.01,
+                far=100,
+                mount=self.robot.links_map["camera_link"],
+            )
+        ]

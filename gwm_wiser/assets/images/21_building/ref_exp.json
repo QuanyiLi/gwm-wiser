@@ -1,0 +1,26 @@
+{
+    "train_skyscraper": [
+        "the image of a skyscraper",
+        "the very tall building in a city"
+    ],
+    "train_house": [
+        "the image of a residential house",
+        "the place where people live"
+    ],
+    "train_bridge": [
+        "the image of a bridge",
+        "the structure built to span a physical obstacle"
+    ],
+    "test_lighthouse": [
+        "the image of a lighthouse",
+        "the tower with a bright light to guide ships"
+    ],
+    "test_ferris_wheel": [
+        "the image of a Ferris wheel",
+        "the image of a rotating big wheel"
+    ],
+    "test_windmill": [
+        "the image of a windmill",
+        "the building with sails that turn in the wind"
+    ]
+}

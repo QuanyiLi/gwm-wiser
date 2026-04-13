@@ -1,0 +1,26 @@
+{
+  "train_fork": [
+    "the image of a fork",
+    "the image of a utensil with prongs"
+  ],
+  "train_spoon": [
+    "the image of a spoon",
+    "the image of a utensil for eating soup"
+  ],
+  "train_bowl": [
+    "the image of a bowl",
+    "the image of a container for soup"
+  ],
+  "test_cup": [
+    "the image of a cup",
+    "the image of a container for drinking"
+  ],
+  "test_plate": [
+    "the image of a plate",
+    "the image of a flat dish for food"
+  ],
+  "test_pan": [
+    "the image of a pan",
+    "the image of cookware for frying"
+  ]
+}

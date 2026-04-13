@@ -1,0 +1,26 @@
+{
+  "train_pen": [
+    "the image of a pen",
+    "the image of a tool for writing with ink"
+  ],
+  "train_scissors": [
+    "the image of a pair of scissors",
+    "the image of a tool for cutting paper"
+  ],
+  "train_keyboard": [
+    "the image of a keyboard",
+    "the image of a tool used for computer input"
+  ],
+  "test_calculator": [
+    "the image of a calculator",
+    "the image of a device for math operations"
+  ],
+  "test_paperclip": [
+    "the image of a paperclip",
+    "the image of a wire for holding papers together"
+  ],
+  "test_notebook": [
+    "the image of a notebook",
+    "the image of a tool for writing down things"
+  ]
+}

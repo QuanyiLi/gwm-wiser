@@ -1,0 +1,53 @@
+name: "animal"
+
+train:
+  cube_colors:
+    - red
+    - blue
+    - green
+    - yellow
+
+  table_images:
+    - path: "2_animal/train_dog.png"
+    - path: "2_animal/train_panda.png"
+    - path: "2_animal/train_parrot.png"
+
+  task_referring_expressions:
+    - ["red cube", "the image of a dog"]
+    - ["the leftmost cube", "the animal eats bamboo"]
+    - ["red cube", "the image of a parrot"]
+    - ["the cube between the red and green cubes", "the image of man's best friend"]
+    - ["blue cube", "the image of a panda"]
+    - ["the second cube from the left", "the image of a tropical bird"]
+    - ["green cube", "the image of a dog"]
+    - ["the cube to the left of the yellow cube", "the animal eats bamboo"]
+    - ["green cube", "the image of a parrot"]
+    - ["the last cube from the left", "the image of man's best friend"]
+    - ["yellow cube", "the image of a panda"]
+    - ["the cube on the far right", "the image of a tropical bird"]
+
+test:
+  cube_colors:
+    - purple
+    - cyan
+    - orange
+    - grey
+
+  table_images:
+    - path: "2_animal/test_cheetah.png"
+    - path: "2_animal/test_elephant.png"
+    - path: "2_animal/test_giraffe.png"
+
+  task_referring_expressions:
+    - ["purple cube", "the image of a cheetah"]
+    - ["the cube on the left side", "the animal with a long nose"]
+    - ["purple cube", "the image of a giraffe"]
+    - ["the cube at position two from the left", "the fastest land animal"]
+    - ["cyan cube", "the image of an elephant"]
+    - ["the cube sandwiched between purple and orange", "the animal with a long neck"]
+    - ["orange cube", "the image of a cheetah"]
+    - ["the cube directly to the left of grey", "the animal with a long nose"]
+    - ["orange cube", "the image of a giraffe"]
+    - ["the cube directly to the right of orange", "the fastest land animal"]
+    - ["grey cube", "the image of an elephant"]
+    - ["the cube to the right of the orange cube", "the animal with a long neck"]

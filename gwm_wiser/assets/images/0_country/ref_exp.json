@@ -1,0 +1,8 @@
+{
+  "test_china": ["the national flag of China", "the country that Beijing belongs to"],
+  "test_Japan": ["the national flag of Japan", "the country that Toyko belongs to"],
+  "test_korea": ["the national flag of South Korea", "the country that Seoul belongs to"],
+  "train_france": ["the national flag of France", "the country that Paris belongs to"],
+  "train_uk": ["the national flag of the United Kingdom", "the country that London belongs to"],
+  "train_us": ["the national flag of the United States", "the country that New York belongs to"]
+}

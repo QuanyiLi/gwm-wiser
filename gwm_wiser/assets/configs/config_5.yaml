@@ -1,0 +1,53 @@
+name: "vegetable"
+
+train:
+  cube_colors:
+    - red
+    - yellow
+    - blue
+    - green
+
+  table_images:
+    - path: "5_vegetable/train_broccoli.png"
+    - path: "5_vegetable/train_pepper.png"
+    - path: "5_vegetable/train_potato.png"
+
+  task_referring_expressions:
+    - ["the first cube from the left", "the image of broccoli"]
+    - ["red cube", "the image of a colorful bell pepper"]
+    - ["the cube on the far left", "the image of a potato"]
+    - ["yellow cube", "the image of a green vegetable looking like a small tree"]
+    - ["the cube to the right of the red cube", "the image of a pepper"]
+    - ["yellow cube", "the image of the vegetable used to make french fries"]
+    - ["the second cube from the right", "the image of broccoli"]
+    - ["blue cube", "the image of a colorful bell pepper"]
+    - ["the cube between the yellow and green cubes", "the image of a potato"]
+    - ["green cube", "the image of a green vegetable looking like a small tree"]
+    - ["the rightmost cube", "the image of a pepper"]
+    - ["green cube", "the image of the vegetable used to make french fries"]
+
+test:
+  cube_colors:
+    - purple
+    - grey
+    - cyan
+    - orange
+
+  table_images:
+    - path: "5_vegetable/test_corn.png"
+    - path: "5_vegetable/test_cucumber.png"
+    - path: "5_vegetable/test_tomato.png"
+
+  task_referring_expressions:
+    - ["the cube at position one from the left", "the image of corn"]
+    - ["purple cube", "the image of a long green vegetable"]
+    - ["the cube directly to the left of grey", "the image of a tomato"]
+    - ["grey cube", "the image of a yellow vegetable ear"]
+    - ["the cube immediately next to the purple one", "the image of a cucumber"]
+    - ["grey cube", "the image of a red round vegetable"]
+    - ["the cube on the left side of orange", "the image of corn"]
+    - ["cyan cube", "the image of a long green vegetable"]
+    - ["the cube sandwiched between grey and orange", "the image of a tomato"]
+    - ["orange cube", "the image of a yellow vegetable ear"]
+    - ["the cube on the most right side", "the image of a cucumber"]
+    - ["orange cube", "the image of a red round vegetable"]

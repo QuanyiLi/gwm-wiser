@@ -1,0 +1,53 @@
+name: "country"
+
+train:
+  cube_colors:
+    - red
+    - green
+    - blue
+    - yellow
+
+  table_images:
+    - path: "0_country/train_france.png"
+    - path: "0_country/train_uk.png"
+    - path: "0_country/train_us.jpg"
+
+  task_referring_expressions:
+    - ["red cube", "the national flag of France"]
+    - ["the cube on the far left", "the country that London belongs to"]
+    - ["red cube", "the national flag of the United States"]
+    - ["the cube to the right of the red cube", "the country that Paris belongs to"]
+    - ["green cube", "the national flag of the United Kingdom"]
+    - ["the cube between the red and blue cubes", "the country that New York belongs to"]
+    - ["blue cube", "the national flag of France"]
+    - ["the cube between the green and yellow cubes", "the country that London belongs to"]
+    - ["blue cube", "the national flag of the United States"]
+    - ["the rightmost cube", "the country that Paris belongs to"]
+    - ["yellow cube", "the national flag of the United Kingdom"]
+    - ["the last cube from the left", "the country that New York belongs to"]
+
+test:
+  cube_colors:
+    - purple
+    - orange
+    - cyan
+    - grey
+
+  table_images:
+    - path: "0_country/test_Japan.png"
+    - path: "0_country/test_china.png"
+    - path: "0_country/test_korea.png"
+
+  task_referring_expressions:
+    - ["purple cube", "the national flag of Japan"]
+    - ["the cube directly to the left of orange", "the country that Beijing belongs to"]
+    - ["purple cube", "the national flag of South Korea"]
+    - ["the cube immediately next to the purple one", "the country that Toyko belongs to"]
+    - ["orange cube", "the national flag of China"]
+    - ["the cube at position two from the left", "the country that Seoul belongs to"]
+    - ["cyan cube", "the national flag of Japan"]
+    - ["the cube sandwiched between orange and grey", "the country that Beijing belongs to"]
+    - ["cyan cube", "the national flag of South Korea"]
+    - ["the cube on the most right side", "the country that Toyko belongs to"]
+    - ["grey cube", "the national flag of China"]
+    - ["the cube directly to the right of cyan", "the country that Seoul belongs to"]

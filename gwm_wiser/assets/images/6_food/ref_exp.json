@@ -1,0 +1,26 @@
+{
+    "train_pizza": [
+        "the image of a pizza",
+        "the image of a round dish with cheese and toppings"
+    ],
+    "train_burger": [
+        "the image of a burger",
+        "the image of a sandwich with a meat patty"
+    ],
+    "train_sushi": [
+        "the image of sushi",
+        "the image of a Japanese dish with rice and fish"
+    ],
+    "test_pasta": [
+        "the image of pasta",
+        "the image of an Italian noodle dish"
+    ],
+    "test_taco": [
+        "the image of a taco",
+        "the image of a Mexican dish with a folded tortilla"
+    ],
+    "test_salad": [
+        "the image of a salad",
+        "the image of a mix of vegetables"
+    ]
+}

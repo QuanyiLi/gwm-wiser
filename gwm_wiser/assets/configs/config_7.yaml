@@ -1,0 +1,53 @@
+name: "electronics"
+
+train:
+  cube_colors:
+    - green
+    - red
+    - yellow
+    - blue
+
+  table_images:
+    - path: "7_electronics/train_laptop.png"
+    - path: "7_electronics/train_mouse.png"
+    - path: "7_electronics/train_phone.png"
+
+  task_referring_expressions:
+    - ["the cube on the far left", "the image of a laptop"]
+    - ["green cube", "the image of a pointing device"]
+    - ["the leftmost cube", "the image of a phone"]
+    - ["red cube", "the image of a portable computer"]
+    - ["the cube between the green and yellow cubes", "the image of a computer mouse"]
+    - ["red cube", "the image of a mobile smartphone"]
+    - ["the cube between the red and blue cubes", "the image of a laptop"]
+    - ["yellow cube", "the image of a pointing device"]
+    - ["the cube to the left of the blue cube", "the image of a phone"]
+    - ["blue cube", "the image of a portable computer"]
+    - ["the last cube from the left", "the image of a computer mouse"]
+    - ["blue cube", "the image of a mobile smartphone"]
+
+test:
+  cube_colors:
+    - orange
+    - purple
+    - grey
+    - cyan
+
+  table_images:
+    - path: "7_electronics/test_camera.png"
+    - path: "7_electronics/test_headphones.png"
+    - path: "7_electronics/test_watch.png"
+
+  task_referring_expressions:
+    - ["the cube directly to the left of purple", "the image of a camera"]
+    - ["orange cube", "the image of a device for listening to audio"]
+    - ["the cube on the left side", "the image of a watch"]
+    - ["purple cube", "the image of a device for taking photos"]
+    - ["the cube at position two from the left", "the image of headphones"]
+    - ["purple cube", "the image of a wrist timepiece"]
+    - ["the cube sandwiched between purple and cyan", "the image of a camera"]
+    - ["grey cube", "the image of a device for listening to audio"]
+    - ["the cube directly to the left of cyan", "the image of a watch"]
+    - ["cyan cube", "the image of a device for taking photos"]
+    - ["the cube directly to the right of grey", "the image of headphones"]
+    - ["cyan cube", "the image of a wrist timepiece"]

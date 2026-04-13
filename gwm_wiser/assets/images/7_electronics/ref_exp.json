@@ -1,0 +1,26 @@
+{
+    "train_laptop": [
+        "the image of a laptop",
+        "the image of a portable computer"
+    ],
+    "train_phone": [
+        "the image of a phone",
+        "the image of a mobile smartphone"
+    ],
+    "train_mouse": [
+        "the image of a computer mouse",
+        "the image of a pointing device"
+    ],
+    "test_camera": [
+        "the image of a camera",
+        "the image of a device for taking photos"
+    ],
+    "test_headphones": [
+        "the image of headphones",
+        "the image of a device for listening to audio"
+    ],
+    "test_watch": [
+        "the image of a watch",
+        "the image of a wrist timepiece"
+    ]
+}

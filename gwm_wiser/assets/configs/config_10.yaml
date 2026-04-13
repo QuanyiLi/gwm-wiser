@@ -1,0 +1,53 @@
+name: "sports"
+
+train:
+  cube_colors:
+    - green
+    - yellow
+    - red
+    - blue
+
+  table_images:
+    - path: "10_sports/train_basketball.png"
+    - path: "10_sports/train_soccer.png"
+    - path: "10_sports/train_tennis.png"
+
+  task_referring_expressions:
+    - ["green cube", "the image of a basketball"]
+    - ["the first cube from the left", "the image of a ball used in soccer matches"]
+    - ["green cube", "the image of a tennis racket"]
+    - ["the second cube from the left", "the image of an orange ball used in professional basketball"]
+    - ["yellow cube", "the image of a soccer ball"]
+    - ["the cube to the right of the green cube", "the image of the equipment for playing tennis"]
+    - ["red cube", "the image of a basketball"]
+    - ["the second cube from the right", "the image of a ball used in soccer matches"]
+    - ["red cube", "the image of a tennis racket"]
+    - ["the cube on the far right", "the image of an orange ball used in professional basketball"]
+    - ["blue cube", "the image of a soccer ball"]
+    - ["the rightmost cube", "the image of the equipment for playing tennis"]
+
+test:
+  cube_colors:
+    - orange
+    - grey
+    - purple
+    - cyan
+
+  table_images:
+    - path: "10_sports/test_boxing_glove.png"
+    - path: "10_sports/test_football.png"
+    - path: "10_sports/test_ping_pong.png"
+
+  task_referring_expressions:
+    - ["orange cube", "the image of a boxing glove"]
+    - ["the cube at position one from the left", "the image of an oval ball used in American football"]
+    - ["orange cube", "the image of a ping-pong racket"]
+    - ["the cube sandwiched between orange and purple", "the image of a hand-wearing equipment"]
+    - ["grey cube", "the image of a football (NOT soccer!)"]
+    - ["the cube immediately next to the orange one", "the image of a equipment used for table tennis"]
+    - ["purple cube", "the image of a boxing glove"]
+    - ["the cube on the left side of cyan", "the image of an oval ball used in American football"]
+    - ["purple cube", "the image of a ping-pong racket"]
+    - ["the cube to the right of the purple cube", "the image of a hand-wearing equipment"]
+    - ["cyan cube", "the image of a football (NOT soccer!)"]
+    - ["the cube on the most right side", "the image of a equipment used for table tennis"]

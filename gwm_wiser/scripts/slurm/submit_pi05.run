@@ -1,0 +1,42 @@
+#!/bin/bash
+#SBATCH --job-name=vlas
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=64
+#SBATCH --gpus-per-node=4
+#SBATCH --nodes=1
+#SBATCH --time=27:00:00
+#SBATCH --mem=200G
+
+
+accelerate launch \
+    --multi_gpu \
+    --num_processes=4 \
+    --mixed_precision="bf16" \
+    /work/vita/lanfeng/vlas/vla/gwm_wiser/scripts/lerobot_train.py \
+    --dataset.repo_id="unused" \
+    --dataset.root="/work/vita/lanfeng/vlas/vla/wiser_dataset" \
+    --policy.type=pi05 \
+    --output_dir=/work/vita/lanfeng/vlas/exp_results/ \
+    --job_name="pi05_wiser" \
+    --policy.repo_id="unused" \
+    --policy.push_to_hub=false \
+    --policy.pretrained_path=lerobot/pi05_base \
+    --policy.compile_model=false \
+    --policy.gradient_checkpointing=true \
+    --wandb.enable=true \
+    --policy.dtype=bfloat16 \
+    --policy.device=cuda \
+    --policy.n_action_steps=20 \
+    --policy.chunk_size=20 \
+    --eval_rounds=1 \
+    --eval_interval=5 \
+    --total_learning_epoches=30 \
+    --batch_size=128
+
+
+#    --policy.pretrained_path="/work/vita/lanfeng/vlas/exp_results/pi05_merged_norm-0208-144437/checkpoints/000029" \
+#    --config_path="/work/vita/lanfeng/vlas/exp_results/pi05_merged_norm-0208-144437/checkpoints/000029/pretrained_model/train_config.json" \
+#    --resume=true \

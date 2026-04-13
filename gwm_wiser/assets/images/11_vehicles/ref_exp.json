@@ -1,0 +1,26 @@
+{
+  "train_airplane": [
+    "the image of an airplane",
+    "the image of a vehicle that flies in the sky"
+  ],
+  "train_car": [
+    "the image of a car",
+    "the image of a four-wheeled vehicle for roads"
+  ],
+  "train_ship": [
+    "the image of a ship",
+    "the image of a vehicle that travels on water"
+  ],
+  "test_train": [
+    "the image of a green train",
+    "the image of a vehicle that runs on tracks"
+  ],
+  "test_bicycle": [
+    "the image of a bicycle",
+    "the image of a two-wheeled pedal vehicle"
+  ],
+  "test_bus": [
+    "the image of a bus",
+    "the image of a large public transport vehicle"
+  ]
+}

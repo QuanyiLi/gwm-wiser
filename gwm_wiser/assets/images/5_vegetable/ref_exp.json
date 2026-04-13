@@ -1,0 +1,26 @@
+{
+    "train_potato": [
+        "the image of a potato",
+        "the image of the vegetable used to make french fries"
+    ],
+    "train_broccoli": [
+        "the image of broccoli",
+        "the image of a green vegetable looking like a small tree"
+    ],
+    "train_pepper": [
+        "the image of a pepper",
+        "the image of a colorful bell pepper"
+    ],
+    "test_tomato": [
+        "the image of a tomato",
+        "the image of a red round vegetable"
+    ],
+    "test_cucumber": [
+        "the image of a cucumber",
+        "the image of a long green vegetable"
+    ],
+    "test_corn": [
+        "the image of corn",
+        "the image of a yellow vegetable ear"
+    ]
+}

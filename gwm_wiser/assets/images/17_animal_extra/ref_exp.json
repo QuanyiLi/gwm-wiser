@@ -1,0 +1,26 @@
+{
+    "train_golden_fish": [
+        "the image of a golden fish",
+        "the popular aquarium pet"
+    ],
+    "train_shark": [
+        "the image of a shark",
+        "the predator of the ocean"
+    ],
+    "train_whale": [
+        "the image of a whale",
+        "the largest mammal in the sea"
+    ],
+    "test_dolphin": [
+        "the image of a dolphin",
+        "the intelligent marine mammal"
+    ],
+    "test_octopus": [
+        "the image of an octopus",
+        "the sea creature with 8 arms"
+    ],
+    "test_crab": [
+        "the image of a crab",
+        "the sea creature with claws"
+    ]
+}

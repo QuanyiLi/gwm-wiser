@@ -1,0 +1,53 @@
+name: "food"
+
+train:
+  cube_colors:
+    - green
+    - red
+    - blue
+    - yellow
+
+  table_images:
+    - path: "6_food/train_burger.png"
+    - path: "6_food/train_pizza.png"
+    - path: "6_food/train_sushi.png"
+
+  task_referring_expressions:
+    - ["green cube", "the image of a burger"]
+    - ["the cube on the far left", "the image of a round dish with cheese and toppings"]
+    - ["green cube", "the image of sushi"]
+    - ["the cube to the right of the green cube", "the image of a sandwich with a meat patty"]
+    - ["red cube", "the image of a pizza"]
+    - ["the cube between the green and blue cubes", "the image of a Japanese dish with rice and fish"]
+    - ["blue cube", "the image of a burger"]
+    - ["the cube between the red and yellow cubes", "the image of a round dish with cheese and toppings"]
+    - ["blue cube", "the image of sushi"]
+    - ["the rightmost cube", "the image of a sandwich with a meat patty"]
+    - ["yellow cube", "the image of a pizza"]
+    - ["the last cube from the left", "the image of a Japanese dish with rice and fish"]
+
+test:
+  cube_colors:
+    - orange
+    - purple
+    - cyan
+    - grey
+
+  table_images:
+    - path: "6_food/test_pasta.png"
+    - path: "6_food/test_salad.png"
+    - path: "6_food/test_taco.png"
+
+  task_referring_expressions:
+    - ["orange cube", "the image of pasta"]
+    - ["the cube directly to the left of purple", "the image of a mix of vegetables"]
+    - ["orange cube", "the image of a taco"]
+    - ["the cube immediately next to the orange one", "the image of an Italian noodle dish"]
+    - ["purple cube", "the image of a salad"]
+    - ["the cube at position two from the left", "the image of a Mexican dish with a folded tortilla"]
+    - ["cyan cube", "the image of pasta"]
+    - ["the cube sandwiched between purple and grey", "the image of a mix of vegetables"]
+    - ["cyan cube", "the image of a taco"]
+    - ["the cube on the most right side", "the image of an Italian noodle dish"]
+    - ["grey cube", "the image of a salad"]
+    - ["the cube directly to the right of cyan", "the image of a Mexican dish with a folded tortilla"]

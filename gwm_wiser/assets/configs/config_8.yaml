@@ -1,0 +1,53 @@
+name: "instruments"
+
+train:
+  cube_colors:
+    - green
+    - blue
+    - red
+    - yellow
+
+  table_images:
+    - path: "8_instruments/train_micphone.png"
+    - path: "8_instruments/train_piano.png"
+    - path: "8_instruments/train_violin.png"
+
+  task_referring_expressions:
+    - ["green cube", "the image of a microphone"]
+    - ["the leftmost cube", "the image of an instrument with black and white keys"]
+    - ["green cube", "the image of a violin"]
+    - ["the cube between the green and red cubes", "the image of an instrument for singing or recording"]
+    - ["blue cube", "the image of a piano keyboard"]
+    - ["the second cube from the left", "the image of an instrument played with a bow"]
+    - ["red cube", "the image of a microphone"]
+    - ["the cube to the left of the yellow cube", "the image of an instrument with black and white keys"]
+    - ["red cube", "the image of a violin"]
+    - ["the last cube from the left", "the image of an instrument for singing or recording"]
+    - ["yellow cube", "the image of a piano keyboard"]
+    - ["the cube on the far right", "the image of an instrument played with a bow"]
+
+test:
+  cube_colors:
+    - orange
+    - cyan
+    - purple
+    - grey
+
+  table_images:
+    - path: "8_instruments/test_drum.png"
+    - path: "8_instruments/test_guitar.png"
+    - path: "8_instruments/test_trumpet.png"
+
+  task_referring_expressions:
+    - ["orange cube", "the image of a drum"]
+    - ["the cube on the left side", "the image of a six-stringed instrument"]
+    - ["orange cube", "the image of a trumpet"]
+    - ["the cube at position two from the left", "the image of a percussion instrument played with sticks"]
+    - ["cyan cube", "the image of a guitar"]
+    - ["the cube sandwiched between orange and purple", "the image of a brass instrument with three valves"]
+    - ["purple cube", "the image of a drum"]
+    - ["the cube directly to the left of grey", "the image of a six-stringed instrument"]
+    - ["purple cube", "the image of a trumpet"]
+    - ["the cube directly to the right of purple", "the image of a percussion instrument played with sticks"]
+    - ["grey cube", "the image of a guitar"]
+    - ["the cube to the right of the purple cube", "the image of a brass instrument with three valves"]
