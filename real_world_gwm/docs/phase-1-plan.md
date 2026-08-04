@@ -36,6 +36,8 @@ Initial discovery leads include:
 - Robot datasets indexed by `datasets.bot`.
 - Larger or more complete Franka corpora with synchronized RGB and joint configurations.
 - MolmoBot and other simulation corpora with recoverable robot geometry and camera state.
+- Exylos Bimanual Table Spill Cleanup and NVIDIA PhysicalAI Robotics Manipulation Augmented, retained only as unvalidated leads from the former `origin/dev` survey.
+- State-rich corpora previously dismissed solely because they lacked released robot masks; qpos plus a valid render bundle can be the stronger RAT source.
 - The original upstream sources behind any catalog entry; catalog metadata alone is not sufficient evidence.
 
 Real and simulated video are both eligible, separately or in a documented mixture, provided the pretraining corpus is outside the WISER data domain. Compare candidates using a written matrix containing at least:
@@ -53,6 +55,12 @@ Real and simulated video are both eligible, separately or in a documented mixtur
 
 Record the survey later in `docs/dataset-survey.md`. Corpus identity is selected by usable RAT training signal rather than by dataset popularity or nominal frame count. If multiple sources are chosen, their mixture and sampling policy require a separate decision before training.
 
+### Evidence from the retired VRS prototype
+
+The former `origin/dev` branch is reviewed in [Review of the Retired VRS Prototype](prior-dev-vrs-prototype.md). It demonstrated only a loader-shaped smoke fixture, not successful GWM training or WISER performance. Its reusable observations are already reflected here: VRS uses ordered frames and whole-robot mask `002`, lacks a reliable corpus-wide clock, has mask-provenance risk, and should remain only one candidate in a broader qpos-first signal survey.
+
+Do not merge that implementation directly. Its fixed `224x224` resize, synthetic 3-second clip normalization, one-window-per-clip sampling, tail repetition, split handling, mask-category fallback, state/action placeholders, and edits to the existing trainer all conflict with this plan.
+
 ### WISER contamination boundary
 
 The selected corpus and gradient path must exclude:
@@ -65,7 +73,7 @@ The implementation may reuse the existing GWM and Qwen code, RAT construction, g
 
 ## Corpus contract
 
-The training core receives ordered clips from exactly one selected main camera whose frames contain aligned full-scene RGB and robot-only RGB. It must not inspect VRS paths, numeric mask categories, original split names, actions, proprioception, camera calibration, robot state, or auxiliary camera streams. Each source adapter is responsible for producing this normalized representation.
+The training core receives ordered clips from exactly one selected main camera whose frames contain aligned full-scene RGB and robot-only RGB. It must not inspect VRS paths, numeric mask categories, original split names, actions, proprioception, camera calibration, robot state, auxiliary camera streams, or zero-valued compatibility placeholders for any of those fields. Each source adapter is responsible for producing this normalized representation.
 
 Phase one does not support multi-view input, camera fusion, or treating each auxiliary camera as an additional sample. A source adapter selects one main-camera key; every other camera stream is ignored by this pipeline.
 
@@ -86,6 +94,8 @@ Every source adapter declares whether it has a reliable monotonic clock:
 - A source without reliable timestamps uses configurable ordinal `frame_step` and `window_stride`. This fallback is never labeled with seconds.
 
 Timestamp matching must not duplicate frames or repeat a tail to manufacture a complete window. A window that cannot satisfy the configured offsets and matching tolerance is invalid and is reported by the audit.
+
+Never normalize a clockless clip by uniformly stretching its first and last frames over the WISER three-second horizon. An ordinal adapter must not synthesize source timestamps, `raw_fps`, or elapsed-time claims from clip length. The selected six frames continue through the existing list-frame Qwen preprocessing path unless a separately validated source with real timing metadata requires an explicit timing policy.
 
 If VRS is selected or included, its adapter uses every clip from the official train and test trees and all available embodiments. For each clip:
 
@@ -127,6 +137,8 @@ Every supported source adapter must include its own visualization script. Before
 - The final RAT condition and full-RGB target side by side.
 
 The visualization must use the same adapter, window selection, masking, and configured transforms as training so it cannot silently validate a separate preprocessing path. Human inspection complements, rather than replaces, the machine-readable audit.
+
+A synthetic image, overview GIF crop, or heuristically generated mask may test basic file and tensor plumbing, but it does not satisfy source admission. At least one inspection and audit path must exercise the released source records and the exact robot-only derivation used for training.
 
 ## Preprocessing audit
 

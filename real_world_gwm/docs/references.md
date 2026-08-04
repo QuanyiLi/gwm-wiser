@@ -16,6 +16,11 @@ These links are discovery leads supplied for a later survey, not yet validated a
 
 - [datasets.bot](https://datasets.bot/) — catalog to search for robot datasets with RGB, synchronized robot state, and calibration metadata.
 - [MolmoBot](https://github.com/allenai/MolmoBot) — candidate simulation-data source to inspect for recoverable RAT supervision.
+- [Exylos Bimanual Table Spill Cleanup](https://huggingface.co/datasets/ExylosAi/table_spill_cleanup_bimanual) — state- and mask-rich lead retained from the former `origin/dev` survey; current suitability is unverified.
+- [NVIDIA PhysicalAI Robotics Manipulation Augmented](https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Manipulation-Augmented) — simulation lead retained from the former `origin/dev` survey; qpos, calibration, label, and license suitability require revalidation.
+- [RoboEngine/RoboSeg](https://github.com/michaelyuancb/roboengine) — segmentation reference retained from the old survey; it was not established as a consecutive phase-one training corpus.
+- [Dexora Real-World Dataset](https://huggingface.co/datasets/Dexora/Dexora_Real-World_Dataset) — low-confidence state-rich lead from the old survey; embodiment, qpos, main-camera, mask, calibration, and license claims require inspection.
+- [RoVi-Aug](https://github.com/BerkeleyAutomation/rovi-aug) — robot-mask/data-generation reference from the old survey, not a validated ready-to-train corpus.
 
 ## Relevant local sources
 
@@ -28,6 +33,7 @@ These links are discovery leads supplied for a later survey, not yet validated a
 - [GWM closed-loop evaluation](../../gwm_wiser/scripts/gwm_eval.py) — unchanged phase-one development evaluation entry point.
 - [Retrieval planner](../../gwm_wiser/planner/retrieval.py) — logged candidate retrieval, semantic scoring, and action-chunk execution.
 - [Robot-only renderer](../../gwm_wiser/utils/robot_renderer.py) — WISER-aligned rendering from explicit robot configurations or supported absolute joint-position commands.
+- [Retired VRS prototype review](prior-dev-vrs-prototype.md) — evidence retained from the former `origin/dev` branch, including what its loader fixture did and did not establish.
 
 ## Established facts affecting the design
 

@@ -6,6 +6,7 @@ This folder is the documentation and future implementation home for adapting the
 
 - [CONTEXT.md](CONTEXT.md) defines the canonical domain language.
 - [Phase-one plan](docs/phase-1-plan.md) records the current, adjustable experiment and implementation plan.
+- [Retired VRS prototype review](docs/prior-dev-vrs-prototype.md) preserves the useful findings and rejected choices from the former `origin/dev` branch.
 - [ADR index](docs/adr/README.md) links the accepted architectural decisions and their rationale.
 - [References](docs/references.md) lists the primary papers, repositories, and relevant local code.
 
