@@ -16,4 +16,6 @@ ADRs are numbered in decision order. Status is explicit because later decisions 
 | [0010](0010-keep-the-training-corpus-provisional-pending-signal-survey.md) | Accepted | Keep the training corpus provisional pending a signal survey |
 | [0011](0011-define-wiser-contamination-by-data-provenance.md) | Accepted | Define WISER contamination by data provenance |
 | [0012](0012-sample-by-elapsed-time-when-the-source-has-a-clock.md) | Accepted | Sample by elapsed time when the source has a reliable clock |
-| [0013](0013-prioritize-state-rendered-robot-appearance.md) | Accepted | Prioritize state-rendered robot appearance |
+| [0013](0013-prioritize-state-rendered-robot-appearance.md) | Superseded by ADR-0015 | Prioritize state-rendered robot appearance |
+| [0014](0014-budget-source-video-pixels.md) | Accepted | Budget source-video pixels per source |
+| [0015](0015-prefer-mask-derived-robot-appearance-in-phase-one.md) | Accepted | Prefer mask-derived robot appearance in phase one |

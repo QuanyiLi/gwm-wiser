@@ -29,13 +29,13 @@ The fixed `224x224` fixture would produce a latent length different from the ori
 
 ## Conclusions retained in the current plan
 
-- Observation-only GWM pretraining can be constructed from aligned consecutive full RGB and robot-only RGB without exposing raw actions to GWM. When a valid qpos/render bundle exists, the current design still prioritizes state rendering over masks.
+- Observation-only GWM pretraining can be constructed from aligned consecutive full RGB and robot-only RGB without exposing raw actions to GWM. Phase one now derives robot-only RGB from whole-robot masks to match the WISER-dev evaluation condition; state rendering is the phase-two path (ADR-0015).
 - VRS has ordered frame indices but no reliable corpus-wide FPS or timestamp contract. Its windows must remain ordinal; clip length must not be reinterpreted as elapsed seconds.
 - The useful VRS convention is the whole-robot mask category `002`. Arm and gripper categories are not substitutes for a complete robot appearance.
 - VRS train-time dense masks may include propagated or pseudo labels, so mask provenance and alignment require audit and human inspection.
 - Dataset acquisition helpers may be resumable and source-specific, but downloading remains separate from the training entry point.
 - The earlier survey named Exylos Bimanual Table Spill Cleanup and NVIDIA PhysicalAI Robotics Manipulation Augmented as state-rich leads. These are discovery leads only and must be revalidated against the current qpos-, calibration-, usable-window-, and license-first matrix.
-- State-rich corpora that the earlier mask-first survey dismissed solely for lacking released robot masks must be reconsidered: a renderable state bundle can provide better RAT supervision than a mask.
+- State-rich corpora that the earlier mask-first survey dismissed solely for lacking released robot masks must still be reconsidered: predicted whole-robot masks can admit them in phase one, and their renderable state bundles matter for phase two.
 
 ### Historical survey leads
 
@@ -46,7 +46,7 @@ The old survey did not download and inspect most candidates, so its ranking is n
 | RobotSeg/VRS | Ready mask-based fallback candidate; ordinal time, pseudo-mask provenance, and full-corpus usability still require audit |
 | Exylos Bimanual Table Spill Cleanup | Revisit as a state- and mask-rich Franka lead; verify single-main-camera suitability, qpos, calibration, and license |
 | NVIDIA PhysicalAI Robotics Manipulation Augmented | Revisit as a state-rich simulation lead; verify render metadata, usable semantic diversity, labels, and license |
-| DROID, BridgeData, and Open-X-Embodiment sources | Reconsider sources that were excluded only for missing masks; require renderable state and camera metadata rather than assuming suitability |
+| DROID, BridgeData, and Open-X-Embodiment sources | Reconsider sources that were excluded only for missing masks; phase one requires whole-robot masks (released or predicted), while renderable state and camera metadata count toward phase-two readiness |
 | Dexora | Keep as a low-confidence state-rich lead; robot identity, main-camera signal, state semantics, and mask coverage were not inspected |
 | RoboEngine/RoboSeg and RoVi-Aug | Useful segmentation or data-generation references, but the old survey did not establish a consecutive, ready-to-train corpus for this experiment |
 | Roboflow Robot Arm Segmentation and synthetic DaVinci instruments | Do not prioritize for phase one: the former is small and non-sequential, while the latter is outside the Franka tabletop target |
@@ -56,7 +56,7 @@ The old survey did not download and inspect most candidates, so its ranking is n
 | Former `dev` behavior | Current requirement |
 | --- | --- |
 | Add a RobotSeg switch to the existing trainer | Keep all adaptation below `real_world_gwm/` behind a source-neutral adapter |
-| Resize every frame to `224x224` | Preserve the source image dimensions through the existing image preprocessing and audit the resulting token count |
+| Resize every frame to `224x224` | Apply an explicit aspect-preserving per-source pixel budget through the existing preprocessing and audit the resulting token count (ADR-0014); never force a fixed square shape |
 | Uniformly map every complete clip onto 60 synthetic 20 Hz steps | Use real elapsed seconds only with a reliable clock; otherwise use explicitly ordinal windows |
 | Produce one stretched window per clip | Enumerate every complete six-frame window under configurable `frame_step` and `window_stride` |
 | Repeat the last frame for a short window | Reject incomplete windows and report them |
@@ -65,7 +65,7 @@ The old survey did not download and inspect most candidates, so its ranking is n
 | Return zero-valued state and action placeholders | Normalize adapters to aligned full RGB and robot-only RGB; do not leak source-specific compatibility fields into the training core |
 | Derive `sample_fps`, `raw_fps`, and timestamps from a synthetic 3-second clip mapping | Do not fabricate a source clock; preserve the existing six-frame Qwen preprocessing unless real timing metadata justifies a source-specific policy |
 | Validate with a GIF crop and generated foreground mask | Visualize and audit released data through the exact training adapter; synthetic fixtures test plumbing only |
-| Optimize for mask availability and cross-embodiment pretraining | Select by usable RAT signal, prioritize qpos rendering, and evaluate cross-domain Franka transfer |
+| Optimize for mask availability and cross-embodiment pretraining | Select by usable RAT signal — mask-first in phase one (ADR-0015) — and evaluate cross-domain Franka transfer |
 
 ## Concepts worth reusing
 

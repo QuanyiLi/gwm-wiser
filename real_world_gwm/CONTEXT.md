@@ -76,6 +76,10 @@ _Avoid_: Multi-view input, camera fusion, auxiliary camera
 The six elapsed-time offsets used for a timestamped RAT window, or an explicitly identified ordinal fallback when the source has no reliable clock.
 _Avoid_: Trajectory progress, assumed FPS, hidden frame stride
 
+**Pixel Budget**:
+The per-source aspect-preserving pixel window applied through the existing Qwen preprocessing to set a source's visual token scale.
+_Avoid_: Fixed-shape resize, native-resolution mandate, token ceiling
+
 **Whole-Robot Mask**:
 A foreground mask containing every visible part of the robot and excluding the scene background.
 _Avoid_: Arm mask, gripper mask, object mask
