@@ -1,8 +1,9 @@
-#!/bin/bash
+#!/bin/bash -l
 #SBATCH --job-name=gwm_vrs
-#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
 #SBATCH --partition=h100
-#SBATCH --qos=vita
+#SBATCH --account=vita
+#SBATCH --qos=normal
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=64
 #SBATCH --gpus-per-node=4
@@ -10,16 +11,42 @@
 #SBATCH --time=24:00:00
 #SBATCH --mem=200G
 
-# Adjust to the cluster checkout / data locations before submitting.
-REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/vla}
-VRS_ROOT=${VRS_ROOT:-/work/vita/lanfeng/vlas/data/vrs}
+set -eo pipefail
+
+# Cluster defaults (kuma). Every path is overridable from the submitting shell.
+# VRS_ROOT is the one that still has to be provisioned: RobotSeg ships only via
+# OneDrive/Baidu, so extract it so that $VRS_ROOT/{train,test}/image exist.
+REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/gwm-wiser}
+VRS_ROOT=${VRS_ROOT:-/work/vita/lanfeng/vlas/vrs}
 OUTPUT_DIR=${OUTPUT_DIR:-/work/vita/lanfeng/vlas/exp_results/gwm_vrs}
 EMBEDDER=${EMBEDDER:-/work/vita/lanfeng/vlas/Qwen3-VL-Embedding-8B}
-WISER_DATASET=${WISER_DATASET:-/work/vita/lanfeng/vlas/vla/wiser_dataset}
+WISER_DATASET=${WISER_DATASET:-/work/vita/lanfeng/vlas/wise_dataset_0.4.3}
+CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
+CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
 
-export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-export MASTER_PORT=29500
+# The code is imported via PYTHONPATH, but the interpreter still has to be the
+# one holding lerobot 0.4.3 / transformers 4.57.6 / torchcodec + ffmpeg.
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV}"
+
+# Fail before the allocation is spent rather than 4 ranks deep into torchrun.
+for d in "${REPO_ROOT}/real_world_gwm" "${VRS_ROOT}/train" "${VRS_ROOT}/test" \
+         "${WISER_DATASET}/merged_test" "${EMBEDDER}"; do
+    [ -d "$d" ] || { echo "missing required path: $d" >&2; exit 1; }
+done
+mkdir -p "${OUTPUT_DIR}"
+
+export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
+# Derive the port from the job id: a fixed 29500 collides when two runs land on
+# the same node.
+export MASTER_PORT=$((29500 + SLURM_JOB_ID % 1000))
 export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+
+# slurm >= 22.05 no longer propagates --cpus-per-task from sbatch to srun, which
+# silently starves the dataloader workers.
+export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
+export OMP_NUM_THREADS=8
+export HF_HOME=${HF_HOME:-/work/vita/lanfeng/.cache/}
 
 # VRS-only first run (training-run matrix #1). Single command: the audit runs
 # automatically at startup and its manifest lands in $OUTPUT_DIR.
