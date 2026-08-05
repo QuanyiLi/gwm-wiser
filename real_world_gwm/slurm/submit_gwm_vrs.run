@@ -1,0 +1,44 @@
+#!/bin/bash
+#SBATCH --job-name=gwm_vrs
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=64
+#SBATCH --gpus-per-node=4
+#SBATCH --nodes=1
+#SBATCH --time=24:00:00
+#SBATCH --mem=200G
+
+# Adjust to the cluster checkout / data locations before submitting.
+REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/vla}
+VRS_ROOT=${VRS_ROOT:-/work/vita/lanfeng/vlas/data/vrs}
+OUTPUT_DIR=${OUTPUT_DIR:-/work/vita/lanfeng/vlas/exp_results/gwm_vrs}
+EMBEDDER=${EMBEDDER:-/work/vita/lanfeng/vlas/Qwen3-VL-Embedding-8B}
+WISER_DATASET=${WISER_DATASET:-/work/vita/lanfeng/vlas/vla/wiser_dataset}
+
+export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
+export MASTER_PORT=29500
+export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+
+# VRS-only first run (training-run matrix #1). Single command: the audit runs
+# automatically at startup and its manifest lands in $OUTPUT_DIR.
+# ~118k step-1 windows / (batch 1 x 4 GPUs) ~= 29.5k steps per epoch; the
+# three-epoch-equivalent budget is therefore ~88k steps.
+srun torchrun \
+    --nnodes=$SLURM_JOB_NUM_NODES \
+    --nproc_per_node=4 \
+    --rdzv_id=$SLURM_JOB_ID \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
+    -m real_world_gwm.train \
+    --dataset_roots $VRS_ROOT/train $VRS_ROOT/test \
+    --output_dir $OUTPUT_DIR \
+    --embedder_model_path $EMBEDDER \
+    --total_steps 88000 \
+    --save_every 2000 \
+    --batch_size 1 \
+    --num_workers 8 \
+    --wiser_dev_dataset_root $WISER_DATASET \
+    --eval_every 2000 --eval_batches 64 \
+    --wandb_enable --wandb_project gwm_vrs

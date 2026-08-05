@@ -1,0 +1,55 @@
+#!/bin/bash
+#SBATCH --job-name=gwm_wiser_repro
+#SBATCH --output=${HOME}/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --qos=vita
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=64
+#SBATCH --gpus-per-node=4
+#SBATCH --nodes=3
+#SBATCH --time=24:00:00
+#SBATCH --mem=200G
+
+# Reproduction/debug run: train.py on WISER merged_train, aligned with
+# gwm_wiser/scripts/slurm/submit_gwm.run (the reference gwm_train.py recipe)
+# so their curves can be compared:
+#   - same data (merged_train via the unchanged AugmentedPaddedDataset,
+#     including its unconditional color jitter), same merged_test eval data
+#   - same model defaults (dim 4096 / ffn 8192 / head 128 / 5 layers / 32
+#     heads / 8 kv), same Muon+AuxAdam lrs, bf16, grad clip 1.0
+#   - same scale: 3 nodes x 4 GPUs, per-rank batch 32, num_workers 4
+#   - 3-epoch budget in steps: 207,360 samples / (32 x 12) = 540 steps per
+#     epoch -> total_steps 1620; save/eval at epoch boundaries (540)
+# Known intentional differences: cosine LR anneals per optimizer step
+# (T_max=1620) instead of per epoch (T_max=3), and epoch shuffling uses
+# this trainer's seeded permutation instead of DistributedSampler.
+# Checkpoints from this run are WISER-contaminated: debugging only, never
+# phase-one candidates.
+
+REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/vla}
+WISER_DATASET=${WISER_DATASET:-/work/vita/lanfeng/vlas/vla/wiser_dataset}
+OUTPUT_DIR=${OUTPUT_DIR:-/work/vita/lanfeng/vlas/exp_results/gwm_wiser_repro}
+EMBEDDER=${EMBEDDER:-/work/vita/lanfeng/vlas/Qwen3-VL-Embedding-8B}
+
+export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
+export MASTER_PORT=29500
+export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+
+srun torchrun \
+    --nnodes=$SLURM_JOB_NUM_NODES \
+    --nproc_per_node=4 \
+    --rdzv_id=$SLURM_JOB_ID \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
+    -m real_world_gwm.train \
+    --dataset_adapter wiser \
+    --dataset_roots $WISER_DATASET \
+    --output_dir $OUTPUT_DIR \
+    --embedder_model_path $EMBEDDER \
+    --total_steps 1620 \
+    --save_every 540 \
+    --batch_size 32 \
+    --num_workers 4 \
+    --wiser_dev_dataset_root $WISER_DATASET \
+    --eval_every 540 \
+    --wandb_enable --wandb_project gwm_vrs --wandb_run_name gwm_wiser_repro
