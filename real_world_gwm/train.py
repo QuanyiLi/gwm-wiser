@@ -1,23 +1,23 @@
-"""Train the GWM on out-of-domain robot video (phase one, VRS adapter).
+"""Train the GWM on the Molmo corpora (Stage 1, plan of record).
 
-Mirrors gwm_wiser/scripts/gwm_train.py — frozen Qwen online embedding, MSE
-objective with cosine logging, Muon+AuxAdam, bf16 — but consumes the
-source-neutral RAT samples produced by a real_world_gwm source adapter,
-schedules at optimizer-step granularity, and exports canonical fixed-1620
-checkpoints (ADR-0007). The WISER trainer and its configuration are untouched.
+Consumes the normalized rendered tree (rendered.py) — the single training-side
+data contract for MolmoAct2-DROID and MolmoBot (decision D-18) — with frozen
+Qwen online embedding, MSE objective with cosine logging, Muon+AuxAdam, bf16,
+step-granular checkpoint/resume, and canonical fixed-1620 exports (ADR-0007).
+Open-loop development metrics run on the deterministic episode-level held-out
+split (decision D-10); WISER and VRS are fully retired.
 
 Local smoke example (RTX 3090; reduced GWM because the full 4096-dim training
 state plus the frozen embedder exceeds 24 GB):
 
     python -m real_world_gwm.train \\
-        --dataset_roots /root/data/vrs/test \\
-        --manifest audit_manifest.json \\
+        --data_root real_world_gwm/data \\
         --output_dir runs/smoke \\
-        --limit_videos 4 --total_steps 20 --save_every 10 \\
+        --total_steps 200 --save_every 100 \\
         --model_dim 512 --model_ffn_dim 1024 --model_n_layer 2
 
 Cluster full-size run: keep the model_* defaults (identical to gwm_train.py)
-and launch with torchrun for DDP.
+and launch with torchrun for DDP (slurm/submit_gwm_molmo.run).
 """
 
 import argparse
@@ -39,33 +39,33 @@ from gwm_wiser.models.transformer import TransformerConfig
 from gwm_wiser.utils.gwm_data import compute_embeddings_sequentially
 from real_world_gwm.gwm_model import VariableLenGWM, export_canonical
 from real_world_gwm.sampling import epoch_permutation, sample_position
+from real_world_gwm.windows import DEFAULT_TOLERANCE_S
 
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     # data
-    p.add_argument("--dataset_adapter", default="vrs", choices=["vrs", "wiser"],
-                   help="'wiser' trains on <root>/merged_train through the "
-                        "unchanged WISER dataset class — a pipeline-debug "
-                        "path to reproduce gwm_train.py behavior; its "
-                        "checkpoints are WISER-contaminated by definition")
-    p.add_argument("--dataset_subsample_ratio", type=int, default=1,
-                   help="keep every N-th sample (same semantics as gwm_train.py)")
-    p.add_argument("--dataset_roots", nargs="+", required=True)
+    p.add_argument("--data_root", required=True,
+                   help="folder holding rendered/ plus the source trees")
+    p.add_argument("--sources", nargs="+", default=None,
+                   help="restrict to these sources (default: all rendered)")
     p.add_argument("--manifest", default=None,
                    help="audit manifest JSON; omitted -> the audit runs "
-                        "automatically at startup (motion stats skipped) and "
-                        "is written into output_dir, so a single command works "
-                        "on slurm")
-    p.add_argument("--frame_step", type=int, default=1)
-    p.add_argument("--window_stride", type=int, default=1)
-    p.add_argument("--flip_prob", type=float, default=0.5)
+                        "automatically at startup and is written into "
+                        "output_dir, so a single command works on slurm")
+    p.add_argument("--stride_s", type=json.loads, default=None,
+                   help='JSON per-source anchor stride override, e.g. '
+                        '\'{"molmobot": 3.0}\'')
+    p.add_argument("--tolerance_s", type=float, default=None)
     p.add_argument("--jitter_prob", type=float, default=0.5)
     p.add_argument("--min_pixels", type=int, default=None)
     p.add_argument("--max_pixels", type=int, default=None)
     p.add_argument("--token_ceiling", type=int, default=2048,
                    help="fail-fast ceiling on concatenated visual tokens; 0 disables")
-    p.add_argument("--limit_videos", type=int, default=None)
+    p.add_argument("--holdout_permille", type=int, default=20)
+    p.add_argument("--dataset_subsample_ratio", type=int, default=1,
+                   help="keep every N-th window")
+    p.add_argument("--limit_clips", type=int, default=None)
     p.add_argument("--limit_windows", type=int, default=None)
     # schedule
     p.add_argument("--total_steps", type=int, required=True)
@@ -92,15 +92,14 @@ def parse_args(argv=None):
     p.add_argument("--embedder_model_path", default="Qwen/Qwen3-VL-Embedding-8B")
     # logging
     p.add_argument("--wandb_enable", action="store_true")
-    p.add_argument("--wandb_project", default="gwm_vrs")
+    p.add_argument("--wandb_project", default="gwm_molmo")
     p.add_argument("--wandb_entity", default=None)
     p.add_argument("--wandb_run_name", default=None,
                    help="defaults to the output_dir name")
-    # output / optional development evaluation
+    # output / held-out development evaluation
     p.add_argument("--output_dir", required=True)
-    p.add_argument("--wiser_dev_dataset_root", default=None,
-                   help="optional WISER merged_test root for open-loop dev metrics")
-    p.add_argument("--eval_every", type=int, default=1000)
+    p.add_argument("--eval_every", type=int, default=1000,
+                   help="0 disables the held-out open-loop evaluation")
     p.add_argument("--eval_batches", type=int, default=None)
     return p.parse_args(argv)
 
@@ -130,10 +129,9 @@ def qwen_collate(samples):
                 shapes = {tuple(v.shape) for v in values}
                 if len(shapes) > 1:
                     raise RuntimeError(
-                        f"mixed Qwen grids in one batch ({key}/{name}: {shapes}); "
-                        "the audit found multiple batch shapes, so use "
-                        "--batch_size 1 (padding/bucketing is deliberately "
-                        "deferred by the plan)"
+                        f"mixed Qwen grids in one batch ({key}/{name}: "
+                        f"{shapes}); the exact-grid policy (D-2) admits one "
+                        "operating grid — run the audit"
                     )
                 tensors[name] = torch.stack(values)
         out[key] = tensors
@@ -143,7 +141,7 @@ def qwen_collate(samples):
 
 
 class TokenCeilingDataset(torch.utils.data.Dataset):
-    """Wraps the adapter dataset with the fail-fast token-ceiling check."""
+    """Wraps the window dataset with the fail-fast token-ceiling check."""
 
     def __init__(self, dataset, token_ceiling, pixel_budget):
         self.dataset = dataset
@@ -202,28 +200,9 @@ def restore_rng(rng):
     random.setstate(rng["python"])
 
 
-def build_wiser_dev_loader(args, preprocessor):
-    """Optional WISER-dev open-loop data (requires lerobot; cluster only)."""
-    from gwm_wiser.utils.gwm_data import PaddedLeRobotDataset  # lazy: needs lerobot
-
-    dataset = PaddedLeRobotDataset(
-        repo_id="unused",
-        root=os.path.join(args.wiser_dev_dataset_root, "merged_test"),
-        video_frame_subsample=6,
-        num_future_frames=60,
-        preprocess_qwen=True,
-        preprocessor=preprocessor,
-    )
-    return torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, num_workers=args.num_workers,
-        shuffle=False, pin_memory=True,
-    )
-
-
 @torch.no_grad()
-def evaluate_wiser_dev(model, embedder, loader, device, max_batches=None):
-    from gwm_wiser.utils.gwm_data import compute_embeddings_sequentially
-
+def evaluate_heldout(model, embedder, loader, max_batches=None):
+    """Open-loop MSE/cosine on the episode-level held-out split."""
     model.eval()
     mses, coss = [], []
     for bi, batch in enumerate(loader):
@@ -240,8 +219,6 @@ def evaluate_wiser_dev(model, embedder, loader, device, max_batches=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    # force=True: importing lerobot (via gwm_data) installs its own logging
-    # config, which would otherwise silently drop these INFO lines
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(message)s", force=True
     )
@@ -277,106 +254,74 @@ def main(argv=None):
     embedder.model.requires_grad_(False)
     preprocessor = Qwen3VLPreprocessor(args.embedder_model_path)
 
-    # ---- audit + dataset (adapter-specific) ----
+    # ---- audit (source-agnostic, over the rendered tree) ----
     min_pixels = DEFAULT_MIN_PIXELS if args.min_pixels is None else args.min_pixels
     max_pixels = DEFAULT_MAX_PIXELS if args.max_pixels is None else args.max_pixels
     output_dir = Path(args.output_dir)
 
-    if args.dataset_adapter == "vrs":
-        if args.manifest:
-            manifest = json.loads(Path(args.manifest).read_text())
-        else:
-            from real_world_gwm.audit import build_manifest, qwen_token_counter
+    if args.manifest:
+        manifest = json.loads(Path(args.manifest).read_text())
+    else:
+        from real_world_gwm.audit import build_manifest, qwen_token_counter
 
-            if is_main:
-                logging.info("no --manifest given; running the audit now")
-            manifest = build_manifest(
-                roots=args.dataset_roots,
-                frame_step=args.frame_step,
-                window_stride=args.window_stride,
-                candidate_steps=(args.frame_step,),
-                token_counter=qwen_token_counter(
-                    preprocessor, min_pixels, max_pixels
-                ),
-                token_ceiling=args.token_ceiling,
-                motion_sample_windows=0,
-                pixel_budget={"min_pixels": min_pixels, "max_pixels": max_pixels},
-                limit_videos=args.limit_videos,
+        if is_main:
+            logging.info("no --manifest given; running the audit now")
+        manifest = build_manifest(
+            data_root=args.data_root,
+            sources=args.sources,
+            token_counter=qwen_token_counter(preprocessor, min_pixels, max_pixels),
+            stride_s=args.stride_s,
+            tolerance_s=(DEFAULT_TOLERANCE_S if args.tolerance_s is None
+                         else args.tolerance_s),
+            token_ceiling=args.token_ceiling,
+            holdout_permille=args.holdout_permille,
+            pixel_budget={"min_pixels": min_pixels, "max_pixels": max_pixels},
+            limit_clips=args.limit_clips,
+        )
+        if is_main:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "audit_manifest.json").write_text(
+                json.dumps(manifest, indent=1)
             )
-            if is_main:
-                output_dir.mkdir(parents=True, exist_ok=True)
-                (output_dir / "audit_manifest.json").write_text(
-                    json.dumps(manifest, indent=1)
-                )
-                logging.info(
-                    f"audit: {manifest['totals']} shapes={manifest['batch_shapes']}"
-                )
-        if manifest["token_ceiling_violations"]:
-            raise SystemExit(
-                "token ceiling exceeded (raise --token_ceiling to accept):\n"
-                + json.dumps(manifest["token_ceiling_violations"][:5], indent=1)
+            logging.info(
+                f"audit: {manifest['totals']} shapes={manifest['batch_shapes']}"
             )
+    if manifest["off_grid_violations"]:
+        raise SystemExit(
+            "clips off the operating grid (exact-grid policy D-2):\n"
+            + json.dumps(manifest["off_grid_violations"][:5], indent=1)
+        )
+    if manifest["token_ceiling_violations"]:
+        raise SystemExit(
+            "token ceiling exceeded (raise --token_ceiling to accept):\n"
+            + json.dumps(manifest["token_ceiling_violations"][:5], indent=1)
+        )
+    manifest_hash = manifest["manifest_hash"]
 
-        from real_world_gwm.adapters.vrs.dataset import VRSWindowDataset
+    # ---- dataset ----
+    from real_world_gwm.rendered import RenderedWindowDataset
 
-        base_dataset = VRSWindowDataset(
-            args.dataset_roots,
-            frame_step=args.frame_step,
-            window_stride=args.window_stride,
-            flip_prob=args.flip_prob,
-            jitter_prob=args.jitter_prob,
+    def build_split(split, jitter):
+        return RenderedWindowDataset(
+            args.data_root,
+            sources=args.sources,
+            split=split,
+            stride_s=args.stride_s,
+            tolerance_s=args.tolerance_s,
+            jitter_prob=jitter,
             preprocessor=preprocessor,
             min_pixels=min_pixels,
             max_pixels=max_pixels,
-            limit_videos=args.limit_videos,
+            holdout_permille=args.holdout_permille,
+            limit_clips=args.limit_clips,
             limit_windows=args.limit_windows,
         )
-        if is_main:
-            logging.info(
-                f"dataset: {len(base_dataset)} windows from "
-                f"{len(base_dataset.clips)} clips "
-                f"({len(base_dataset.excluded)} excluded)"
-            )
-    else:  # wiser: pipeline-debug adapter over the unchanged WISER data path
-        import hashlib
 
-        from gwm_wiser.utils.gwm_data import AugmentedPaddedDataset
-
-        assert len(args.dataset_roots) == 1, "wiser adapter takes one root"
-        train_root = os.path.join(args.dataset_roots[0], "merged_train")
-        base_dataset = AugmentedPaddedDataset(
-            repo_id="unused",
-            root=train_root,
-            video_frame_subsample=6,
-            num_future_frames=60,
-            preprocess_qwen=True,
-            preprocessor=preprocessor,
-            flip_prob=args.flip_prob,
-        )
-        # WISER frames share one grid; no VRS-style audit applies here.
-        manifest = {
-            "source": "wiser (pipeline-debug adapter)",
-            "roots": [train_root],
-            "batch_shapes": [[3, 18, 30]],
-            "token_ceiling_violations": [],
-        }
-        manifest["manifest_hash"] = "wiser:" + hashlib.sha256(
-            json.dumps(manifest, sort_keys=True).encode()
-        ).hexdigest()
-        if is_main:
-            logging.warning(
-                "WISER adapter is for debugging the training pipeline against "
-                "gwm_train.py; its checkpoints are WISER-contaminated and are "
-                "not phase-one candidates"
-            )
-            logging.info(f"dataset: {len(base_dataset)} samples from {train_root}")
-
-    manifest_hash = manifest["manifest_hash"]
-    if args.batch_size > 1 and len(manifest["batch_shapes"]) > 1:
-        raise SystemExit(
-            f"audit found {len(manifest['batch_shapes'])} distinct Qwen grids "
-            f"{manifest['batch_shapes']}; per the batch-shape policy use "
-            "--batch_size 1 (padding/bucketing is deliberately deferred)"
+    base_dataset = build_split("train", args.jitter_prob)
+    if is_main:
+        logging.info(
+            f"dataset: {len(base_dataset)} train windows from "
+            f"{len(base_dataset.clips)} clips"
         )
 
     dataset = TokenCeilingDataset(
@@ -445,20 +390,36 @@ def main(argv=None):
         if is_main:
             logging.info(f"resumed from {args.resume} at step {start_step}")
 
-    # ---- optional WISER-dev loader ----
+    # ---- held-out open-loop loader (episode-level split, jitter off) ----
     dev_loader = None
-    if args.wiser_dev_dataset_root:
-        dev_loader = build_wiser_dev_loader(args, preprocessor)
+    if args.eval_every:
+        heldout = TokenCeilingDataset(
+            build_split("heldout", 0.0),
+            token_ceiling=args.token_ceiling,
+            pixel_budget={"min_pixels": min_pixels, "max_pixels": max_pixels},
+        )
+        if len(heldout) == 0:
+            if is_main:
+                logging.warning("held-out split is empty; evaluation disabled")
+        else:
+            if is_main:
+                logging.info(f"held-out: {len(heldout)} windows")
+            dev_loader = torch.utils.data.DataLoader(
+                heldout, batch_size=args.batch_size,
+                num_workers=args.num_workers, collate_fn=qwen_collate,
+                shuffle=False, pin_memory=True,
+            )
 
     if is_main:
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "resolved_config.json").write_text(
             json.dumps(
-                {**vars(args), "manifest_hash": manifest_hash,
+                {**vars(args), "stride_s": args.stride_s,
+                 "manifest_hash": manifest_hash,
                  "world_size": world_size,
                  "pixel_budget": {"min_pixels": min_pixels,
                                   "max_pixels": max_pixels}},
-                indent=1,
+                indent=1, default=str,
             )
         )
 
@@ -580,12 +541,12 @@ def main(argv=None):
                 t_last, s_last = time.time(), step
 
             if dev_loader is not None and step % args.eval_every == 0:
-                dev_mse, dev_cos = evaluate_wiser_dev(
-                    model, embedder, dev_loader, device, args.eval_batches
+                dev_mse, dev_cos = evaluate_heldout(
+                    model, embedder, dev_loader, args.eval_batches
                 )
                 if is_main:
                     logging.info(
-                        f"[wiser-dev open-loop] step {step} "
+                        f"[held-out open-loop] step {step} "
                         f"mse={dev_mse:.5f} cos={dev_cos:.4f}"
                     )
                     if wandb_logger:

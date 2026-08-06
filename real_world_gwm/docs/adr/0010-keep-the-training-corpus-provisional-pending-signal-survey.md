@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded by ADR-0016
 ---
 
 # Keep the training corpus provisional pending a signal survey
+
+This historical decision is no longer current; ADR-0016 concludes the signal survey and selects MolmoAct2-DROID plus the MolmoBot-Data Franka subset.
 
 VRS remains an immediately usable candidate, but phase one will not bind the GWM architecture or experiment identity to it before surveying other robot-video corpora. A larger, cleaner, more diverse, or more directly renderable corpus may replace or supplement VRS when it provides better aligned full RGB and robot-only RGB supervision. Real sources, simulated sources such as MolmoBot, and documented real/simulation mixtures are all eligible; the invariant is that pretraining remains outside the WISER data domain and uses no WISER samples.
 

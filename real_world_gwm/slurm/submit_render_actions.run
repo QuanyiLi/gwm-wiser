@@ -1,0 +1,47 @@
+#!/bin/bash -l
+#SBATCH --job-name=gwm_render
+#SBATCH --output=/work/vita/lanfeng/task_logs/%A_%a.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --array=0-63
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-node=1
+#SBATCH --time=24:00:00
+#SBATCH --mem=48G
+
+# Large-scale offline robot-only rendering (render_actions.py) as a slurm
+# array: shard k of N renders every admitted episode-stream whose index is
+# congruent to k mod N. Shards are disjoint and resumable (complete clips are
+# skipped), so requeueing a failed array task is always safe. No temporal
+# subsampling happens here — frame-step decisions belong to training.
+#
+# SAPIEN renders offscreen via Vulkan. On GPU nodes the NVIDIA ICD is used
+# automatically; if Vulkan device discovery fails on a node, install/expose
+# /usr/share/vulkan/icd.d/nvidia_icd.json or fall back to CPU lavapipe
+# (mesa-vulkan-drivers) and drop the --gpus-per-node request.
+
+set -eo pipefail
+
+REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/gwm-wiser}
+DATA_ROOT=${DATA_ROOT:-${REPO_ROOT}/real_world_gwm/data}
+CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
+CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
+SOURCE=${SOURCE:-molmobot}
+
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV}"
+
+for d in "${REPO_ROOT}/real_world_gwm" "${DATA_ROOT}"; do
+    [ -d "$d" ] || { echo "missing required path: $d" >&2; exit 1; }
+done
+
+export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+export HF_HOME=${HF_HOME:-/work/vita/lanfeng/.cache/}
+
+srun python -m real_world_gwm.scripts.render_actions \
+    --data-root "$DATA_ROOT" \
+    --source "$SOURCE" \
+    --shard-index "$SLURM_ARRAY_TASK_ID" \
+    --num-shards "$SLURM_ARRAY_TASK_COUNT"

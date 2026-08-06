@@ -4,17 +4,19 @@ Reuses the unchanged gwm_wiser preprocessing path; the per-source
 aspect-preserving pixel budget (ADR-0014) is injected through the existing
 per-video ``min_pixels``/``max_pixels`` hooks that ``fetch_video`` reads.
 
-Default budget: the WISER-scale per-frame window. Its upper edge equals the
-WISER processed frame size (480x288 = 138240 px), which lands sources near
-405 tokens per level.
+Default budget: the operating-grid anchor (ADR-0019). The upper edge equals
+a 480x288-frame area (138240 px), which lands ~16:9 sources on exactly
+``(3,18,30)`` = 1,620 tokens — audit-verified for MolmoBot's 624x352; every
+source must land on this grid exactly (exact-grid policy, plan D-14).
 """
 
 import torch
 
-from gwm_wiser.utils.gwm_data import tensor_images_to_pil  # noqa: F401  (shared with WISER pipeline)
+from gwm_wiser.utils.gwm_data import tensor_images_to_pil
 
-# WISER-scale defaults (ADR-0014): lower edge is the production per-frame
-# minimum; upper edge is the WISER processed frame area.
+# Operating-grid defaults (ADR-0019 anchor via the ADR-0014 budget mechanism):
+# lower edge is the production per-frame minimum; upper edge is the 480x288
+# frame area that pins the (3,18,30) grid.
 DEFAULT_MIN_PIXELS = 131072
 DEFAULT_MAX_PIXELS = 138240
 

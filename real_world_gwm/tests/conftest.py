@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -9,50 +10,49 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-def _write_jpg(path, arr):
-    from PIL import Image
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(arr).save(path, quality=95)
-
-
-def _write_png(path, arr):
-    from PIL import Image
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(arr).save(path)
-
-
 @pytest.fixture
-def synthetic_vrs_root(tmp_path):
-    """A tiny synthetic tree mimicking the released VRS layout.
+def synthetic_rendered_root(tmp_path):
+    """A tiny data root with one rendered clip + a real mp4 (imageio-encoded).
 
-    <root>/image/<video>/00001.jpg ...
-    <root>/mask_gt/<video>/002/00001.png ...          (test-tree convention)
-    <root>/mask_gt_dinov3/<video>/002/00001.png ...   (train-tree convention)
-
-    Videos:
-      video_0001___01_franka___a   12 frames, mask_gt (human)     32x48
-      video_0002___06_ur5___b      7 frames, mask_gt_dinov3 only  32x48
-      video_0003___01_franka___c   6 frames, NO masks at all      32x48
-      video_0004___01_franka___d   6 frames, mask missing frame 3 32x48
+    Mirrors the normalized rendered tree render_actions.py writes: 15 fps,
+    60 frames, 96x64 — enough for one accepted 3-second window.
     """
+    import imageio.v2 as imageio
+    from PIL import Image
+
     rng = np.random.default_rng(0)
-    root = tmp_path / "vrs_test"
+    n, h, w = 60, 64, 96
+    data_root = tmp_path / "data"
+    clip_dir = data_root / "rendered" / "molmobot" / "houseX__ep0__camA"
+    frame_dir = clip_dir / "robot_only"
+    frame_dir.mkdir(parents=True)
 
-    def make_video(name, n_frames, mask_dir, skip_mask_frames=()):
-        for i in range(1, n_frames + 1):
-            rgb = rng.integers(0, 255, size=(32, 48, 3), dtype=np.uint8)
-            _write_jpg(root / "image" / name / f"{i:05d}.jpg", rgb)
-            if mask_dir is not None and i not in skip_mask_frames:
-                mask = np.zeros((32, 48), dtype=np.uint8)
-                # robot occupies a moving column block
-                mask[:, (i * 3) % 40 : (i * 3) % 40 + 8] = 255
-                for cat in ("000", "001", "002"):
-                    _write_png(root / mask_dir / name / cat / f"{i:05d}.png", mask)
+    frames = (rng.random((n, h, w, 3)) * 255).astype(np.uint8)
+    video_path = data_root / "molmobot" / "houseX" / "ep0_camA.mp4"
+    video_path.parent.mkdir(parents=True)
+    with imageio.get_writer(video_path, fps=15, macro_block_size=1) as writer:
+        for f in frames:
+            writer.append_data(f)
 
-    make_video("video_0001___01_franka___a", 12, "mask_gt")
-    make_video("video_0002___06_ur5___b", 7, "mask_gt_dinov3")
-    make_video("video_0003___01_franka___c", 6, None)
-    make_video("video_0004___01_franka___d", 6, "mask_gt", skip_mask_frames=(3,))
-    return root
+    for i in range(n):
+        robot = np.zeros((h, w, 3), dtype=np.uint8)
+        robot[10:30, 20 + i % 20 : 40 + i % 20] = 200
+        Image.fromarray(robot).save(frame_dir / f"{i:05d}.png")
+
+    meta = {
+        "schema_version": 1,
+        "source": "molmobot",
+        "clip_id": "houseX__ep0__camA",
+        "episode_uid": "molmobot/testcfg/houseX/batch_1_of_1_ep0",
+        "camera": "camA",
+        "n_frames": n,
+        "width": w,
+        "height": h,
+        "timestamps": [i / 15.0 for i in range(n)],
+        "rgb_video": str(video_path.relative_to(data_root)),
+        "rgb_frame_start": 0,
+        "intrinsics": [[100.0, 0, 48.0], [0, 100.0, 32.0], [0, 0, 1.0]],
+        "renderer_provenance": {"arm": "fr3", "test": True},
+    }
+    (clip_dir / "meta.json").write_text(json.dumps(meta))
+    return data_root

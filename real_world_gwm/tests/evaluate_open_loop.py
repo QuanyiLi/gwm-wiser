@@ -1,22 +1,14 @@
-"""WISER-dev open-loop evaluation of a saved canonical checkpoint.
+"""Standalone open-loop MSE/cosine for a saved canonical checkpoint.
 
-Development evaluation only (never a held-out estimate): reads
-``<wiser_dev_dataset_root>/merged_test`` through the unchanged WISER data
-path, computes token-level MSE and cosine similarity, and never backpropagates.
-Requires lerobot (cluster environment).
+Evaluates against the episode-level held-out split of the rendered tree (the
+same deterministic hash split training uses), or --split all for diagnostics.
 
-The same metrics are computed online during training via
-``train.py --wiser_dev_dataset_root``; this standalone script exists to
-inspect an already-saved canonical checkpoint.
-
-Usage:
     python -m real_world_gwm.tests.evaluate_open_loop \\
-        --checkpoint runs/vrs1/step_0001000/checkpoint.pt \\
-        --wiser_dev_dataset_root /path/to/wiser_dataset
+        --checkpoint runs/x/step_0000100/checkpoint.pt \\
+        --data_root real_world_gwm/data [--split heldout] [--max_batches 64]
 """
 
 import argparse
-import json
 
 import numpy as np
 import torch
@@ -24,14 +16,21 @@ import torch.nn.functional as F
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--wiser_dev_dataset_root", required=True)
-    parser.add_argument("--embedder_model_path", default="Qwen/Qwen3-VL-Embedding-8B")
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--num_workers", type=int, default=2)
-    parser.add_argument("--max_batches", type=int, default=None)
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--checkpoint", required=True)
+    p.add_argument("--data_root", required=True)
+    p.add_argument("--sources", nargs="+", default=None)
+    p.add_argument("--split", default="heldout",
+                   choices=["heldout", "train", "all"])
+    p.add_argument("--holdout_permille", type=int, default=20)
+    p.add_argument("--batch_size", type=int, default=1)
+    p.add_argument("--num_workers", type=int, default=2)
+    p.add_argument("--max_batches", type=int, default=None)
+    p.add_argument("--min_pixels", type=int, default=None)
+    p.add_argument("--max_pixels", type=int, default=None)
+    p.add_argument("--embedder_model_path",
+                   default="Qwen/Qwen3-VL-Embedding-8B")
+    args = p.parse_args()
 
     from gwm_wiser.models.qwen3_vl_embedding import (
         Qwen3VLEmbedder,
@@ -39,21 +38,45 @@ def main():
     )
     from gwm_wiser.utils.gwm_data import compute_embeddings_sequentially
     from real_world_gwm.gwm_model import load_canonical_like_planner
-    from real_world_gwm.train import build_wiser_dev_loader
+    from real_world_gwm.rendered import RenderedWindowDataset
+    from real_world_gwm.train import qwen_collate
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, checkpoint = load_canonical_like_planner(args.checkpoint)
-    model = model.to(device)
-    model.eval()
+    model = model.to(device).eval()
+    print(f"checkpoint step={checkpoint.get('step')} "
+          f"manifest={checkpoint.get('metadata', {}).get('manifest_hash', '?')[:12]}")
 
-    embedder = Qwen3VLEmbedder(args.embedder_model_path, torch_dtype=torch.bfloat16)
+    embedder = Qwen3VLEmbedder(args.embedder_model_path,
+                               torch_dtype=torch.bfloat16)
     embedder.model.eval()
-    embedder.model.requires_grad_(False)
     preprocessor = Qwen3VLPreprocessor(args.embedder_model_path)
 
-    args.wiser_dev_dataset_root = args.wiser_dev_dataset_root  # used by builder
-    loader = build_wiser_dev_loader(args, preprocessor)
+    dataset = RenderedWindowDataset(
+        args.data_root, sources=args.sources, split=args.split,
+        jitter_prob=0.0, preprocessor=preprocessor,
+        min_pixels=args.min_pixels, max_pixels=args.max_pixels,
+        holdout_permille=args.holdout_permille,
+    )
+    print(f"{args.split}: {len(dataset)} windows from {len(dataset.clips)} clips")
+    if len(dataset) == 0:
+        raise SystemExit("empty split")
 
+    class WithTokens(torch.utils.data.Dataset):
+        def __len__(self):
+            return len(dataset)
+
+        def __getitem__(self, i):
+            from real_world_gwm.qwen_rat import count_visual_tokens
+
+            sample = dataset[i]
+            sample["tokens"] = count_visual_tokens(sample["qwen_trajectory_gt"])
+            return sample
+
+    loader = torch.utils.data.DataLoader(
+        WithTokens(), batch_size=args.batch_size,
+        num_workers=args.num_workers, collate_fn=qwen_collate, shuffle=False,
+    )
     mses, coss = [], []
     with torch.no_grad():
         for bi, batch in enumerate(loader):
@@ -62,17 +85,11 @@ def main():
             cur, traj = compute_embeddings_sequentially(embedder, batch)
             with torch.amp.autocast("cuda", dtype=torch.bfloat16):
                 pred = model(cur)
-            mses.append(F.mse_loss(pred, traj).item())
-            coss.append(F.cosine_similarity(pred, traj, dim=-1).mean().item())
-
-    result = {
-        "checkpoint": args.checkpoint,
-        "step": checkpoint.get("step"),
-        "open_loop_mse": float(np.mean(mses)),
-        "open_loop_cosine": float(np.mean(coss)),
-        "batches": len(mses),
-    }
-    print(json.dumps(result, indent=1))
+            mses.append(F.mse_loss(pred.float(), traj.float()).item())
+            coss.append(F.cosine_similarity(pred.float(), traj.float(),
+                                            dim=-1).mean().item())
+    print(f"open-loop {args.split}: mse={np.mean(mses):.5f} "
+          f"cos={np.mean(coss):.4f} over {len(mses)} batches")
 
 
 if __name__ == "__main__":

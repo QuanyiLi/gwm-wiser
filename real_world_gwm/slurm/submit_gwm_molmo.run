@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=gwm_vrs
+#SBATCH --job-name=gwm_molmo
 #SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
 #SBATCH --partition=h100
 #SBATCH --account=vita
@@ -7,31 +7,39 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=64
 #SBATCH --gpus-per-node=4
-#SBATCH --nodes=1
+#SBATCH --nodes=3
 #SBATCH --time=24:00:00
 #SBATCH --mem=200G
+
+# Stage-1 GWM training on the Molmo corpora (plan of record; WISER/VRS retired).
+# Reference recipe: 3 nodes x 4 H100. The exact-grid policy (every sample lands
+# on the 1620-token operating grid, ADR-0019) restores uniform batching, so the
+# per-rank batch matches the WISER-era recipe.
+#
+# Prerequisites on kuma (run once, login node or a cpu job):
+#   python -m real_world_gwm.scripts.setup_data ...      # provision data/
+#   sbatch real_world_gwm/slurm/submit_render_actions.run  # rendered tree
+# The audit runs automatically at startup and fail-fasts on off-grid clips.
 
 set -eo pipefail
 
 # Cluster defaults (kuma). Every path is overridable from the submitting shell.
-# VRS_ROOT is the one that still has to be provisioned: RobotSeg ships only via
-# OneDrive/Baidu, so extract it so that $VRS_ROOT/{train,test}/image exist.
 REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/gwm-wiser}
-VRS_ROOT=${VRS_ROOT:-/work/vita/lanfeng/vlas/vrs}
-OUTPUT_DIR=${OUTPUT_DIR:-/work/vita/lanfeng/vlas/exp_results/gwm_vrs}
+DATA_ROOT=${DATA_ROOT:-${REPO_ROOT}/real_world_gwm/data}
+OUTPUT_DIR=${OUTPUT_DIR:-/work/vita/lanfeng/vlas/exp_results/gwm_molmo}
 EMBEDDER=${EMBEDDER:-/work/vita/lanfeng/vlas/Qwen3-VL-Embedding-8B}
-WISER_DATASET=${WISER_DATASET:-/work/vita/lanfeng/vlas/wise_dataset_0.4.3}
 CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
 CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
+TOTAL_STEPS=${TOTAL_STEPS:-90000}
+BATCH_SIZE=${BATCH_SIZE:-32}
 
 # The code is imported via PYTHONPATH, but the interpreter still has to be the
 # one holding lerobot 0.4.3 / transformers 4.57.6 / torchcodec + ffmpeg.
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
 
-# Fail before the allocation is spent rather than 4 ranks deep into torchrun.
-for d in "${REPO_ROOT}/real_world_gwm" "${VRS_ROOT}/train" "${VRS_ROOT}/test" \
-         "${WISER_DATASET}/merged_test" "${EMBEDDER}"; do
+# Fail before the allocation is spent rather than 12 ranks deep into torchrun.
+for d in "${REPO_ROOT}/real_world_gwm" "${DATA_ROOT}/rendered" "${EMBEDDER}"; do
     [ -d "$d" ] || { echo "missing required path: $d" >&2; exit 1; }
 done
 mkdir -p "${OUTPUT_DIR}"
@@ -48,10 +56,6 @@ export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=8
 export HF_HOME=${HF_HOME:-/work/vita/lanfeng/.cache/}
 
-# VRS-only first run (training-run matrix #1). Single command: the audit runs
-# automatically at startup and its manifest lands in $OUTPUT_DIR.
-# ~118k step-1 windows / (batch 1 x 4 GPUs) ~= 29.5k steps per epoch; the
-# three-epoch-equivalent budget is therefore ~88k steps.
 srun torchrun \
     --nnodes=$SLURM_JOB_NUM_NODES \
     --nproc_per_node=4 \
@@ -59,13 +63,12 @@ srun torchrun \
     --rdzv_backend=c10d \
     --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
     -m real_world_gwm.train \
-    --dataset_roots $VRS_ROOT/train $VRS_ROOT/test \
+    --data_root $DATA_ROOT \
     --output_dir $OUTPUT_DIR \
     --embedder_model_path $EMBEDDER \
-    --total_steps 88000 \
+    --total_steps $TOTAL_STEPS \
     --save_every 2000 \
-    --batch_size 1 \
+    --batch_size $BATCH_SIZE \
     --num_workers 8 \
-    --wiser_dev_dataset_root $WISER_DATASET \
     --eval_every 2000 --eval_batches 64 \
-    --wandb_enable --wandb_project gwm_vrs
+    --wandb_enable --wandb_project gwm_molmo

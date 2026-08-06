@@ -1,10 +1,12 @@
-"""Window augmentation per the phase-one plan.
+"""Window augmentation per the plan of record.
 
-- Horizontal flip applies the same spatial transform to full RGB, robot-only
-  RGB, and masks.
-- Color jitter is probability-gated (a deliberate change from the WISER
-  trainer, whose ``jitter_prob`` is dead code) and applies ONLY to full RGB:
-  robot-only color is an invariant of the RAT interface.
+Horizontal flip is DISABLED for good (decision D-13): a flipped full-RGB
+stream cannot be reproduced by the state renderer at inference time, so flip
+breaks train/inference render homology.
+
+Color jitter is probability-gated and applies ONLY to full RGB: robot-only
+color is an invariant of the RAT interface (one sampled transformation shared
+by all six frames).
 """
 
 import random
@@ -15,16 +17,11 @@ import torchvision.transforms.v2 as T
 COLOR_JITTER = T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1)
 
 
-def augment_window(
+def jitter_window(
     sample: dict,
-    flip_prob: float,
     jitter_prob: float,
     rng: random.Random = random,
 ) -> dict:
-    if rng.random() < flip_prob:
-        for key in ("rgb", "robot_only", "mask"):
-            sample[key] = T.functional.hflip(sample[key])
-
     if rng.random() < jitter_prob:
         fn_idx, b, c, s, h = COLOR_JITTER.get_params(
             COLOR_JITTER.brightness,
@@ -32,7 +29,6 @@ def augment_window(
             COLOR_JITTER.saturation,
             COLOR_JITTER.hue,
         )
-        # One sampled transformation shared by all six frames, full RGB only.
         rgb = sample["rgb"]
         adjust = {
             0: lambda x: T.functional.adjust_brightness(x, b),
@@ -43,5 +39,4 @@ def augment_window(
         for i in fn_idx:
             rgb = adjust[int(i)](rgb)
         sample["rgb"] = rgb
-
     return sample

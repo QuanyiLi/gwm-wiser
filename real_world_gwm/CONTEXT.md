@@ -1,6 +1,6 @@
 # Real-World Grounded World Model
 
-This context describes a semantic outcome model pretrained from real or simulated robot video and used to score externally proposed robot trajectories. Its language separates semantic prediction from trajectory generation, physics, control, and safety.
+This context describes a semantic outcome model pretrained from real and simulated robot video and used, inside the TiPToP planning system, to score externally proposed robot trajectories. Its language separates semantic prediction from trajectory generation, physics, control, and safety.
 
 ## Model and representations
 
@@ -29,8 +29,16 @@ The ordered full-scene RGB frames that define the target semantic outcome.
 _Avoid_: Robot rendering, segmentation video
 
 **Robot-only RGB**:
-An RGB image containing only the robot on black; a state-rendered version shows camera-visible robot geometry without scene objects or scene-derived occlusion.
-_Avoid_: Binary mask, arm-only image, raw action
+An RGB image showing only the robot on black, rendered from robot state with no scene object, depth, or observed mask used to clip it.
+_Avoid_: Binary mask, arm-only image, masked observed robot, raw action
+
+**Shared Franka Renderer**:
+The single state renderer, with per-call camera parameters and per-source URDF, that produces robot-only RGB for both training-data generation and inference-time candidate scoring.
+_Avoid_: Per-purpose renderers, mask pipeline, WISER-only renderer
+
+**Operating Grid**:
+The single token grid, anchored to the inference cameras, that every training source's pixel budget resizes onto and that inference scoring uses.
+_Avoid_: Native-resolution grids, per-source token scales, WISER grid
 
 ## Planning system
 
@@ -39,7 +47,7 @@ A proposed robot motion paired with the future robot-only appearances that condi
 _Avoid_: GWM prediction, retrieved outcome
 
 **Trajectory Proposal Module**:
-An external module that generates executable candidate trajectories and the information needed to render their future robot appearances.
+The external module — TiPToP's geometry-only perception and cuTAMP search — that generates executable candidate trajectories and the information needed to render their future robot appearances.
 _Avoid_: GWM, semantic scorer
 
 **Execution Layer**:
@@ -64,58 +72,54 @@ _Avoid_: GWM language conditioning, training caption
 
 ## Data and evaluation
 
+**Selected Training Corpus**:
+The documented real-plus-simulation mixture of MolmoAct2-DROID and the MolmoBot-Data Franka subset.
+_Avoid_: VRS, WISER data, provisional corpus
+
 **Training Clip**:
-An ordered robot-video sequence whose frames pair full-scene RGB with aligned robot-only RGB, independent of whether the source is real or simulated and whether the robot appearance came from a mask or a state renderer.
-_Avoid_: VRS sample, action trajectory, raw dataset record
+An ordered robot-video sequence whose frames pair full-scene RGB with aligned state-rendered robot-only RGB, independent of whether the source is real or simulated.
+_Avoid_: Raw dataset record, action trajectory, mask-derived sample
+
+**Rendered Tree**:
+The single normalized on-disk contract — per-clip robot-only frames plus an alignment-and-provenance record — that preparation writes and training reads, hiding every source format.
+_Avoid_: Per-source runtime adapter, raw source layout, RGB frame dump
+
+**Camera-Recovery Gate**:
+The pre-flight requirement that a source stream without published camera parameters obtains per-episode verified pose and intrinsics before any rendering or training use.
+_Avoid_: Fuzzy metadata join taken on faith, nominal-intrinsics assumption, optional calibration step
 
 **Main Camera**:
-The single RGB observation stream selected from a source for RAT construction and aligned robot rendering.
-_Avoid_: Multi-view input, camera fusion, auxiliary camera
+The single verified camera stream a Training Clip is bound to; one source episode may yield multiple Training Clips, one per admitted exterior stream.
+_Avoid_: Camera fusion within a clip, wrist camera, one-camera-per-source rule
 
 **Temporal Sampling Schedule**:
-The six elapsed-time offsets used for a timestamped RAT window, or an explicitly identified ordinal fallback when the source has no reliable clock.
+The six elapsed-time offsets used for a timestamped RAT window; both selected sources have reliable clocks, so no ordinal fallback exists on the training path.
 _Avoid_: Trajectory progress, assumed FPS, hidden frame stride
 
 **Pixel Budget**:
-The per-source aspect-preserving pixel window applied through the existing Qwen preprocessing to set a source's visual token scale.
+The per-source aspect-preserving resize applied through the existing Qwen preprocessing to land that source on the Operating Grid.
 _Avoid_: Fixed-shape resize, native-resolution mandate, token ceiling
 
-**Whole-Robot Mask**:
-A foreground mask containing every visible part of the robot and excluding the scene background.
-_Avoid_: Arm mask, gripper mask, object mask
+**Pre-flight Gate**:
+The per-camera-stream verification that URDF re-projection pixel-aligns with the released RGB, required before any large-scale rendering or training use of that stream.
+_Avoid_: Optional sanity check, one-off calibration, corpus-level average
 
-**State-Rendered Robot Appearance**:
-Geometry-only robot RGB produced from synchronized qpos, robot geometry, camera calibration, and robot pose, with no scene object, depth, or observed mask used to clip it.
-_Avoid_: Raw action image, predicted future scene, masked observed robot
-
-**VRS Corpus**:
-The RobotSeg video robot segmentation corpus retained as the current ready-to-use candidate for GWM training, not the permanently selected corpus.
-_Avoid_: RobotSeg policy data, action dataset
-
-**Selected Training Corpus**:
-The out-of-domain real-video source, simulation source, or documented mixture chosen after comparing the amount and quality of usable RAT supervision.
-_Avoid_: VRS by default, WISER data
+**Selection A/B**:
+The development comparison of GWM candidate scoring against confidence-only and random selection on droid-sim pick tasks.
+_Avoid_: Leaderboard run, held-out benchmark, WISER evaluation
 
 **Development Evaluation**:
 Evaluation used to inspect or select development checkpoints and therefore not a held-out estimate.
 _Avoid_: Zero-shot test, final benchmark
 
-**WISER-dev**:
-The WISER observations and simulated task instances used for phase-one feedback, including `merged_test` open-loop diagnostics and the original train/test task labels in closed-loop development evaluation.
-_Avoid_: Held-out WISER test
-
-**WISER Training Contamination**:
-Use of WISER observations, masks, latents, logged trajectories, or WISER-generated rollouts in the optimization corpus or gradient computation; reuse of generic model code, Panda assets, or renderer machinery alone is not contamination.
-_Avoid_: Shared URDF, shared architecture, development evaluation
+**Development Milestone**:
+A canonical checkpoint whose candidate selection beats both Selection A/B baselines on droid-sim pick tasks, en route to the MolmoSpaces Pick target.
+_Avoid_: WISER threshold, leaderboard guarantee, hardware milestone
 
 **Canonical Checkpoint**:
-A checkpoint whose learned parameters and metadata can be loaded strictly by the original fixed-length GWM evaluator.
+A checkpoint whose learned parameters and metadata can be loaded strictly by the fixed-length GWM loader that `gwm-server` deployment uses.
 _Avoid_: Training-wrapper checkpoint
 
 **Hardware Checkpoint**:
-A checkpoint selected without WISER-dev feedback for later real-robot deployment experiments.
-_Avoid_: Best WISER checkpoint
-
-**Phase-one Milestone**:
-A pretrained canonical checkpoint meeting the Franka WISER-dev target without using WISER samples for training.
-_Avoid_: Real-world deployment milestone, final generalization result
+A checkpoint selected for later real-robot deployment experiments within the TiPToP framework.
+_Avoid_: Best development checkpoint
