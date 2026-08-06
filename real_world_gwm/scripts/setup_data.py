@@ -86,6 +86,11 @@ def parse_args(argv=None):
     p.add_argument("--purge-shard-cache", action="store_true",
                    help="delete each cached shard tar right after extraction "
                         "(full-scale runs; halves peak disk)")
+    p.add_argument("--prune-extracted", action="store_true",
+                   help="after extracting each molmobot shard, delete files "
+                        "the training path never reads: wrist/gopro/depth "
+                        "mp4s and the .h5.bak duplicates (~50%% disk saved; "
+                        "gopro is re-downloadable if its ablation is revived)")
     p.add_argument("--no-assets", dest="assets", action="store_false",
                    help="skip cloning the URDF asset repos into data/assets "
                         "(they are fetched here by default because cluster "
@@ -134,6 +139,33 @@ def setup_molmoact2_droid(args):
 
 
 # ------------------------------------------------------------------ molmobot
+
+
+def prune_extracted(out_dir: Path) -> int:
+    """Delete extracted files the training path never reads.
+
+    Keeps: h5 state files and the mp4s of the admitted exterior cameras
+    (sources.molmobot.EXTERIOR_CAMERAS). Drops: wrist/gopro mp4s, depth
+    streams, and trajectories_*.h5.bak duplicates. Returns bytes freed.
+    """
+    from real_world_gwm.sources.molmobot import EXTERIOR_CAMERAS
+
+    freed = 0
+    for f in out_dir.rglob("*"):
+        if not f.is_file():
+            continue
+        name = f.name
+        drop = False
+        if name.endswith(".h5.bak"):
+            drop = True
+        elif name.endswith(".mp4"):
+            # episode_<8d>_<camera>_batch_<...>.mp4
+            cam = name.split("_", 2)[2].rsplit("_batch_", 1)[0]
+            drop = cam not in EXTERIOR_CAMERAS
+        if drop:
+            freed += f.stat().st_size
+            f.unlink()
+    return freed
 
 
 def extract_shard(shard_path: Path, out_dir: Path, max_packages=None,
@@ -227,6 +259,10 @@ def setup_molmobot(args):
                               already=already_pkgs)
             print(f"[molmobot] {config}: shard {shard_id:05d} -> "
                   f"{n} scene packages in {out_dir}")
+            if args.prune_extracted:
+                freed = prune_extracted(out_dir)
+                print(f"[molmobot] {config}: pruned {freed / 1e9:.2f} GB "
+                      "(wrist/gopro/depth mp4s, .h5.bak)")
             done.add(str(shard_id))
             done_marker.write_text(json.dumps(sorted(done)))
             if args.purge_shard_cache:
