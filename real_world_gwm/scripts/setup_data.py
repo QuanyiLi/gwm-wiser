@@ -84,6 +84,11 @@ def parse_args(argv=None):
     p.add_argument("--purge-shard-cache", action="store_true",
                    help="delete each cached shard tar right after extraction "
                         "(full-scale runs; halves peak disk)")
+    p.add_argument("--no-assets", dest="assets", action="store_false",
+                   help="skip cloning the URDF asset repos into data/assets "
+                        "(they are fetched here by default because cluster "
+                        "compute nodes often have no internet — rendering "
+                        "must find them already on disk)")
     return p.parse_args(argv)
 
 
@@ -239,6 +244,15 @@ def main(argv=None):
         setup_molmoact2_droid(args)
     if args.source in ("molmobot", "all"):
         setup_molmobot(args)
+    if args.assets:
+        from real_world_gwm.renderer.assets import (
+            ensure_source_repos,
+            provenance,
+        )
+
+        ensure_source_repos(args.data_root / "assets")
+        print(f"[assets] URDF source repos ready: "
+              f"{list(provenance(args.data_root / 'assets'))}")
     print("setup complete")
 
 

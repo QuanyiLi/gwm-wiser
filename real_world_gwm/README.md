@@ -84,7 +84,7 @@ Training core (source-agnostic — consumes only the rendered tree):
 - `train.py` — training entry (frozen Qwen online embedding, MSE + cosine logging, Muon+AuxAdam, bf16, DDP via torchrun), step-granular checkpoint/resume, canonical export, held-out open-loop evaluation.
 - `scripts/visualize_dataloader.py` — contact sheets (RGB / robot-only / overlay) from exact training samples.
 - `tests/evaluate_open_loop.py` — standalone open-loop MSE/cosine for a saved canonical checkpoint against the hash held-out split.
-- `slurm/submit_gwm_molmo.run`, `slurm/submit_render_actions.run` — kuma launchers (training 3×4 H100; rendering as a resumable array).
+- `slurm/submit_setup_data.run`, `slurm/submit_render_actions.run`, `slurm/submit_gwm_molmo.run` — kuma launchers for the full pipeline (CPU-only download → rendering array → 3×4 H100 training); every step runs as a slurm job, nothing on the login node.
 
 Tests: `pytest real_world_gwm/tests/` — unit tests need no GPU and no Qwen weights (the synthetic rendered-tree fixture builds a real mp4 via imageio).
 

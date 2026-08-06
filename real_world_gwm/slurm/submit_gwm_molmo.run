@@ -16,8 +16,8 @@
 # on the 1620-token operating grid, ADR-0019) restores uniform batching, so the
 # per-rank batch matches the WISER-era recipe.
 #
-# Prerequisites on kuma (run once, login node or a cpu job):
-#   python -m real_world_gwm.scripts.setup_data ...      # provision data/
+# Prerequisites on kuma (each its own slurm job; nothing on the login node):
+#   sbatch real_world_gwm/slurm/submit_setup_data.run      # data + URDF assets
 #   sbatch real_world_gwm/slurm/submit_render_actions.run  # rendered tree
 # The audit runs automatically at startup and fail-fasts on off-grid clips.
 

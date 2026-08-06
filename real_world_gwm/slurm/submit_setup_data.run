@@ -1,0 +1,47 @@
+#!/bin/bash -l
+#SBATCH --job-name=gwm_setup_data
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --nodes=1
+#SBATCH --time=24:00:00
+#SBATCH --mem=64G
+
+# CPU-only data provisioning (setup_data.py) as a slurm job — nothing runs on
+# the login node. Downloads the corpora into $DATA_ROOT and clones the URDF
+# asset repos (compute nodes have internet on this cluster). No GPU requested;
+# override the partition at submit time if a CPU partition exists:
+#     sbatch -p <cpu-partition> real_world_gwm/slurm/submit_setup_data.run
+#
+# Selectors go through SETUP_ARGS (default: the ~600 MB smoke subset):
+#     SETUP_ARGS="--source molmobot --configs FrankaPickOmniCamConfig \
+#         --split train --shards 0 10 --purge-shard-cache" \
+#         sbatch real_world_gwm/slurm/submit_setup_data.run
+#
+# Re-submission is safe: downloads resume from the HF cache and extracted
+# shards are skipped via the per-config marker file.
+
+set -eo pipefail
+
+REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/gwm-wiser}
+DATA_ROOT=${DATA_ROOT:-${REPO_ROOT}/real_world_gwm/data}
+CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
+CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
+SETUP_ARGS=${SETUP_ARGS:---test-split}
+
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV}"
+
+[ -d "${REPO_ROOT}/real_world_gwm" ] || {
+    echo "missing required path: ${REPO_ROOT}/real_world_gwm" >&2; exit 1; }
+
+export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+# Shard tars stage through the HF cache; keep it on /work, not $HOME.
+export HF_HOME=${HF_HOME:-/work/vita/lanfeng/.cache/}
+
+srun python -m real_world_gwm.scripts.setup_data \
+    --data-root "$DATA_ROOT" \
+    $SETUP_ARGS
