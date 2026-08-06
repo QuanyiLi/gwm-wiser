@@ -141,6 +141,16 @@ def setup_molmoact2_droid(args):
 # ------------------------------------------------------------------ molmobot
 
 
+def _unused_extracted_file(name: str, exterior_cameras) -> bool:
+    if name.endswith(".h5.bak"):
+        return True
+    if name.endswith(".mp4"):
+        # episode_<8d>_<camera>_batch_<...>.mp4
+        cam = name.split("_", 2)[2].rsplit("_batch_", 1)[0]
+        return cam not in exterior_cameras
+    return False
+
+
 def prune_extracted(out_dir: Path) -> int:
     """Delete extracted files the training path never reads.
 
@@ -154,22 +164,14 @@ def prune_extracted(out_dir: Path) -> int:
     for f in out_dir.rglob("*"):
         if not f.is_file():
             continue
-        name = f.name
-        drop = False
-        if name.endswith(".h5.bak"):
-            drop = True
-        elif name.endswith(".mp4"):
-            # episode_<8d>_<camera>_batch_<...>.mp4
-            cam = name.split("_", 2)[2].rsplit("_batch_", 1)[0]
-            drop = cam not in EXTERIOR_CAMERAS
-        if drop:
+        if _unused_extracted_file(f.name, EXTERIOR_CAMERAS):
             freed += f.stat().st_size
             f.unlink()
     return freed
 
 
 def extract_shard(shard_path: Path, out_dir: Path, max_packages=None,
-                  already: set = frozenset()):
+                  already: set = frozenset(), prune=False):
     """Extract .tar.zst scene packages from one shard tar.
 
     Mirrors the authors' bulk_download.py layout: each package lands in
@@ -180,6 +182,22 @@ def extract_shard(shard_path: Path, out_dir: Path, max_packages=None,
     import zstandard as zstd
 
     n = 0
+    freed = 0
+    if prune:
+        from real_world_gwm.sources.molmobot import EXTERIOR_CAMERAS
+
+        def extraction_filter(member, path):
+            nonlocal freed
+            if (member.isfile()
+                    and _unused_extracted_file(
+                        Path(member.name).name, EXTERIOR_CAMERAS
+                    )):
+                freed += member.size
+                return None
+            return tarfile.data_filter(member, path)
+    else:
+        extraction_filter = "data"
+
     with tarfile.open(shard_path, "r") as shard_tar:
         for member in shard_tar:
             if not member.name.endswith(".tar.zst"):
@@ -200,9 +218,18 @@ def extract_shard(shard_path: Path, out_dir: Path, max_packages=None,
             with dctx.stream_reader(fobj) as reader:
                 buffered = io.BufferedReader(reader, buffer_size=1 << 20)
                 with tarfile.open(fileobj=buffered, mode="r|") as pkg_tar:
-                    pkg_tar.extractall(path=pkg_dir, filter="data")
+                    pkg_tar.extractall(path=pkg_dir, filter=extraction_filter)
             n += 1
-    return n
+    return n, freed
+
+
+def purge_cached_download(download_path: Path) -> None:
+    """Remove both an HF snapshot link and its content-addressed blob."""
+    is_symlink = download_path.is_symlink()
+    blob_path = download_path.resolve() if is_symlink else None
+    download_path.unlink(missing_ok=True)
+    if blob_path is not None:
+        blob_path.unlink(missing_ok=True)
 
 
 def setup_molmobot(args):
@@ -244,6 +271,10 @@ def setup_molmobot(args):
         done_marker = out_dir / ".extracted_shards.json"
         done = set(json.loads(done_marker.read_text())) if done_marker.exists() else set()
         already_pkgs = {p.name for p in out_dir.iterdir() if p.is_dir()}
+        if args.prune_extracted:
+            freed = prune_extracted(out_dir)
+            print(f"[molmobot] {config}: initial prune freed "
+                  f"{freed / 1e9:.2f} GB")
 
         for shard_id in shard_ids:
             fname = f"{config}/{args.split}_shards/{shard_id:05d}.tar"
@@ -254,19 +285,21 @@ def setup_molmobot(args):
             shard_path = Path(
                 hf_hub_download(MOLMOBOT_REPO, repo_type="dataset", filename=fname)
             )
-            n = extract_shard(shard_path, out_dir,
-                              max_packages=args.max_packages,
-                              already=already_pkgs)
+            n, freed = extract_shard(
+                shard_path, out_dir,
+                max_packages=args.max_packages,
+                already=already_pkgs,
+                prune=args.prune_extracted,
+            )
             print(f"[molmobot] {config}: shard {shard_id:05d} -> "
                   f"{n} scene packages in {out_dir}")
             if args.prune_extracted:
-                freed = prune_extracted(out_dir)
                 print(f"[molmobot] {config}: pruned {freed / 1e9:.2f} GB "
                       "(wrist/gopro/depth mp4s, .h5.bak)")
             done.add(str(shard_id))
             done_marker.write_text(json.dumps(sorted(done)))
             if args.purge_shard_cache:
-                shard_path.unlink(missing_ok=True)
+                purge_cached_download(shard_path)
 
 
 # ---------------------------------------------------------------------- main
