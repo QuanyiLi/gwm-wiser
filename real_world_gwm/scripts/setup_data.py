@@ -77,7 +77,9 @@ def parse_args(argv=None):
     p.add_argument("--configs", nargs="+", default=list(FRANKA_CONFIGS))
     p.add_argument("--split", choices=["train", "val"], default="train")
     p.add_argument("--shards", type=int, nargs=2, metavar=("FROM", "TO"),
-                   default=None, help="half-open shard index range")
+                   default=None,
+                   help="half-open shard index range; omitted = ALL shards "
+                        "of each selected config (test-split: shard 0 only)")
     p.add_argument("--max-packages", type=int, default=None,
                    help="stop after extracting this many scene packages "
                         "per config (test/smoke use)")
@@ -174,7 +176,6 @@ def extract_shard(shard_path: Path, out_dir: Path, max_packages=None,
 def setup_molmobot(args):
     from huggingface_hub import hf_hub_download, list_repo_files
 
-    shard_range = args.shards or (0, 1)
     repo_files = None
 
     for config in args.configs:
@@ -195,15 +196,25 @@ def setup_molmobot(args):
         if repo_files is None:
             repo_files = set(list_repo_files(MOLMOBOT_REPO, repo_type="dataset"))
 
+        prefix = f"{config}/{args.split}_shards/"
+        available = sorted(
+            int(Path(f).stem) for f in repo_files
+            if f.startswith(prefix) and f.endswith(".tar")
+        )
+        if args.shards is not None:
+            wanted = set(range(*args.shards))
+            shard_ids = [s for s in available if s in wanted]
+        else:
+            shard_ids = available
+        print(f"[molmobot] {config} {args.split}: "
+              f"{len(shard_ids)}/{len(available)} shards selected")
+
         done_marker = out_dir / ".extracted_shards.json"
         done = set(json.loads(done_marker.read_text())) if done_marker.exists() else set()
         already_pkgs = {p.name for p in out_dir.iterdir() if p.is_dir()}
 
-        for shard_id in range(*shard_range):
+        for shard_id in shard_ids:
             fname = f"{config}/{args.split}_shards/{shard_id:05d}.tar"
-            if fname not in repo_files:
-                print(f"[molmobot] {config}: shard {shard_id:05d} absent, skipping")
-                continue
             if str(shard_id) in done and args.max_packages is None:
                 print(f"[molmobot] {config}: shard {shard_id:05d} already extracted")
                 continue
