@@ -25,7 +25,8 @@ set -eo pipefail
 
 # Cluster defaults (kuma). Every path is overridable from the submitting shell.
 REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/gwm-wiser}
-DATA_ROOT=${DATA_ROOT:-${REPO_ROOT}/real_world_gwm/data}
+GWM_STORAGE_ROOT=${GWM_STORAGE_ROOT:-/work/vita/datasets/gwm-wiser}
+DATA_ROOT=${DATA_ROOT:-${GWM_STORAGE_ROOT}/data}
 OUTPUT_DIR=${OUTPUT_DIR:-/work/vita/lanfeng/vlas/exp_results/gwm_molmo}
 EMBEDDER=${EMBEDDER:-/work/vita/lanfeng/vlas/Qwen3-VL-Embedding-8B}
 CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
@@ -55,7 +56,7 @@ export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=8
 # Never inherit Hugging Face cache locations from the login environment.
-export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
+export HF_HOME=${GWM_HF_HOME:-${GWM_STORAGE_ROOT}/.huggingface}
 export HF_HUB_CACHE=${HF_HOME}/hub
 export HF_XET_CACHE=${HF_HOME}/xet
 mkdir -p "$HF_HUB_CACHE" "$HF_XET_CACHE"
