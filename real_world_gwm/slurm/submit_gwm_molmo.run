@@ -54,7 +54,11 @@ export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
 # silently starves the dataloader workers.
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=8
-export HF_HOME=${HF_HOME:-/work/vita/lanfeng/.cache/}
+# Never inherit Hugging Face cache locations from the login environment.
+export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
+export HF_HUB_CACHE=${HF_HOME}/hub
+export HF_XET_CACHE=${HF_HOME}/xet
+mkdir -p "$HF_HUB_CACHE" "$HF_XET_CACHE"
 
 srun torchrun \
     --nnodes=$SLURM_JOB_NUM_NODES \

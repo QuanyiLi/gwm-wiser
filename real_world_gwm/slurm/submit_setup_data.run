@@ -39,8 +39,12 @@ conda activate "${CONDA_ENV}"
     echo "missing required path: ${REPO_ROOT}/real_world_gwm" >&2; exit 1; }
 
 export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
-# Shard tars stage through the HF cache; keep it on /work, not $HOME.
-export HF_HOME=${HF_HOME:-/work/vita/lanfeng/.cache/}
+# Never inherit Hugging Face cache locations from the login environment.
+# Large Hub blobs and Xet reconstruction data must stay on /work, not $HOME.
+export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
+export HF_HUB_CACHE=${HF_HOME}/hub
+export HF_XET_CACHE=${HF_HOME}/xet
+mkdir -p "$HF_HUB_CACHE" "$HF_XET_CACHE"
 
 srun python -m real_world_gwm.scripts.setup_data \
     --data-root "$DATA_ROOT" \

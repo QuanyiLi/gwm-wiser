@@ -38,7 +38,11 @@ for d in "${REPO_ROOT}/real_world_gwm" "${DATA_ROOT}"; do
 done
 
 export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
-export HF_HOME=${HF_HOME:-/work/vita/lanfeng/.cache/}
+# Never inherit Hugging Face cache locations from the login environment.
+export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
+export HF_HUB_CACHE=${HF_HOME}/hub
+export HF_XET_CACHE=${HF_HOME}/xet
+mkdir -p "$HF_HUB_CACHE" "$HF_XET_CACHE"
 
 srun python -m real_world_gwm.scripts.render_actions \
     --data-root "$DATA_ROOT" \
