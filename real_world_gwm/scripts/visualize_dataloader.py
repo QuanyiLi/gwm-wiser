@@ -37,6 +37,10 @@ def parse_args(argv=None):
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--jitter_prob", type=float, default=0.0,
                    help="set to the training value to preview augmentation")
+    p.add_argument("--time_scale", type=float, nargs=2, default=None,
+                   metavar=("MIN", "MAX"),
+                   help="preview the schedule time-scale augmentation "
+                        "(D-30), e.g. 0.5 1.5")
     return p.parse_args(argv)
 
 
@@ -53,6 +57,7 @@ def main(argv=None):
     ds = RenderedWindowDataset(
         args.data_root, sources=args.sources, split=args.split,
         jitter_prob=args.jitter_prob,
+        scale_range=tuple(args.time_scale) if args.time_scale else None,
     )
     if len(ds) == 0:
         raise SystemExit("no windows — run setup_data / render_actions first")
@@ -63,9 +68,10 @@ def main(argv=None):
     args.out.mkdir(parents=True, exist_ok=True)
 
     for i in picks:
-        ci, indices = ds.index[i]
+        ci, _ = ds.index[i]
         clip = ds.clips[ci]
         sample = ds[i]
+        indices = sample["frame_indices"]   # actual drawn window (D-30)
         rgb = [to_u8(f) for f in sample["target"]]
         robot = [to_u8(f) for f in sample["robot_only"]]
         overlay = [
@@ -85,6 +91,7 @@ def main(argv=None):
             (4, 4),
             f"{clip.source}/{clip.clip_id}  frames={indices}  "
             f"t={['%.2f' % t for t in ts]}  "
+            f"scale={sample.get('time_scale', 1.0):.2f}  "
             f"heldout={is_heldout(clip.episode_uid)}",
             fill=(240, 240, 90),
         )

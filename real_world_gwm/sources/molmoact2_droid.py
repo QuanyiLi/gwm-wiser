@@ -10,12 +10,14 @@ Reads the partial snapshot produced by scripts/setup_data.py:
 Discovery intersects the episodes metadata with what is actually on disk, so
 any subset download yields exactly the episodes that are complete locally.
 
-Camera calibration status (verified 2026-08-06): the per-frame
-``camera_extrinsics.*`` columns exist but are zero-filled across the entire
-release (meta/stats.json: min = max = mean = 0), and no intrinsics are
-published. Episode-streams therefore carry ``calibrated=False`` until the
-DROID camera-recovery gate (plan of record) supplies verified per-episode
-parameters; the render pipeline refuses uncalibrated streams.
+Camera calibration status: the release's own ``camera_extrinsics.*`` columns
+are zero-filled (verified 2026-08-06) and no intrinsics are published.
+Calibration is recovered instead by scripts/prepare_droid_calibration.py
+(KarlP join, decision D-28) into molmoact2_droid_calib/calibration.json;
+``load_calibrations`` flattens it into the per-stream mapping that
+``discover_episodes`` consumes. Streams without a joined calibration stay
+``calibrated=False`` and the render pipeline skips them; every calibrated
+stream is still verified by the render-time edge gate.
 """
 
 import json
@@ -27,6 +29,7 @@ import numpy as np
 
 CAMERAS = ("exterior_1_left", "exterior_2_left")   # wrist is never used
 FPS = 15.0
+VIDEO_WH = (320, 180)   # released AV1 mp4s; SVO intrinsics are rescaled to it
 
 
 @dataclass
@@ -55,6 +58,44 @@ class DroidEpisode:
 
     def timestamps(self) -> list:
         return [i / FPS for i in range(self.length)]
+
+
+def load_calibrations(data_root) -> dict:
+    """Flatten calibration.json into {episode_uid/camera: calibration dict}.
+
+    Each entry carries the 3x3 intrinsics rescaled from the SVO resolution to
+    the released video resolution (320x180), the 4x4 OpenCV cam2world (= the
+    KarlP 6D cam2base; the robot base is the world frame), the KarlP quality
+    metadata, and the episode's keep_ranges. Empty dict if the join has not
+    been run.
+    """
+    from real_world_gwm.renderer.franka_renderer import cv_pose_to_matrix
+
+    path = Path(data_root) / "molmoact2_droid_calib" / "calibration.json"
+    if not path.is_file():
+        return {}
+    doc = json.loads(path.read_text())
+    flat = {}
+    for ep_key, ep in doc["episodes"].items():
+        for camera, c in ep["cameras"].items():
+            fx, cx, fy, cy = c["intrinsics"]
+            src_w, src_h = c["intrinsics_wh"]
+            # Videos are 320x180 from any SVO mode; the 672x376 VGA mode is
+            # 0.5% off the 16:9 aspect, so scale each axis independently.
+            sx, sy = VIDEO_WH[0] / src_w, VIDEO_WH[1] / src_h
+            flat[f"molmoact2_droid/{ep_key}/{camera}"] = {
+                "episode_id": ep["episode_id"],
+                "keep_ranges": ep["keep_ranges"],
+                "serial": c["serial"],
+                "quality_metric": c["quality_metric"],
+                "extrinsic_source": c["extrinsic_source"],
+                "extrinsic_cam2base_6d": c["extrinsic_cam2base_6d"],
+                "intrinsics": np.array([[fx * sx, 0.0, cx * sx],
+                                        [0.0, fy * sy, cy * sy],
+                                        [0.0, 0.0, 1.0]]),
+                "cam2world_cv": cv_pose_to_matrix(c["extrinsic_cam2base_6d"]),
+            }
+    return flat
 
 
 def _episode_meta_tables(root: Path):

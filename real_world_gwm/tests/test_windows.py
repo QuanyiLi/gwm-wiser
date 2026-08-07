@@ -5,6 +5,7 @@ from real_world_gwm.windows import (
     build_rat_pair,
     enumerate_timed_windows,
     nearest_index,
+    resolve_scaled_window,
 )
 
 
@@ -64,3 +65,25 @@ def test_rat_pair_shapes_and_content():
     assert torch.equal(condition[0], rgb[0])
     assert torch.equal(condition[1:], robot[1:])
     assert torch.equal(target, rgb)
+
+
+def test_resolve_scaled_window_matches_enumeration_at_scale_one():
+    t15 = ts(15, 90)
+    canonical = enumerate_timed_windows(t15, stride_s=100.0)[0]
+    assert resolve_scaled_window(t15, canonical[0], 1.0) == canonical
+
+
+def test_resolve_scaled_window_compresses_and_rejects():
+    t15 = ts(15, 60)
+    half = resolve_scaled_window(t15, 0, 0.5)
+    assert half == [0, 4, 9, 13, 18, 22]
+    # 1.5x span (4.43 s) does not fit a 4 s clip
+    assert resolve_scaled_window(t15, 0, 1.5) is None
+    # neither does scale 1 anchored too late
+    assert resolve_scaled_window(t15, 30, 1.0) is None
+
+
+def test_resolve_scaled_window_rejects_collapsed_frames():
+    # 2 fps: at scale 0.5 the 0.275 s offset collapses onto frame 0
+    t2 = ts(2, 40)
+    assert resolve_scaled_window(t2, 0, 0.5, tolerance_s=0.3) is None

@@ -53,16 +53,28 @@ def gl_to_sapien_pose(cam2world_gl: np.ndarray):
     return sapien.Pose(t)
 
 
-def cv_pose_to_sapien_pose(xyzrpy: np.ndarray):
-    """Camera pose (x,y,z,roll,pitch,yaw) in base frame, OpenCV camera axes
-    (x right, y down, z forward) -> SAPIEN pose."""
-    import sapien
-    from scipy.spatial.transform import Rotation  # noqa: F401
+def cv_pose_to_matrix(xyzrpy: np.ndarray) -> np.ndarray:
+    """KarlP 6D extrinsic [x,y,z,rx,ry,rz] -> 4x4 cam2base (OpenCV camera
+    axes: x right, y down, z forward). Euler convention is scipy "xyz",
+    matching the release README verbatim."""
+    from scipy.spatial.transform import Rotation
 
-    raise NotImplementedError(
-        "DROID extrinsics are zero-filled in the release; this entry point "
-        "lands with the DROID camera-recovery gate."
-    )
+    v = np.asarray(xyzrpy, dtype=np.float64)
+    m = np.eye(4)
+    m[:3, :3] = Rotation.from_euler("xyz", v[3:6]).as_matrix()
+    m[:3, 3] = v[:3]
+    return m
+
+
+def cv_pose_to_sapien_pose(xyzrpy: np.ndarray):
+    """Camera pose 6D [x,y,z,rx,ry,rz] in base frame, OpenCV camera axes
+    (x right, y down, z forward) -> SAPIEN pose (x forward, y left, z up).
+
+    The axis mapping (forward = column z, left = -column x, up = -column y)
+    is the same one gl_to_sapien_pose applies, which was closed-loop-verified:
+    camera.get_extrinsic_matrix() reproduces the inverse cam2world exactly.
+    """
+    return gl_to_sapien_pose(cv_pose_to_matrix(xyzrpy))
 
 
 def fit_arm_mount(renderer, arm_qpos, gripper, tcp_local,

@@ -26,6 +26,31 @@ def nearest_index(timestamps, t):
     return j if timestamps[j] - t < t - timestamps[j - 1] else j - 1
 
 
+def resolve_scaled_window(
+    timestamps,
+    anchor_index: int,
+    scale: float,
+    tolerance_s: float = DEFAULT_TOLERANCE_S,
+    schedule=SCHEDULE,
+):
+    """Six frame indices for the schedule scaled by `scale`, anchored at
+    timestamps[anchor_index] — or None when the scaled window does not fit
+    the clip within tolerance or two targets collapse onto one frame
+    (time-scale augmentation, decision D-30).
+    """
+    t0 = timestamps[anchor_index]
+    indices = []
+    for off in schedule:
+        target = t0 + scale * off
+        k = nearest_index(timestamps, target)
+        if abs(timestamps[k] - target) > tolerance_s:
+            return None
+        indices.append(k)
+    if len(set(indices)) < len(indices):
+        return None
+    return indices
+
+
 def enumerate_timed_windows(
     timestamps,
     stride_s: float,

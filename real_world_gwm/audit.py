@@ -19,6 +19,7 @@ from pathlib import Path
 import torch
 
 from real_world_gwm.rendered import (
+    OPERATING_ANCHOR_WH,
     DEFAULT_STRIDE_S,
     HOLDOUT_PERMILLE,
     discover_rendered_clips,
@@ -85,7 +86,10 @@ def build_manifest(
                 max(abs(ts[k] - (t0 + off)) for k, off in zip(w, SCHEDULE)),
             )
         h, w_px = clip.meta["height"], clip.meta["width"]
-        tk = token_counter(h, w_px)
+        # Windows are anchor-resized before preprocessing (decision D-29), so
+        # the token grid is a property of the anchor, not the native size.
+        aw, ah = OPERATING_ANCHOR_WH
+        tk = token_counter(ah, aw)
         entry = {
             "source": clip.source,
             "clip_id": clip.clip_id,
@@ -122,6 +126,7 @@ def build_manifest(
             "tolerance_s": tolerance_s,
         },
         "pixel_budget": pixel_budget,
+        "anchor_wh": list(OPERATING_ANCHOR_WH),
         "token_ceiling": token_ceiling,
         "expected_grid": list(expected_grid) if expected_grid else None,
         "holdout_permille": holdout_permille,

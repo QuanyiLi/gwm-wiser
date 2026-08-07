@@ -58,6 +58,15 @@ def parse_args(argv=None):
                         '\'{"molmobot": 3.0}\'')
     p.add_argument("--tolerance_s", type=float, default=None)
     p.add_argument("--jitter_prob", type=float, default=0.5)
+    p.add_argument("--time_scale", type=float, nargs=2, default=[0.5, 1.5],
+                   metavar=("MIN", "MAX"),
+                   help="schedule time-scale augmentation range, sampled "
+                        "log-uniformly per training sample (D-30); "
+                        "'1 1' disables")
+    p.add_argument("--eval_scale_sweep", type=float, nargs="*",
+                   default=[0.5, 1.5],
+                   help="extra fixed-scale held-out evals (robustness "
+                        "dashboard); pass nothing to disable")
     p.add_argument("--min_pixels", type=int, default=None)
     p.add_argument("--max_pixels", type=int, default=None)
     p.add_argument("--token_ceiling", type=int, default=2048,
@@ -301,7 +310,7 @@ def main(argv=None):
     # ---- dataset ----
     from real_world_gwm.rendered import RenderedWindowDataset
 
-    def build_split(split, jitter):
+    def build_split(split, jitter, scale_range=None, anchor_jitter_s=None):
         return RenderedWindowDataset(
             args.data_root,
             sources=args.sources,
@@ -309,6 +318,8 @@ def main(argv=None):
             stride_s=args.stride_s,
             tolerance_s=args.tolerance_s,
             jitter_prob=jitter,
+            scale_range=scale_range,
+            anchor_jitter_s=anchor_jitter_s,
             preprocessor=preprocessor,
             min_pixels=min_pixels,
             max_pixels=max_pixels,
@@ -317,11 +328,16 @@ def main(argv=None):
             limit_windows=args.limit_windows,
         )
 
-    base_dataset = build_split("train", args.jitter_prob)
+    train_scale = tuple(args.time_scale)
+    base_dataset = build_split(
+        "train", args.jitter_prob,
+        scale_range=None if train_scale == (1.0, 1.0) else train_scale,
+    )
     if is_main:
         logging.info(
-            f"dataset: {len(base_dataset)} train windows from "
-            f"{len(base_dataset.clips)} clips"
+            f"dataset: {len(base_dataset)} train anchors from "
+            f"{len(base_dataset.clips)} clips (time-scale "
+            f"{'off' if train_scale == (1.0, 1.0) else train_scale})"
         )
 
     dataset = TokenCeilingDataset(
@@ -390,25 +406,40 @@ def main(argv=None):
         if is_main:
             logging.info(f"resumed from {args.resume} at step {start_step}")
 
-    # ---- held-out open-loop loader (episode-level split, jitter off) ----
-    dev_loader = None
-    if args.eval_every:
-        heldout = TokenCeilingDataset(
-            build_split("heldout", 0.0),
+    # ---- held-out open-loop loaders (episode-level split, jitter off) ----
+    # Canonical scale 1 is THE comparable metric; the fixed-scale sweep
+    # loaders are the time-scale robustness dashboard (D-30).
+    def heldout_loader(scale_range=None, anchor_jitter_s=None):
+        ds = TokenCeilingDataset(
+            build_split("heldout", 0.0, scale_range=scale_range,
+                        anchor_jitter_s=anchor_jitter_s),
             token_ceiling=args.token_ceiling,
             pixel_budget={"min_pixels": min_pixels, "max_pixels": max_pixels},
         )
-        if len(heldout) == 0:
+        if len(ds) == 0:
+            return None
+        return torch.utils.data.DataLoader(
+            ds, batch_size=args.batch_size,
+            num_workers=args.num_workers, collate_fn=qwen_collate,
+            shuffle=False, pin_memory=True,
+        )
+
+    dev_loader, sweep_loaders = None, {}
+    if args.eval_every:
+        dev_loader = heldout_loader()
+        if dev_loader is None:
             if is_main:
                 logging.warning("held-out split is empty; evaluation disabled")
         else:
             if is_main:
-                logging.info(f"held-out: {len(heldout)} windows")
-            dev_loader = torch.utils.data.DataLoader(
-                heldout, batch_size=args.batch_size,
-                num_workers=args.num_workers, collate_fn=qwen_collate,
-                shuffle=False, pin_memory=True,
-            )
+                logging.info(
+                    f"held-out: {len(dev_loader.dataset)} windows")
+            for s in args.eval_scale_sweep or []:
+                if s == 1.0:
+                    continue
+                loader = heldout_loader(scale_range=(s, s), anchor_jitter_s={})
+                if loader is not None:
+                    sweep_loaders[s] = loader
 
     if is_main:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -544,14 +575,27 @@ def main(argv=None):
                 dev_mse, dev_cos = evaluate_heldout(
                     model, embedder, dev_loader, args.eval_batches
                 )
+                sweep = {
+                    s: evaluate_heldout(model, embedder, loader,
+                                        args.eval_batches)
+                    for s, loader in sweep_loaders.items()
+                }
                 if is_main:
+                    extra = "".join(
+                        f" | s={s:g} mse={m:.5f} cos={c:.4f}"
+                        for s, (m, c) in sorted(sweep.items())
+                    )
                     logging.info(
                         f"[held-out open-loop] step {step} "
-                        f"mse={dev_mse:.5f} cos={dev_cos:.4f}"
+                        f"mse={dev_mse:.5f} cos={dev_cos:.4f}{extra}"
                     )
                     if wandb_logger:
                         wandb_logger.log_dict(
-                            {"mse": dev_mse, "cos_sim": dev_cos},
+                            {"mse": dev_mse, "cos_sim": dev_cos,
+                             **{f"mse_s{s:g}": m
+                                for s, (m, c) in sweep.items()},
+                             **{f"cos_sim_s{s:g}": c
+                                for s, (m, c) in sweep.items()}},
                             step,
                             mode="eval",
                         )

@@ -16,8 +16,12 @@ never touches source-specific formats.
 
 MolmoBot: the arm mount is recovered per episode from tcp_pose by least
 squares and doubles as a kinematics gate (residual <= 2 mm or the stream is
-rejected). MolmoAct2-DROID: streams stay uncalibrated until the DROID
-camera-recovery gate lands; they are enumerated and skipped with a count.
+rejected). MolmoAct2-DROID (decision D-28): calibration comes from the KarlP
+join (scripts/prepare_droid_calibration.py, run first); every stream must
+pass the edge-alignment gate (renderer/edge_gate.py), and keep_ranges idle
+filtering is materialized here — each non-idle range long enough to hold a
+window becomes its own clip (<ep>__<cam>__seg<k>), idle frames are never
+rendered.
 
 Sharding for slurm arrays: --shard-index/--num-shards split the deterministic
 episode-stream list; shards are disjoint so array tasks never collide.
@@ -57,7 +61,31 @@ def parse_args(argv=None):
                    help="stop after N streams (smoke use)")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--mount-max-residual-m", type=float, default=0.002)
+    p.add_argument("--edge-min-score", type=float, default=None,
+                   help="DROID edge-gate lift floor "
+                        "(default: edge_gate.DEFAULT_MIN_SCORE)")
+    p.add_argument("--edge-min-margin", type=float, default=None,
+                   help="DROID edge-gate true-minus-perturbed floor "
+                        "(default: edge_gate.DEFAULT_MIN_MARGIN)")
     return p.parse_args(argv)
+
+
+# The shortest renderable keep-range: one full RAT window (2.95 s) plus the
+# schedule tolerance, at DROID's 15 fps.
+MIN_SEGMENT_FRAMES = 45
+
+
+def segment_keep_ranges(keep_ranges, n_frames: int,
+                        min_len: int = MIN_SEGMENT_FRAMES) -> list:
+    """Non-idle [start, end) ranges clipped to the episode, long enough for
+    at least one window. keep_ranges=None (episode missing from the KarlP
+    filter file) keeps the whole episode — Round-2 decision: lenient."""
+    if keep_ranges is None:
+        ranges = [(0, n_frames)]
+    else:
+        ranges = [(max(0, int(s)), min(n_frames, int(e)))
+                  for s, e in keep_ranges]
+    return [(s, e) for s, e in ranges if e - s >= min_len]
 
 
 def _clip_done(clip_dir: Path, n_frames: int) -> bool:
@@ -174,26 +202,118 @@ def render_molmobot(args, provenance: dict) -> dict:
     return stats
 
 
-def render_molmoact2_droid(args) -> dict:
+def render_molmoact2_droid(args, provenance: dict) -> dict:
+    from real_world_gwm.lossless_video import read_video_frames
+    from real_world_gwm.renderer import edge_gate
+    from real_world_gwm.renderer.assets import build_welded_urdf
+    from real_world_gwm.renderer.franka_renderer import FrankaRobotRenderer
     from real_world_gwm.sources import molmoact2_droid
 
+    min_score = (edge_gate.DEFAULT_MIN_SCORE if args.edge_min_score is None
+                 else args.edge_min_score)
+    min_margin = (edge_gate.DEFAULT_MIN_MARGIN if args.edge_min_margin is None
+                  else args.edge_min_margin)
+
     cameras = tuple(args.cameras) if args.cameras else molmoact2_droid.CAMERAS
+    calibrations = molmoact2_droid.load_calibrations(args.data_root)
     episodes, excluded = molmoact2_droid.discover_episodes(
-        args.data_root, cameras=cameras
+        args.data_root / "molmoact2_droid", cameras=cameras,
+        calibrations=calibrations,
     )
-    calibrated = [e for e in episodes if e.calibrated]
-    logging.warning(
-        "molmoact2_droid: %d episode-streams on disk, %d calibrated — "
-        "rendering requires the DROID camera-recovery gate (plan of record); "
-        "uncalibrated streams are skipped",
-        len(episodes), len(calibrated),
-    )
-    if calibrated:
-        raise NotImplementedError(
-            "calibrated DROID rendering lands with the camera-recovery gate"
-        )
-    return {"discovered": len(episodes), "calibrated": 0, "rendered": 0,
-            "excluded_discovery": len(excluded)}
+    streams = sorted((e for e in episodes if e.calibrated),
+                     key=lambda e: e.clip_id)
+    shard = streams[args.shard_index::args.num_shards]
+    if args.limit is not None:
+        shard = shard[:args.limit]
+    logging.info("molmoact2_droid: %d streams on disk, %d calibrated, "
+                 "%d in shard", len(episodes), len(streams), len(shard))
+    if not calibrations and episodes:
+        logging.warning("no calibration.json — run "
+                        "scripts/prepare_droid_calibration.py first")
+
+    urdf = build_welded_urdf("panda", args.data_root / "assets")
+    renderer = FrankaRobotRenderer(urdf, arm="panda")
+    w, h = molmoact2_droid.VIDEO_WH
+    out_root = args.data_root / "rendered" / "molmoact2_droid"
+
+    stats = {"rendered_clips": 0, "skipped_done": 0, "rejected_edge_gate": 0,
+             "no_segments": 0, "streams_done": 0, "discovered": len(episodes),
+             "calibrated": len(streams), "excluded_discovery": len(excluded)}
+    for ep in shard:
+        calib = ep.calibration
+        segments = segment_keep_ranges(calib["keep_ranges"], ep.length)
+        if not segments:
+            stats["no_segments"] += 1
+            continue
+        seg_dirs = [out_root / f"{ep.clip_id}__seg{k}"
+                    for k in range(len(segments))]
+        if not args.overwrite and all(
+                _clip_done(d, e - s)
+                for d, (s, e) in zip(seg_dirs, segments)):
+            stats["skipped_done"] += 1
+            continue
+
+        st = molmoact2_droid.load_states(ep)
+        intr = calib["intrinsics"]
+        c2w = calib["cam2world_cv"]
+
+        def render_probe(cam2world, probes, st=st, intr=intr):
+            return renderer.render(
+                st["arm_qpos"][probes], st["gripper_pos"][probes],
+                intr, cam2world, w, h,
+            )
+
+        probes = edge_gate.probe_indices(
+            [i for s, e in segments for i in range(s, e)])
+        observed = read_video_frames(
+            ep.video_path, [ep.video_frame_start + p for p in probes])
+        scores = edge_gate.gate_scores(
+            lambda cw: render_probe(cw, probes), observed, c2w)
+        if not edge_gate.passes(scores, min_score, min_margin):
+            logging.warning("%s: edge gate rejected (score %.3f, "
+                            "perturbed %.3f)", ep.clip_id,
+                            scores["score"], scores["score_perturbed"])
+            stats["rejected_edge_gate"] += 1
+            continue
+
+        for k, ((s, e), clip_dir) in enumerate(zip(segments, seg_dirs)):
+            if not args.overwrite and _clip_done(clip_dir, e - s):
+                continue
+            frames = renderer.render(
+                st["arm_qpos"][s:e], st["gripper_pos"][s:e], intr, c2w, w, h,
+            )
+            meta = {
+                "schema_version": SCHEMA_VERSION,
+                "source": "molmoact2_droid",
+                "clip_id": f"{ep.clip_id}__seg{k}",
+                "episode_uid": ep.episode_uid,
+                "camera": ep.camera,
+                "n_frames": e - s,
+                "width": w,
+                "height": h,
+                "timestamps": [i / molmoact2_droid.FPS for i in range(s, e)],
+                "rgb_video": str(ep.video_path.relative_to(args.data_root)),
+                "rgb_frame_start": ep.video_frame_start + s,
+                "keep_range": [s, e],
+                "intrinsics": np.asarray(intr).tolist(),
+                "extrinsic_cam2base_6d": calib["extrinsic_cam2base_6d"],
+                "camera_serial": calib["serial"],
+                "calibration_quality": calib["quality_metric"],
+                "extrinsic_source": calib["extrinsic_source"],
+                "droid_episode_id": calib["episode_id"],
+                "edge_gate": {**scores, "probe_frames": probes},
+                "task_type": "droid",
+                "task_description": st["language_instruction"],
+                "renderer_provenance": {"arm": "panda", "urdf": str(urdf),
+                                        **provenance},
+            }
+            _write_clip(clip_dir, frames, meta, fps=molmoact2_droid.FPS)
+            stats["rendered_clips"] += 1
+        stats["streams_done"] += 1
+        logging.info("rendered %s: %d segments, edge score %.3f (vs %.3f)",
+                     ep.clip_id, len(segments), scores["score"],
+                     scores["score_perturbed"])
+    return stats
 
 
 def main(argv=None):
@@ -215,7 +335,7 @@ def main(argv=None):
         stats = render_molmobot(args, prov)
         logging.info("molmobot: %s", stats)
     if args.source in ("molmoact2_droid", "all"):
-        stats = render_molmoact2_droid(args)
+        stats = render_molmoact2_droid(args, prov)
         logging.info("molmoact2_droid: %s", stats)
 
 

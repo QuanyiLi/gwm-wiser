@@ -88,6 +88,14 @@ _Avoid_: Per-source runtime adapter, raw source layout, RGB frame dump
 The pre-flight requirement that a source stream without published camera parameters obtains per-episode verified pose and intrinsics before any rendering or training use.
 _Avoid_: Fuzzy metadata join taken on faith, nominal-intrinsics assumption, optional calibration step
 
+**Calibration Join**:
+The exact match from a converted episode back to its original release record — by verbatim language-annotation triple for DROID — that recovers per-episode camera pose, intrinsics, and idle ranges; ambiguous keys are dropped, never guessed.
+_Avoid_: Fuzzy state matching, nominal shared camera, manual episode pairing
+
+**Edge Gate**:
+The render-time admission check that scores a candidate calibration by how much better its rendered robot silhouette aligns with observed oriented edges than chance and than a deliberately perturbed camera; failing streams never enter the Rendered Tree.
+_Avoid_: Trusting joined calibration, manual spot-check as the criterion, segmentation-model dependency
+
 **Main Camera**:
 The single verified camera stream a Training Clip is bound to; one source episode may yield multiple Training Clips, one per admitted exterior stream.
 _Avoid_: Camera fusion within a clip, wrist camera, one-camera-per-source rule
@@ -95,6 +103,10 @@ _Avoid_: Camera fusion within a clip, wrist camera, one-camera-per-source rule
 **Temporal Sampling Schedule**:
 The six elapsed-time offsets used for a timestamped RAT window; both selected sources have reliable clocks, so no ordinal fallback exists on the training path.
 _Avoid_: Trajectory progress, assumed FPS, hidden frame stride
+
+**Time-Scale Augmentation**:
+The per-sample rescaling of the Temporal Sampling Schedule at a jittered anchor that varies the spacing between a window's frames, teaching robustness to the planner's future-point interval; evaluation stays at canonical scale.
+_Avoid_: Frame-step subsampling tied to source FPS, randomized evaluation schedule, time-embedding conditioning
 
 **Pixel Budget**:
 The per-source aspect-preserving resize applied through the existing Qwen preprocessing to land that source on the Operating Grid.

@@ -43,6 +43,21 @@ from pathlib import Path
 DROID_REPO = "allenai/MolmoAct2-DROID-Dataset"
 MOLMOBOT_REPO = "allenai/MolmoBot-Data"
 
+# The DROID authors' post-hoc calibration + annotation release (a MODEL repo,
+# not a dataset repo). Camera recovery for molmoact2_droid joins against it
+# (plan: camera-recovery section). cam2cam_extrinsics.json (180 MB) is not
+# needed and skipped.
+KARLP_REPO = "KarlP/droid"
+KARLP_FILES = (
+    "cam2base_extrinsics.json",
+    "cam2base_extrinsic_superset.json",
+    "intrinsics.json",
+    "camera_serials.json",
+    "droid_language_annotations.json",
+    "keep_ranges_1_0_1.json",
+    "episode_id_to_path.json",
+)
+
 FRANKA_CONFIGS = (
     "FrankaPickOmniCamConfig",
     "FrankaPickAndPlaceOmniCamConfig",
@@ -136,6 +151,21 @@ def setup_molmoact2_droid(args):
         allow_patterns=patterns,
     )
     print(f"[molmoact2_droid] done: {local_dir}")
+
+
+def setup_karlp_calibration(args):
+    """~216 MB of JSON; required for DROID camera recovery (idempotent)."""
+    from huggingface_hub import snapshot_download
+
+    local_dir = args.data_root / "karlp_droid"
+    print(f"[karlp_droid] downloading {len(KARLP_FILES)} files -> {local_dir}")
+    snapshot_download(
+        KARLP_REPO,
+        repo_type="model",
+        local_dir=local_dir,
+        allow_patterns=list(KARLP_FILES),
+    )
+    print(f"[karlp_droid] done: {local_dir}")
 
 
 # ------------------------------------------------------------------ molmobot
@@ -322,6 +352,7 @@ def main(argv=None):
     args.data_root.mkdir(parents=True, exist_ok=True)
     if args.source in ("molmoact2_droid", "all"):
         setup_molmoact2_droid(args)
+        setup_karlp_calibration(args)
     if args.source in ("molmobot", "all"):
         setup_molmobot(args)
     if args.assets:

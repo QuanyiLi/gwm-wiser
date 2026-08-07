@@ -43,12 +43,16 @@ def test_split_partitions_exactly(synthetic_rendered_root):
 
 
 def test_window_dataset_yields_rat_samples(synthetic_rendered_root):
+    from real_world_gwm.rendered import OPERATING_ANCHOR_WH
+
+    aw, ah = OPERATING_ANCHOR_WH
     ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
                                jitter_prob=0.0)
     assert len(ds) >= 1
     sample = ds[0]
-    assert sample["rgb"].shape == (6, 3, 64, 96)
-    assert sample["robot_only"].shape == (6, 3, 64, 96)
+    # every sample is anchor-resized regardless of native clip size (D-29)
+    assert sample["rgb"].shape == (6, 3, ah, aw)
+    assert sample["robot_only"].shape == (6, 3, ah, aw)
     assert torch.equal(sample["condition"][0], sample["rgb"][0])
     assert torch.equal(sample["condition"][1:], sample["robot_only"][1:])
     assert torch.equal(sample["target"], sample["rgb"])
@@ -56,12 +60,48 @@ def test_window_dataset_yields_rat_samples(synthetic_rendered_root):
 
 
 def test_robot_only_decodes_bit_exact_from_clip_video(synthetic_rendered_root):
-    """Dataset tensors must equal the exact frames the renderer wrote."""
+    """The decode path must yield the exact frames the renderer wrote
+    (anchor resizing happens later, in __getitem__)."""
     from real_world_gwm.lossless_video import read_video_frames
 
     ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
                                jitter_prob=0.0)
     ci, indices = ds.index[0]
     raw = read_video_frames(ds.clips[ci].robot_only_video, indices)
-    got = (ds[0]["robot_only"].permute(0, 2, 3, 1) * 255).round().byte().numpy()
+    win = ds.load_window(ds.clips[ci], indices)
+    got = (win["robot_only"].permute(0, 2, 3, 1) * 255).round().byte().numpy()
     assert (raw == got).all()
+
+
+def test_fixed_scale_dataset_is_deterministic(synthetic_rendered_root):
+    """(s, s) with no anchor jitter re-resolves the index once (D-30)."""
+    ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                               jitter_prob=0.0, scale_range=(0.5, 0.5),
+                               anchor_jitter_s={})
+    assert len(ds) == 1
+    _, indices = ds.index[0]
+    assert indices == [0, 4, 9, 13, 18, 22]
+    assert ds[0]["time_scale"] == 0.5
+    # 1.5x span does not fit the 60-frame clip: everything is dropped
+    ds_big = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                                   jitter_prob=0.0, scale_range=(1.5, 1.5),
+                                   anchor_jitter_s={})
+    assert len(ds_big) == 0
+
+
+def test_random_scale_draws_vary_and_fall_back(synthetic_rendered_root):
+    import random
+
+    ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                               jitter_prob=0.0, scale_range=(0.5, 1.0))
+    assert len(ds) == 1   # anchor-level index is unchanged by augmentation
+    canonical = ds.index[0][1]
+    random.seed(3)
+    seen = set()
+    for _ in range(30):
+        sample = ds[0]
+        idx = tuple(sample["frame_indices"])
+        assert len(idx) == 6 and list(idx) == sorted(set(idx))
+        assert 0.5 <= sample["time_scale"] <= 1.0 or idx == tuple(canonical)
+        seen.add(idx)
+    assert len(seen) > 1   # augmentation actually varies the window

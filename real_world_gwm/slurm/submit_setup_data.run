@@ -21,6 +21,12 @@
 #         --split train --shards 0 10 --purge-shard-cache" \
 #         sbatch real_world_gwm/slurm/submit_setup_data.run
 #
+# DROID run-1 (both exterior streams, ALL data files ~190 GB, plus the
+# ~220 MB KarlP calibration release; patterns matching nothing are ignored,
+# so an oversized range is safe):
+#     SETUP_ARGS="--source molmoact2_droid --data-files 0 200" \
+#         sbatch real_world_gwm/slurm/submit_setup_data.run
+#
 # Re-submission is safe: downloads resume from the HF cache and extracted
 # shards are skipped via the per-config marker file.
 

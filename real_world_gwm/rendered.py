@@ -22,18 +22,44 @@ stable side.
 
 import hashlib
 import json
+import math
+import random
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from real_world_gwm.windows import build_rat_pair, enumerate_timed_windows
+from real_world_gwm.windows import (
+    build_rat_pair,
+    enumerate_timed_windows,
+    nearest_index,
+    resolve_scaled_window,
+)
 
 # Per-source anchor stride in seconds (decision D-6): dense for long real
 # episodes, one-to-two windows for short sim episodes.
 DEFAULT_STRIDE_S = {"molmoact2_droid": 0.5, "molmobot": 3.0}
 HOLDOUT_PERMILLE = 20   # 2% of episodes
+
+# Operating-grid anchor resolution (decision D-29): every window is brought
+# to this resolution before Qwen preprocessing, because the pixel-budget
+# mechanism alone cannot land every native resolution on the exact (3,18,30)
+# grid (320x180's reachable grids jump straight from 16x28 to 20x32).
+# MolmoBot clips are natively 624x352 (no-op); DROID's 320x180 shares the
+# aspect ratio to 0.3%, so the anchor resize adds no meaningful distortion.
+OPERATING_ANCHOR_WH = (624, 352)
+
+
+def anchor_resize(frames: torch.Tensor) -> torch.Tensor:
+    """(T, 3, H, W) float -> the operating anchor resolution (bilinear)."""
+    w, h = OPERATING_ANCHOR_WH
+    if frames.shape[-2:] == (h, w):
+        return frames
+    return torch.nn.functional.interpolate(
+        frames, size=(h, w), mode="bilinear", align_corners=False,
+        antialias=True,
+    )
 
 
 @dataclass
@@ -102,7 +128,19 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
     the preprocessed ``qwen_current_inputs`` / ``qwen_trajectory_gt``.
     Horizontal flip is banned (render homology, decision D-13); color jitter
     applies to full RGB only.
+
+    Time-scale augmentation (decision D-30): the index stays anchor-level —
+    one entry per canonical (scale = 1) window, so epoch size, source mixture,
+    and the audit are untouched — and with ``scale_range`` set, __getitem__
+    re-resolves the schedule at a per-sample scale drawn log-uniformly, with
+    a small anchor jitter. Draws that do not fit the clip retry, then fall
+    back to the stored canonical window. A degenerate range (s, s) with zero
+    jitter instead re-resolves the index ONCE at that fixed scale, dropping
+    what does not fit — the deterministic, fallback-free form the fixed-scale
+    held-out sweeps use.
     """
+
+    RESAMPLE_TRIES = 8
 
     def __init__(
         self,
@@ -112,6 +150,8 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         stride_s: dict = None,
         tolerance_s: float = None,
         jitter_prob: float = 0.5,
+        scale_range: tuple = None,
+        anchor_jitter_s: dict = None,
         preprocessor=None,
         min_pixels: int = None,
         max_pixels: int = None,
@@ -127,19 +167,42 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
         stride_s = {**DEFAULT_STRIDE_S, **(stride_s or {})}
-        tolerance_s = DEFAULT_TOLERANCE_S if tolerance_s is None else tolerance_s
+        self.tolerance_s = (DEFAULT_TOLERANCE_S if tolerance_s is None
+                            else tolerance_s)
+        tolerance_s = self.tolerance_s
+        self.scale_range = tuple(scale_range) if scale_range else None
+        # Anchor jitter defaults to half the per-source stride; {} disables.
+        self.anchor_jitter_s = ({s: v / 2 for s, v in stride_s.items()}
+                                if anchor_jitter_s is None else anchor_jitter_s)
 
         clips = discover_rendered_clips(self.data_root, sources)
         self.clips = split_clips(clips, split, holdout_permille)
         if limit_clips is not None:
             self.clips = self.clips[:limit_clips]
 
-        self.index = []   # (clip_idx, [six frame indices])
+        self.index = []   # (clip_idx, [six frame indices at scale 1])
         for ci, clip in enumerate(self.clips):
             windows = enumerate_timed_windows(
                 clip.timestamps, stride_s[clip.source], tolerance_s
             )
             self.index.extend((ci, w) for w in windows)
+
+        self._fixed_scale = 1.0
+        fixed = (self.scale_range is not None
+                 and self.scale_range[0] == self.scale_range[1]
+                 and not any((self.anchor_jitter_s or {}).values()))
+        if fixed:
+            s = self.scale_range[0]
+            self._fixed_scale = s
+            self.scale_range = None   # materialized below, no per-item draw
+            if s != 1.0:
+                reresolved = []
+                for ci, w in self.index:
+                    got = resolve_scaled_window(
+                        self.clips[ci].timestamps, w[0], s, tolerance_s)
+                    if got is not None:
+                        reresolved.append((ci, got))
+                self.index = reresolved
         if limit_windows is not None:
             self.index = self.index[:limit_windows]
 
@@ -175,11 +238,35 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
             "episode_uid": clip.episode_uid,
         }
 
+    def _sample_indices(self, ci, canonical) -> tuple:
+        """(indices, scale) for one draw: scaled schedule at a jittered
+        anchor, falling back to the stored canonical window."""
+        if self.scale_range is None:
+            return canonical, self._fixed_scale
+        clip = self.clips[ci]
+        ts = clip.timestamps
+        lo, hi = self.scale_range
+        jitter = (self.anchor_jitter_s or {}).get(clip.source, 0.0)
+        for _ in range(self.RESAMPLE_TRIES):
+            scale = math.exp(random.uniform(math.log(lo), math.log(hi)))
+            anchor = canonical[0]
+            if jitter:
+                anchor = nearest_index(
+                    ts, ts[canonical[0]] + random.uniform(-jitter, jitter))
+            got = resolve_scaled_window(ts, anchor, scale, self.tolerance_s)
+            if got is not None:
+                return got, scale
+        return canonical, 1.0
+
     def __getitem__(self, i):
         from real_world_gwm.augment import jitter_window
 
-        ci, indices = self.index[i]
+        ci, canonical = self.index[i]
+        indices, scale = self._sample_indices(ci, canonical)
         sample = self.load_window(self.clips[ci], indices)
+        sample["time_scale"] = scale
+        sample["rgb"] = anchor_resize(sample["rgb"])
+        sample["robot_only"] = anchor_resize(sample["robot_only"])
         sample = jitter_window(sample, self.jitter_prob)
         condition, target = build_rat_pair(sample["rgb"], sample["robot_only"])
         sample["condition"] = condition

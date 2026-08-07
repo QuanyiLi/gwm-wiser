@@ -50,4 +50,5 @@ __pycache__/
 third_party
 /wiser_dataset/
 /real_world_gwm/viz/
+/real_world_gwm/droid_viz/
 /real_world_gwm/data/

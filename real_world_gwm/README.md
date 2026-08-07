@@ -47,15 +47,22 @@ python -m real_world_gwm.scripts.setup_data --source molmobot \
     --configs FrankaPickOmniCamConfig --split train --shards 0 10
 ```
 
-Then render the robot-only streams and inspect the data supply:
+Then recover DROID calibration, render the robot-only streams, and inspect
+the data supply:
 
 ```bash
+# DROID camera recovery (KarlP join, CPU-only; re-run after new downloads)
+python -m real_world_gwm.scripts.prepare_droid_calibration
+
 # Offline URDF rendering -> data/rendered/ (every frame, no subsampling;
-# URDF source repos are cloned into data/assets/ on first run)
-python -m real_world_gwm.scripts.render_actions --source molmobot
+# URDF source repos are cloned into data/assets/ on first run). DROID
+# streams pass the edge gate and are segmented by keep_ranges.
+python -m real_world_gwm.scripts.render_actions --source all
 
 # Contact sheets from EXACT training samples (RGB / robot-only / overlay)
 python -m real_world_gwm.scripts.visualize_dataloader --num 12 --out viz/
+python -m real_world_gwm.scripts.visualize_dataloader \
+    --sources molmoact2_droid --num 12 --out droid_viz/
 ```
 
 Verify the setup with `pytest real_world_gwm/tests/` (no GPU needed).
@@ -66,18 +73,20 @@ Modules (all under `real_world_gwm/`, importable from the repo root). VRS/WISER 
 
 Data pipeline (per-source logic lives here and only here — decision D-18):
 
-- `scripts/setup_data.py` — provisions both corpora into `data/` (`--test-split` = fixed smoke subset; generic selectors for full scale; MolmoBot shards extracted through the HF cache in the authors' `bulk_download.py` layout).
-- `sources/molmoact2_droid.py` — LeRobot v3.0 reader (episodes metadata ∩ files on disk, concatenated-video frame offsets, per-frame states; **streams stay `calibrated=False` until the DROID camera-recovery gate passes** — the release's extrinsics columns are zero-filled).
+- `scripts/setup_data.py` — provisions both corpora into `data/` (`--test-split` = fixed smoke subset; generic selectors for full scale; MolmoBot shards extracted through the HF cache in the authors' `bulk_download.py` layout; the DROID source also pulls the ~220 MB KarlP calibration release into `data/karlp_droid/`).
+- `scripts/prepare_droid_calibration.py` — the DROID calibration join (D-28): matches episodes to KarlP/droid by their verbatim language-annotation triple (96% joined, 0 mismatches on the smoke subset) and writes `data/molmoact2_droid_calib/calibration.json` with per-camera cam2base pose, per-serial ZED intrinsics, and keep_ranges. CPU-only; re-run after any new download.
+- `sources/molmoact2_droid.py` — LeRobot v3.0 reader (episodes metadata ∩ files on disk, concatenated-video frame offsets, per-frame states; `load_calibrations` flattens the join output — the release's own extrinsics columns are zero-filled, so streams without a joined calibration stay `calibrated=False` and are never rendered).
 - `sources/molmobot.py` — scene-package reader (h5 JSON states, per-camera FOV from `frozen_config` → mp4 intrinsics, `cam2world_gl`, base pose, TCP pose).
 - `renderer/assets.py` — clones the URDF source repos (ManiSkill Panda, FR3Env FR3, ManiSkill-Robotiq_2F) and welds per-rig arm+gripper URDFs (no public combined URDF exists).
-- `renderer/franka_renderer.py` — the shared `FrankaRobotRenderer` (SAPIEN offscreen, per-call camera K/pose/resolution, 2F-85 mimic expansion from driver values; decision D-1 — consumed read-only by tiptop's `gwm-server`) plus `fit_arm_mount` (per-episode mount recovery ≤2 mm kinematics gate).
-- `scripts/render_actions.py` — offline rendering of EVERY frame into the normalized rendered tree `data/rendered/<source>/<clip_id>/` as one FFV1 lossless video per clip, bit-exact-verified at write time (D-27; resumable; `--shard-index/--num-shards` for slurm arrays).
+- `renderer/franka_renderer.py` — the shared `FrankaRobotRenderer` (SAPIEN offscreen, per-call camera K/pose/resolution, 2F-85 mimic expansion from driver values; decision D-1 — consumed read-only by tiptop's `gwm-server`) plus `fit_arm_mount` (per-episode mount recovery ≤2 mm kinematics gate) and the closed-loop-verified OpenCV↔SAPIEN camera-pose conversions.
+- `renderer/edge_gate.py` — the DROID admission gate (D-28): oriented-edge alignment lift of the rendered silhouette over the observed frame, chance-normalized (contrast-invariant) and contrasted against a deliberately perturbed camera; thresholds calibrated on the smoke subset against visually labeled overlays.
+- `scripts/render_actions.py` — offline rendering of EVERY frame into the normalized rendered tree `data/rendered/<source>/<clip_id>/` as one FFV1 lossless video per clip, bit-exact-verified at write time (D-27; resumable; `--shard-index/--num-shards` for slurm arrays). MolmoBot streams pass the mount-fit gate; DROID streams pass the edge gate, and their keep_ranges non-idle segments become separate clips (`…__seg<k>`) — idle frames are never rendered (D-28).
 - `lossless_video.py` — the FFV1 write/read/verify helpers behind D-27.
 
 Training core (source-agnostic — consumes only the rendered tree):
 
-- `windows.py` — timestamped six-frame RAT windows (legacy 3 s schedule, ±33 ms reject-beyond tolerance) and the RAT condition/target pair.
-- `rendered.py` — rendered-tree discovery, deterministic episode-level hash held-out split, and the single `RenderedWindowDataset` (source RGB decoded on the fly via torchcodec).
+- `windows.py` — timestamped six-frame RAT windows (legacy 3 s schedule, ±33 ms reject-beyond tolerance), scaled-window resolution (D-30), and the RAT condition/target pair.
+- `rendered.py` — rendered-tree discovery, deterministic episode-level hash held-out split, and the single `RenderedWindowDataset` (source RGB decoded on the fly via torchcodec; every window anchor-resized to 624×352 (D-29); training-time schedule time-scale augmentation s ∈ [0.5, 1.5] at jittered anchors (D-30), held-out eval at canonical scale plus fixed-scale sweeps).
 - `augment.py` — probability-gated color jitter on full RGB only; horizontal flip is deliberately gone (render homology, D-12).
 - `qwen_rat.py` — RAT tensors → preprocessed Qwen inputs through the unchanged `gwm_wiser` preprocessing, pixel budget via the `min_pixels`/`max_pixels` hooks (ADR-0019).
 - `gwm_model.py` — `VariableLenGWM` plus canonical checkpoint export and the planner-identical strict loader.
@@ -85,7 +94,7 @@ Training core (source-agnostic — consumes only the rendered tree):
 - `train.py` — training entry (frozen Qwen online embedding, MSE + cosine logging, Muon+AuxAdam, bf16, DDP via torchrun), step-granular checkpoint/resume, canonical export, held-out open-loop evaluation.
 - `scripts/visualize_dataloader.py` — contact sheets (RGB / robot-only / overlay) from exact training samples.
 - `tests/evaluate_open_loop.py` — standalone open-loop MSE/cosine for a saved canonical checkpoint against the hash held-out split.
-- `slurm/submit_setup_data.run`, `slurm/submit_render_actions.run`, `slurm/submit_gwm_molmo.run` — kuma launchers for the full pipeline (CPU-only download → rendering array → 3×4 H100 training); every step runs as a slurm job, nothing on the login node.
+- `slurm/submit_setup_data.run`, `slurm/submit_prepare_droid_calib.run`, `slurm/submit_render_actions.run`, `slurm/submit_gwm_molmo.run` — kuma launchers for the full pipeline (CPU-only download → CPU-only DROID calibration join → rendering array (`SOURCE=molmobot|molmoact2_droid`) → 3×4 H100 training with `SOURCES` selecting the corpus mix); every step runs as a slurm job, nothing on the login node.
 
 Tests: `pytest real_world_gwm/tests/` — unit tests need no GPU and no Qwen weights (the synthetic rendered-tree fixture builds a real mp4 via imageio).
 
