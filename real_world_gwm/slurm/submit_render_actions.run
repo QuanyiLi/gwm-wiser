@@ -25,8 +25,7 @@
 set -eo pipefail
 
 REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/gwm-wiser}
-GWM_STORAGE_ROOT=${GWM_STORAGE_ROOT:-/work/vita/datasets/gwm-wiser}
-DATA_ROOT=${DATA_ROOT:-${GWM_STORAGE_ROOT}/data}
+DATA_ROOT=${DATA_ROOT:-${REPO_ROOT}/real_world_gwm/data}
 CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
 CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
 SOURCE=${SOURCE:-molmobot}
@@ -40,7 +39,7 @@ done
 
 export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
 # Never inherit Hugging Face cache locations from the login environment.
-export HF_HOME=${GWM_HF_HOME:-${GWM_STORAGE_ROOT}/.huggingface}
+export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
 export HF_HUB_CACHE=${HF_HOME}/hub
 export HF_XET_CACHE=${HF_HOME}/xet
 mkdir -p "$HF_HUB_CACHE" "$HF_XET_CACHE"
