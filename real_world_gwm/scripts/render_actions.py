@@ -71,9 +71,7 @@ def _clip_done(clip_dir: Path, n_frames: int) -> bool:
         return False
     if recorded != n_frames:
         return False
-    if "robot_only_video" in meta:   # schema v2
-        return (clip_dir / meta["robot_only_video"]).is_file()
-    return len(list((clip_dir / "robot_only").glob("*.png"))) == n_frames
+    return (clip_dir / meta.get("robot_only_video", "robot_only.mkv")).is_file()
 
 
 def _write_clip(clip_dir: Path, frames: np.ndarray, meta: dict,

@@ -72,19 +72,3 @@ def synthetic_rendered_root(tmp_path):
     return data_root
 
 
-@pytest.fixture
-def synthetic_rendered_root_v1(tmp_path):
-    """Same clip in the legacy schema-v1 layout (PNG per frame)."""
-    from PIL import Image
-
-    n, h, w = 60, 64, 96
-    data_root = tmp_path / "data_v1"
-    clip_dir = data_root / "rendered" / "molmobot" / "houseX__ep0__camA"
-    frame_dir = clip_dir / "robot_only"
-    frame_dir.mkdir(parents=True)
-    video_path = _write_rgb_mp4(data_root, n, h, w)
-    for i, frame in enumerate(_robot_frames(n, h, w)):
-        Image.fromarray(frame).save(frame_dir / f"{i:05d}.png")
-    meta = {"schema_version": 1, **_base_meta(data_root, video_path, n, h, w)}
-    (clip_dir / "meta.json").write_text(json.dumps(meta))
-    return data_root

@@ -5,8 +5,7 @@ Training consumes ONE on-disk contract regardless of source (decision D-18):
     <data_root>/rendered/<source>/<clip_id>/
         robot_only.mkv               state-rendered robot-only RGB, native res
                                      (FFV1 lossless, bit-exact-verified at
-                                     write time — D-27; schema v1 trees with
-                                     robot_only/*.png are still readable)
+                                     write time — D-27)
         meta.json                    written last by render_actions (completion
                                      mark); pairs the stream with its source
                                      RGB video and timestamps
@@ -64,12 +63,7 @@ class RenderedClip:
 
     @property
     def robot_only_video(self) -> Path:
-        """Schema v2 clip video, or None for a v1 PNG-per-frame clip."""
-        name = self.meta.get("robot_only_video")
-        return self.clip_dir / name if name else None
-
-    def frame_path(self, i: int) -> Path:
-        return self.clip_dir / "robot_only" / f"{i:05d}.png"
+        return self.clip_dir / self.meta["robot_only_video"]
 
 
 def discover_rendered_clips(data_root, sources=None) -> list:
@@ -99,13 +93,6 @@ def split_clips(clips, split: str, permille: int = HOLDOUT_PERMILLE) -> list:
     if split == "heldout":
         return [c for c in clips if is_heldout(c.episode_uid, permille)]
     raise ValueError(f"unknown split {split!r}")
-
-
-def _load_png(path) -> torch.Tensor:
-    from PIL import Image
-
-    arr = np.array(Image.open(path).convert("RGB"), dtype=np.uint8)
-    return torch.from_numpy(arr).permute(2, 0, 1).float() / 255.0
 
 
 class RenderedWindowDataset(torch.utils.data.Dataset):
@@ -177,14 +164,8 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         dec = self._decoder(video_path)
         rgb = dec.get_frames_at([start + i for i in indices]).data
         rgb = rgb.float() / 255.0                       # (6, 3, H, W)
-        ro_video = clip.robot_only_video
-        if ro_video is not None:                        # schema v2 (D-27)
-            robot_only = self._decoder(ro_video).get_frames_at(
-                list(indices)).data.float() / 255.0
-        else:                                           # schema v1 fallback
-            robot_only = torch.stack(
-                [_load_png(clip.frame_path(i)) for i in indices]
-            )
+        robot_only = self._decoder(clip.robot_only_video).get_frames_at(
+            list(indices)).data.float() / 255.0         # per-clip FFV1 (D-27)
         return {
             "rgb": rgb,
             "robot_only": robot_only,
