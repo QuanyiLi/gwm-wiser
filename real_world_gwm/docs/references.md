@@ -9,7 +9,8 @@
 
 - [MolmoAct2-DROID-Dataset](https://huggingface.co/datasets/allenai/MolmoAct2-DROID-Dataset) (paper <https://arxiv.org/abs/2605.02881>) — real training source: quality-filtered DROID, LeRobot, Apache-2.0.
 - [MolmoBot-Data](https://huggingface.co/datasets/allenai/MolmoBot-Data) (paper <https://arxiv.org/abs/2603.16861>, code <https://github.com/allenai/MolmoBot>) — simulation training source: Franka tabletop subset.
-- [KarlP/droid calibration release](https://huggingface.co/KarlP/droid) — raw-DROID `intrinsics.json` keyed by episode ID + camera serial; part of the documented fallback path only (the LeRobot conversion dropped the join keys).
+- [KarlP/droid calibration release](https://huggingface.co/KarlP/droid) — the DROID authors' post-hoc calibration + annotation release, keyed by episode ID (`{recording_folderpath}--{file_path}`): `cam2base_extrinsics.json` (~36k, quality metrics per entry), `cam2base_extrinsic_superset.json` (~24k unique eps / ~48k poses), `cam2cam_extrinsics.json` (~90k), `intrinsics.json` (~72k, per-serial ZED from SVO), the triple language annotations (~75k eps), `keep_ranges_1_0_1.json` (idle filtering). Joins to MolmoAct2-DROID via the verbatim `language_instruction{,_2,_3}` triple (verified 99.6% unique over the 1,454 local test-split episodes; `building`/`collector_id`/`date` are empty release-wide). Extrinsics format: 6D `[xyz, euler-xyz]` cam→base. Known-imperfect for some episodes ([droid#39](https://github.com/droid-dataset/droid/issues/39)) — the per-stream overlay gate is the admission criterion.
+- DROID camera hardware: exterior = ZED 2 @1280×720, factory fx ≈ 531.7 (± ~1% per unit; nominal vFOV 68.4°); **extrinsics vary per scene** (tripods repositioned across 1,417 scenes) — per-episode extrinsics are mandatory, nominal intrinsics are tolerable (~1 px @320×180).
 - [DROID](https://droid-dataset.github.io/) — the real platform behind MolmoAct2-DROID.
 
 ## Evaluation targets (ADR-0018)
