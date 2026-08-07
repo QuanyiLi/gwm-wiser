@@ -5,7 +5,8 @@ subsampling — frame-step decisions belong to training, decision D-24) with the
 shared Franka renderer and writes:
 
     <data_root>/rendered/<source>/<clip_id>/
-        robot_only/00000.png ...          lossless, native mp4 resolution
+        robot_only.mkv                    FFV1 lossless video, native res
+                                          (bit-exact-verified per clip, D-27)
         meta.json                         alignment + provenance record
 
 meta.json carries everything training needs to pair the robot-only stream
@@ -36,7 +37,7 @@ from pathlib import Path
 import numpy as np
 
 DEFAULT_DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2   # v2: per-clip FFV1 video (D-27); v1 was PNG per frame
 
 
 def parse_args(argv=None):
@@ -60,26 +61,37 @@ def parse_args(argv=None):
 
 
 def _clip_done(clip_dir: Path, n_frames: int) -> bool:
-    meta = clip_dir / "meta.json"
-    if not meta.is_file():
+    meta_path = clip_dir / "meta.json"
+    if not meta_path.is_file():
         return False
     try:
-        recorded = json.loads(meta.read_text())["n_frames"]
+        meta = json.loads(meta_path.read_text())
+        recorded = meta["n_frames"]
     except (json.JSONDecodeError, KeyError):
         return False
-    return recorded == n_frames and (
-        len(list((clip_dir / "robot_only").glob("*.png"))) == n_frames
+    if recorded != n_frames:
+        return False
+    if "robot_only_video" in meta:   # schema v2
+        return (clip_dir / meta["robot_only_video"]).is_file()
+    return len(list((clip_dir / "robot_only").glob("*.png"))) == n_frames
+
+
+def _write_clip(clip_dir: Path, frames: np.ndarray, meta: dict,
+                fps: float) -> None:
+    """Write robot_only.mkv (verified bit-exact) then meta.json (completion
+    mark). Every clip write is its own losslessness gate."""
+    from real_world_gwm.lossless_video import (
+        verify_lossless,
+        write_lossless_video,
     )
 
-
-def _write_clip(clip_dir: Path, frames: np.ndarray, meta: dict) -> None:
-    from PIL import Image
-
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    video_path = clip_dir / "robot_only.mkv"
+    write_lossless_video(frames, video_path, fps=fps)
+    verify_lossless(video_path, frames)
+    meta = {**meta, "robot_only_video": "robot_only.mkv",
+            "robot_only_codec": "ffv1/bgr0"}
     tmp_meta = clip_dir / "meta.json.tmp"
-    frame_dir = clip_dir / "robot_only"
-    frame_dir.mkdir(parents=True, exist_ok=True)
-    for i, frame in enumerate(frames):
-        Image.fromarray(frame).save(frame_dir / f"{i:05d}.png")
     tmp_meta.write_text(json.dumps(meta, indent=1))
     tmp_meta.rename(clip_dir / "meta.json")  # meta.json last = completion mark
 
@@ -157,7 +169,7 @@ def render_molmobot(args, provenance: dict) -> dict:
             "renderer_provenance": {"arm": "fr3", "urdf": str(urdf),
                                     **provenance},
         }
-        _write_clip(clip_dir, frames, meta)
+        _write_clip(clip_dir, frames, meta, fps=1.0 / ep.dt_s)
         stats["rendered"] += 1
         logging.info("rendered %s (%d frames, mount rms %.2f mm)",
                      ep.clip_id, ep.n_frames, rms * 1000)

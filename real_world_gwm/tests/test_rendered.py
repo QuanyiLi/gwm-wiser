@@ -53,3 +53,15 @@ def test_window_dataset_yields_rat_samples(synthetic_rendered_root):
     assert torch.equal(sample["condition"][1:], sample["robot_only"][1:])
     assert torch.equal(sample["target"], sample["rgb"])
     assert sample["video_id"] == "houseX__ep0__camA"
+
+
+def test_v1_png_clip_reads_identically(synthetic_rendered_root,
+                                       synthetic_rendered_root_v1):
+    """A legacy PNG-per-frame tree yields byte-identical robot-only tensors."""
+    v2 = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                               jitter_prob=0.0)
+    v1 = RenderedWindowDataset(synthetic_rendered_root_v1, split="all",
+                               jitter_prob=0.0)
+    assert len(v1) == len(v2) >= 1
+    assert torch.equal(v1[0]["robot_only"], v2[0]["robot_only"])
+    assert torch.equal(v1[0]["target"], v2[0]["target"])

@@ -71,7 +71,8 @@ Data pipeline (per-source logic lives here and only here — decision D-18):
 - `sources/molmobot.py` — scene-package reader (h5 JSON states, per-camera FOV from `frozen_config` → mp4 intrinsics, `cam2world_gl`, base pose, TCP pose).
 - `renderer/assets.py` — clones the URDF source repos (ManiSkill Panda, FR3Env FR3, ManiSkill-Robotiq_2F) and welds per-rig arm+gripper URDFs (no public combined URDF exists).
 - `renderer/franka_renderer.py` — the shared `FrankaRobotRenderer` (SAPIEN offscreen, per-call camera K/pose/resolution, 2F-85 mimic expansion from driver values; decision D-1 — consumed read-only by tiptop's `gwm-server`) plus `fit_arm_mount` (per-episode mount recovery ≤2 mm kinematics gate).
-- `scripts/render_actions.py` — offline rendering of EVERY frame into the normalized rendered tree `data/rendered/<source>/<clip_id>/` (resumable; `--shard-index/--num-shards` for slurm arrays).
+- `scripts/render_actions.py` — offline rendering of EVERY frame into the normalized rendered tree `data/rendered/<source>/<clip_id>/` as one FFV1 lossless video per clip, bit-exact-verified at write time (D-27; resumable; `--shard-index/--num-shards` for slurm arrays).
+- `lossless_video.py` — the FFV1 write/read/verify helpers behind D-27.
 
 Training core (source-agnostic — consumes only the rendered tree):
 

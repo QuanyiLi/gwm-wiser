@@ -4,6 +4,12 @@ status: accepted
 
 # Normalize sources into a rendered tree at preparation time
 
+*Amended 2026-08-07 (plan D-27): the robot-only container changed from PNG
+per frame to one FFV1 lossless MKV per clip after cluster byte/inode quotas
+made 60 M PNGs untenable at run-1 scale. Bit-exactness through the torchcodec
+decode path is verified per clip at write time; schema v1 (PNG) trees remain
+readable. The tree contract itself is unchanged.*
+
 The training side consumes exactly one on-disk contract — the rendered tree
 (`data/rendered/<source>/<clip_id>/{robot_only/*.png, meta.json}`) — instead
 of per-source runtime adapters (the shape the plan originally sketched as
