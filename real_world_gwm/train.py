@@ -58,11 +58,12 @@ def parse_args(argv=None):
                         '\'{"molmobot": 3.0}\'')
     p.add_argument("--tolerance_s", type=float, default=None)
     p.add_argument("--jitter_prob", type=float, default=0.5)
-    p.add_argument("--time_scale", type=float, nargs=2, default=[0.5, 1.5],
+    p.add_argument("--time_scale", type=float, nargs=2, default=None,
                    metavar=("MIN", "MAX"),
-                   help="schedule time-scale augmentation range, sampled "
-                        "log-uniformly per training sample (D-30); "
-                        "'1 1' disables")
+                   help="global schedule time-scale range, sampled "
+                        "log-uniformly per training sample (D-30); omitted = "
+                        "the per-source defaults (D-33: DROID 0.5-1.5, "
+                        "molmobot 1-3); '1 1' disables")
     p.add_argument("--eval_scale_sweep", type=float, nargs="*",
                    default=[0.5, 1.5],
                    help="extra fixed-scale held-out evals (robustness "
@@ -328,16 +329,23 @@ def main(argv=None):
             limit_windows=args.limit_windows,
         )
 
-    train_scale = tuple(args.time_scale)
+    from real_world_gwm.rendered import DEFAULT_SCALE_RANGES
+
+    if args.time_scale is None:
+        train_scale = DEFAULT_SCALE_RANGES     # per-source (D-33)
+    elif tuple(args.time_scale) == (1.0, 1.0):
+        train_scale = None
+    else:
+        train_scale = tuple(args.time_scale)   # global override
     base_dataset = build_split(
         "train", args.jitter_prob,
-        scale_range=None if train_scale == (1.0, 1.0) else train_scale,
+        scale_range=train_scale,
     )
     if is_main:
         logging.info(
             f"dataset: {len(base_dataset)} train anchors from "
             f"{len(base_dataset.clips)} clips (time-scale "
-            f"{'off' if train_scale == (1.0, 1.0) else train_scale})"
+            f"{'off' if train_scale is None else train_scale})"
         )
 
     dataset = TokenCeilingDataset(

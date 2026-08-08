@@ -43,6 +43,27 @@ from real_world_gwm.windows import (
 DEFAULT_STRIDE_S = {"molmoact2_droid": 0.5, "molmobot": 3.0}
 HOLDOUT_PERMILLE = 20   # 2% of episodes
 
+# Per-source time-scale ranges (decision D-33). MolmoBot PnP trajectories are
+# scripted, smooth, and slow — at s < 1 their windows are near-static, so the
+# sim range stretches (1-3x canonical) instead of compressing; DROID keeps
+# D-30's symmetric range. Sources not listed stay canonical (no augmentation).
+DEFAULT_SCALE_RANGES = {
+    "molmoact2_droid": (0.5, 1.5),
+    "molmobot": (1.0, 3.0),
+}
+
+
+def scale_range_for(source: str, scale_range):
+    """Resolve one item's (lo, hi): a tuple applies globally, a dict maps
+    source -> range (unlisted sources stay canonical), None = off."""
+    if scale_range is None:
+        return None
+    if isinstance(scale_range, dict):
+        rng = tuple(scale_range.get(source, (1.0, 1.0)))
+    else:
+        rng = tuple(scale_range)
+    return None if rng == (1.0, 1.0) else rng
+
 # Operating-grid anchor resolution (decision D-29): every window is brought
 # to this resolution before Qwen preprocessing, because the pixel-budget
 # mechanism alone cannot land every native resolution on the exact (3,18,30)
@@ -130,15 +151,18 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
     Horizontal flip is banned (render homology, decision D-13); color jitter
     applies to full RGB only.
 
-    Time-scale augmentation (decision D-30): the index stays anchor-level —
-    one entry per canonical (scale = 1) window, so epoch size, source mixture,
-    and the audit are untouched — and with ``scale_range`` set, __getitem__
-    re-resolves the schedule at a per-sample scale drawn log-uniformly, with
-    a small anchor jitter. Draws that do not fit the clip retry, then fall
-    back to the stored canonical window. A degenerate range (s, s) with zero
-    jitter instead re-resolves the index ONCE at that fixed scale, dropping
-    what does not fit — the deterministic, fallback-free form the fixed-scale
-    held-out sweeps use.
+    Time-scale augmentation (decisions D-30 / D-33): the index stays
+    anchor-level — one entry per canonical (scale = 1) window, so epoch size,
+    source mixture, and the audit are untouched — and with ``scale_range``
+    set, __getitem__ re-resolves the schedule at a per-sample scale drawn
+    log-uniformly, with a small anchor jitter. ``scale_range`` may be a
+    (lo, hi) tuple applied to every source, or a {source: (lo, hi)} dict
+    (D-33 — see DEFAULT_SCALE_RANGES; unlisted sources stay canonical).
+    Draws that do not fit the clip retry, then fall back to the stored
+    canonical window. A degenerate tuple (s, s) with zero jitter instead
+    re-resolves the index ONCE at that fixed scale, dropping what does not
+    fit — the deterministic, fallback-free form the fixed-scale held-out
+    sweeps use.
     """
 
     RESAMPLE_TRIES = 8
@@ -171,7 +195,10 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         self.tolerance_s = (DEFAULT_TOLERANCE_S if tolerance_s is None
                             else tolerance_s)
         tolerance_s = self.tolerance_s
-        self.scale_range = tuple(scale_range) if scale_range else None
+        if isinstance(scale_range, dict):
+            self.scale_range = dict(scale_range)
+        else:
+            self.scale_range = tuple(scale_range) if scale_range else None
         # Anchor jitter defaults to half the per-source stride; {} disables.
         self.anchor_jitter_s = ({s: v / 2 for s, v in stride_s.items()}
                                 if anchor_jitter_s is None else anchor_jitter_s)
@@ -189,7 +216,7 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
             self.index.extend((ci, w) for w in windows)
 
         self._fixed_scale = 1.0
-        fixed = (self.scale_range is not None
+        fixed = (isinstance(self.scale_range, tuple)
                  and self.scale_range[0] == self.scale_range[1]
                  and not any((self.anchor_jitter_s or {}).values()))
         if fixed:
@@ -245,8 +272,11 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         if self.scale_range is None:
             return canonical, self._fixed_scale
         clip = self.clips[ci]
+        rng = scale_range_for(clip.source, self.scale_range)
+        if rng is None:
+            return canonical, 1.0
         ts = clip.timestamps
-        lo, hi = self.scale_range
+        lo, hi = rng
         jitter = (self.anchor_jitter_s or {}).get(clip.source, 0.0)
         for _ in range(self.RESAMPLE_TRIES):
             scale = math.exp(random.uniform(math.log(lo), math.log(hi)))

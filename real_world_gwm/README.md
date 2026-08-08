@@ -87,7 +87,7 @@ Data pipeline (per-source logic lives here and only here — decision D-18):
 Training core (source-agnostic — consumes only the rendered tree):
 
 - `windows.py` — timestamped six-frame RAT windows (legacy 3 s schedule, ±33 ms reject-beyond tolerance), scaled-window resolution (D-30), and the RAT condition/target pair.
-- `rendered.py` — rendered-tree discovery, deterministic episode-level hash held-out split, and the single `RenderedWindowDataset` (source RGB decoded on the fly via torchcodec; every window anchor-resized to 624×352 (D-29); training-time schedule time-scale augmentation s ∈ [0.5, 1.5] at jittered anchors (D-30), held-out eval at canonical scale plus fixed-scale sweeps).
+- `rendered.py` — rendered-tree discovery, deterministic episode-level hash held-out split, and the single `RenderedWindowDataset` (source RGB decoded on the fly via torchcodec; every window anchor-resized to 624×352 (D-29); training-time schedule time-scale augmentation at jittered anchors with per-source ranges (D-30/D-33: DROID s ∈ [0.5, 1.5], MolmoBot s ∈ [1, 3]), held-out eval at canonical scale plus fixed-scale sweeps).
 - `augment.py` — probability-gated color jitter on full RGB only; horizontal flip is deliberately gone (render homology, D-12).
 - `qwen_rat.py` — RAT tensors → preprocessed Qwen inputs through the unchanged `gwm_wiser` preprocessing, pixel budget via the `min_pixels`/`max_pixels` hooks (ADR-0019).
 - `gwm_model.py` — `VariableLenGWM` plus canonical checkpoint export and the planner-identical strict loader.

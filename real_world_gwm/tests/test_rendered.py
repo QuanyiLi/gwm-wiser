@@ -105,3 +105,42 @@ def test_random_scale_draws_vary_and_fall_back(synthetic_rendered_root):
         assert 0.5 <= sample["time_scale"] <= 1.0 or idx == tuple(canonical)
         seen.add(idx)
     assert len(seen) > 1   # augmentation actually varies the window
+
+
+def test_per_source_scale_ranges(synthetic_rendered_root):
+    import random
+
+    from real_world_gwm.rendered import DEFAULT_SCALE_RANGES, scale_range_for
+
+    # resolver semantics (D-33)
+    assert scale_range_for("molmobot", DEFAULT_SCALE_RANGES) == (1.0, 3.0)
+    assert scale_range_for("molmoact2_droid",
+                           DEFAULT_SCALE_RANGES) == (0.5, 1.5)
+    assert scale_range_for("unlisted", DEFAULT_SCALE_RANGES) is None
+    assert scale_range_for("any", (2.0, 2.0)) == (2.0, 2.0)
+    assert scale_range_for("any", None) is None
+
+    # a dict range drives this source exactly like the tuple form
+    probe = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                                  jitter_prob=0.0)
+    src = probe.clips[0].source
+    ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                               jitter_prob=0.0,
+                               scale_range={src: (0.5, 1.0)})
+    canonical = tuple(ds.index[0][1])
+    random.seed(3)
+    seen = set()
+    for _ in range(30):
+        sample = ds[0]
+        idx = tuple(sample["frame_indices"])
+        assert 0.5 <= sample["time_scale"] <= 1.0 or idx == canonical
+        seen.add(idx)
+    assert len(seen) > 1
+
+    # a source missing from the dict stays canonical
+    ds_other = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                                     jitter_prob=0.0,
+                                     scale_range={"someone_else": (0.5, 1.0)})
+    sample = ds_other[0]
+    assert sample["time_scale"] == 1.0
+    assert tuple(sample["frame_indices"]) == tuple(ds_other.index[0][1])
