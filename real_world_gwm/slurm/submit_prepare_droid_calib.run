@@ -7,13 +7,17 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --nodes=1
+#SBATCH --gres=gpu:1
 #SBATCH --time=8:00:00
 #SBATCH --mem=64G
 
-# CPU-only DROID calibration join (prepare_droid_calibration.py): matches
+# CPU-bound DROID calibration join (prepare_droid_calibration.py): matches
 # MolmoAct2-DROID episodes to the KarlP/droid release by their verbatim
 # language-annotation triple and writes
 # $DATA_ROOT/molmoact2_droid_calib/calibration.json (decision D-28).
+# Kuma rejects GPU-less jobs (QOSMinGRES), so 1 GPU is requested; cheapest:
+#     sbatch -p mig12gb --cpus-per-task=2 --mem=11G \
+#         real_world_gwm/slurm/submit_prepare_droid_calib.run
 #
 # Order in the DROID pipeline — every step its own slurm job:
 #   1. submit_setup_data.run      (downloads videos/parquets + KarlP JSONs)
@@ -39,6 +43,8 @@ for d in "${REPO_ROOT}/real_world_gwm" "${DATA_ROOT}/karlp_droid"; do
 done
 
 export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+# slurm >= 22.05 no longer propagates --cpus-per-task to srun steps.
+export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
 srun python -m real_world_gwm.scripts.prepare_droid_calibration \
     --data-root "$DATA_ROOT" \

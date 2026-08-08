@@ -7,24 +7,32 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --nodes=1
+#SBATCH --gres=gpu:1
 #SBATCH --time=24:00:00
 #SBATCH --mem=64G
 
-# CPU-only data provisioning (setup_data.py) as a slurm job — nothing runs on
-# the login node. Downloads the corpora into $DATA_ROOT and clones the URDF
-# asset repos (compute nodes have internet on this cluster). No GPU requested;
-# override the partition at submit time if a CPU partition exists:
-#     sbatch -p <cpu-partition> real_world_gwm/slurm/submit_setup_data.run
+# CPU-bound data provisioning (setup_data.py) as a slurm job — nothing runs
+# on the login node. Downloads the corpora into $DATA_ROOT and clones the
+# URDF asset repos (compute nodes have internet on this cluster). Kuma
+# rejects GPU-less jobs on every partition (QOSMinGRES), so 1 GPU is
+# requested; the cheapest slice is a MIG one, via submit-time overrides:
+#     sbatch -p mig12gb --cpus-per-task=2 --mem=11G \
+#         real_world_gwm/slurm/submit_setup_data.run
 #
-# Selectors go through SETUP_ARGS (default: the ~600 MB smoke subset):
-#     SETUP_ARGS="--source molmobot --configs FrankaPickOmniCamConfig \
-#         --split train --shards 0 10 --purge-shard-cache" \
+# Selectors go through SETUP_ARGS (default: the ~600 MB smoke subset).
+# MolmoBot run-1 corpus (decision D-31 — ONLY the plain PnP config;
+# Pick/Color/NextTo excluded): train shards 0-100 of 1,598, ~217 GB
+# downloaded, ~53 GB (~24%, measured) kept on disk after pruning:
+#     SETUP_ARGS="--source molmobot --split train --shards 0 100 \
+#         --prune-extracted --purge-shard-cache" \
 #         sbatch real_world_gwm/slurm/submit_setup_data.run
 #
-# DROID run-1 (both exterior streams, ALL data files ~190 GB, plus the
-# ~220 MB KarlP calibration release; patterns matching nothing are ignored,
-# so an oversized range is safe):
-#     SETUP_ARGS="--source molmoact2_droid --data-files 0 200" \
+# DROID run-1 (both exterior streams, ALL files ~197 GB, plus the ~220 MB
+# KarlP calibration release). Video files outnumber data parquets (518 vs
+# 50 in chunk-000), so --video-files must be given explicitly — the default
+# mirrors --data-files and would silently skip video files 50+. Patterns
+# matching nothing are ignored, so an oversized range is safe:
+#     SETUP_ARGS="--source molmoact2_droid --data-files 0 50 --video-files 0 518" \
 #         sbatch real_world_gwm/slurm/submit_setup_data.run
 #
 # Re-submission is safe: downloads resume from the HF cache and extracted
@@ -45,6 +53,8 @@ conda activate "${CONDA_ENV}"
     echo "missing required path: ${REPO_ROOT}/real_world_gwm" >&2; exit 1; }
 
 export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+# slurm >= 22.05 no longer propagates --cpus-per-task to srun steps.
+export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 # Never inherit Hugging Face cache locations from the login environment.
 # Large Hub blobs and Xet reconstruction data must stay on /work, not $HOME.
 export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}

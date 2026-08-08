@@ -1,15 +1,16 @@
 #!/bin/bash -l
 #SBATCH --job-name=gwm_render
 #SBATCH --output=/work/vita/lanfeng/task_logs/%A_%a.log
-#SBATCH --partition=h100
+#SBATCH --partition=l40s
 #SBATCH --account=vita
 #SBATCH --qos=normal
 #SBATCH --array=0-63
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-node=1
-#SBATCH --time=24:00:00
-#SBATCH --mem=48G
+#SBATCH --time=6:00:00
+# --mem omitted: kuma's submit filter rejects mem > MaxMemPerCPU (5900M) x
+# cores; omitting it yields the maximum for 8 cores (47.2G) automatically.
 
 # Large-scale offline robot-only rendering (render_actions.py) as a slurm
 # array: shard k of N renders every admitted episode-stream whose index is
@@ -17,12 +18,25 @@
 # skipped), so requeueing a failed array task is always safe. No temporal
 # subsampling happens here — frame-step decisions belong to training.
 #
+# Sizing (l40s: graphics-class GPU, billing weight 2141 vs 5174 for h100):
+# measured end-to-end ~100 fps/GPU on an RTX 3090 (gate probes + SAPIEN +
+# FFV1 + bit-exact verify). Full DROID = 74,604 eps x 2 cams = 35.5M frames
+# upper bound ~ 99 GPU-h -> ~1.5 h per task at 64 shards; 6 h wall = 4x
+# margin, and a task that does hit the limit is safely requeued.
+#
 # SOURCE selects the corpus (default molmobot). For DROID:
 #     SOURCE=molmoact2_droid sbatch real_world_gwm/slurm/submit_render_actions.run
 # prerequisite: submit_prepare_droid_calib.run has produced
 # $DATA_ROOT/molmoact2_droid_calib/calibration.json; every stream then passes
 # the edge-alignment gate before rendering (D-28) and keep_ranges non-idle
 # segments become separate clips.
+#
+# RENDER_ARGS appends extra flags. Free smoke test of the full chain
+# (Vulkan/SAPIEN, AV1 decode, edge gate, FFV1 write) before the paid array —
+# debug QoS is not billed; MIG slices cannot run it (no graphics API on MIG):
+#     SOURCE=molmoact2_droid RENDER_ARGS="--limit 3" \
+#         sbatch --qos=debug --time=1:00:00 --array=0 \
+#         real_world_gwm/slurm/submit_render_actions.run
 #
 # SAPIEN renders offscreen via Vulkan. On GPU nodes the NVIDIA ICD is used
 # automatically; if Vulkan device discovery fails on a node, install/expose
@@ -36,6 +50,7 @@ DATA_ROOT=${DATA_ROOT:-${REPO_ROOT}/real_world_gwm/data}
 CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
 CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
 SOURCE=${SOURCE:-molmobot}
+RENDER_ARGS=${RENDER_ARGS:-}
 
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
@@ -45,6 +60,8 @@ for d in "${REPO_ROOT}/real_world_gwm" "${DATA_ROOT}"; do
 done
 
 export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+# slurm >= 22.05 no longer propagates --cpus-per-task to srun steps.
+export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 # Never inherit Hugging Face cache locations from the login environment.
 export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
 export HF_HUB_CACHE=${HF_HOME}/hub
@@ -54,5 +71,6 @@ mkdir -p "$HF_HUB_CACHE" "$HF_XET_CACHE"
 srun python -m real_world_gwm.scripts.render_actions \
     --data-root "$DATA_ROOT" \
     --source "$SOURCE" \
-    --shard-index "$SLURM_ARRAY_TASK_ID" \
-    --num-shards "$SLURM_ARRAY_TASK_COUNT"
+    --shard-index "${SLURM_ARRAY_TASK_ID:-0}" \
+    --num-shards "${SLURM_ARRAY_TASK_COUNT:-1}" \
+    $RENDER_ARGS
