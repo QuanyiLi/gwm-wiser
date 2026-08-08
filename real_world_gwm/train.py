@@ -173,8 +173,17 @@ class TokenCeilingDataset(torch.utils.data.Dataset):
                 f"pixel_budget={self.pixel_budget} grid={grid} tokens={tokens} "
                 f"> ceiling={self.token_ceiling}; raise --token_ceiling to accept"
             )
-        sample["tokens"] = tokens
-        return sample
+        # Ship only what training consumes. The raw RAT tensors (rgb,
+        # robot_only, condition, target — ~63 MB/sample) otherwise ride the
+        # worker->main dataloader queues and OOM the node: 4 ranks x
+        # 8 workers x 2 prefetched batches of 32 hit the 200 GB cgroup cap
+        # (observed MaxRSS 209.7e6 K on job 4047278).
+        return {
+            "qwen_current_inputs": sample["qwen_current_inputs"],
+            "qwen_trajectory_gt": sample["qwen_trajectory_gt"],
+            "video_id": sample.get("video_id", ""),
+            "tokens": tokens,
+        }
 
 
 def save_train_state(path, model, optimizer, scheduler, step, args):

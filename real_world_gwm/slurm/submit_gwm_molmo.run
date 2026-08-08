@@ -9,7 +9,8 @@
 #SBATCH --gpus-per-node=4
 #SBATCH --nodes=3
 #SBATCH --time=24:00:00
-#SBATCH --mem=200G
+# --mem deliberately omitted -> the per-node maximum (64 cores x 5900 MB
+# ~ 369 G). Job 4047278 OOM-killed at a 200 G cap (MaxRSS hit it exactly).
 
 # Stage-1 GWM training on the Molmo corpora (plan of record; WISER/VRS retired).
 # Reference recipe: 3 nodes x 4 H100. The exact-grid policy (every sample lands
