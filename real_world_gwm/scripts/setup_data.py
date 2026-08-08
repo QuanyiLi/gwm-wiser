@@ -10,6 +10,10 @@ Two sources (plan of record, ADR-0016):
   Shards are pulled through the HF cache and scene packages are extracted to
   the same layout the authors' bulk_download.py produces:
       molmobot/<Config>/part0/<split>/<package_name>/...
+  Run-1 corpus (decision D-31): ONLY the plain Pick-and-Place config
+  (train shards 0-100 of 1,598 — ~217 GB fetched, ~53 GB kept after
+  pruning); Pick-only, Color, and NextTo are excluded. The Pick config
+  survives solely inside the frozen --test-split smoke fixture.
 
 --test-split provisions the fixed smoke-test subset used by the Stage-1 E2E
 gate on the dev machine (~1.4 GB total):
@@ -25,9 +29,9 @@ Examples:
     # dev machine, smoke subset
     python -m real_world_gwm.scripts.setup_data --test-split
 
-    # cluster, MolmoBot Pick train shards 0-9
+    # cluster, the MolmoBot run-1 corpus (PnP-only, D-31)
     python -m real_world_gwm.scripts.setup_data --source molmobot \\
-        --configs FrankaPickOmniCamConfig --split train --shards 0 10
+        --split train --shards 0 100 --prune-extracted --purge-shard-cache
 
     # cluster, DROID data files 0-4 (episode coverage grows with the files)
     python -m real_world_gwm.scripts.setup_data --source molmoact2_droid \\
@@ -58,12 +62,12 @@ KARLP_FILES = (
     "episode_id_to_path.json",
 )
 
-FRANKA_CONFIGS = (
-    "FrankaPickOmniCamConfig",
-    "FrankaPickAndPlaceOmniCamConfig",
-    "FrankaPickAndPlaceColorOmniCamConfig",
-    "FrankaPickAndPlaceNextToOmniCamConfig",
-)
+# Run-1 MolmoBot corpus (decision D-31, supersedes D-13's all-four-configs):
+# ONLY the plain Pick-and-Place config is admitted — the Pick-only, Color,
+# and NextTo variants are excluded from the training corpus. The Pick config
+# remains referenced solely by the frozen --test-split smoke fixture.
+PNP_CONFIG = "FrankaPickAndPlaceOmniCamConfig"
+SMOKE_CONFIG = "FrankaPickOmniCamConfig"
 
 DEFAULT_DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 
@@ -89,7 +93,9 @@ def parse_args(argv=None):
                    default=["exterior_1_left", "exterior_2_left"],
                    help="admitted exterior streams (wrist is never used)")
     # molmobot selectors
-    p.add_argument("--configs", nargs="+", default=list(FRANKA_CONFIGS))
+    p.add_argument("--configs", nargs="+", default=[PNP_CONFIG],
+                   help="MolmoBot task configs (default: the PnP-only "
+                        "run-1 corpus, decision D-31)")
     p.add_argument("--split", choices=["train", "val"], default="train")
     p.add_argument("--shards", type=int, nargs=2, metavar=("FROM", "TO"),
                    default=None,
@@ -342,8 +348,8 @@ def main(argv=None):
         # both exterior streams; MolmoBot Pick val shard 0, 12 scene packages.
         args.data_files = args.data_files or (0, 1)
         args.video_files = args.video_files or (0, 1)
-        args.configs = (["FrankaPickOmniCamConfig"]
-                        if args.configs == list(FRANKA_CONFIGS) else args.configs)
+        args.configs = ([SMOKE_CONFIG]
+                        if args.configs == [PNP_CONFIG] else args.configs)
         args.split = "val"
         args.shards = args.shards or (0, 1)
         if args.max_packages is None:

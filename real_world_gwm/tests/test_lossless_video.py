@@ -1,4 +1,6 @@
-"""FFV1 per-clip video: bit-exact roundtrip is a hard requirement (D-27)."""
+"""Per-clip video: FFV1 bit-exact roundtrip is a hard requirement for real
+sources (D-27); the sim tree's near-lossless VP9 must stay inside its
+calibrated tolerance gates (D-32)."""
 
 import numpy as np
 import pytest
@@ -6,7 +8,9 @@ import pytest
 from real_world_gwm.lossless_video import (
     read_video_frames,
     verify_lossless,
+    verify_near_lossless,
     write_lossless_video,
+    write_near_lossless_video,
 )
 
 
@@ -44,3 +48,32 @@ def test_verify_rejects_corruption(tmp_path):
     wrong[0, 0, 0, 0] ^= 1
     with pytest.raises(RuntimeError, match="lossless verification FAILED"):
         verify_lossless(path, wrong)
+
+
+def _smooth_frames(t=8, h=32, w=48):
+    # render-like content: smooth gray gradient blob moving over black —
+    # matches what the sim tree actually stores (no sensor noise)
+    frames = np.zeros((t, h, w, 3), dtype=np.uint8)
+    ramp = np.linspace(60, 220, 12, dtype=np.uint8)[:, None]
+    for i in range(t):
+        frames[i, 8:20, 4 + i : 16 + i] = np.broadcast_to(
+            ramp[:, :, None], (12, 12, 3)
+        )
+    return frames
+
+
+def test_near_lossless_roundtrip_within_tolerance(tmp_path):
+    frames = _smooth_frames()
+    path = write_near_lossless_video(frames, tmp_path / "clip.mkv")
+    got = read_video_frames(path)
+    assert got.shape == frames.shape
+    verify_near_lossless(path, frames)  # must not raise
+
+
+def test_near_lossless_verify_rejects_gross_error(tmp_path):
+    frames = _smooth_frames()
+    path = write_near_lossless_video(frames, tmp_path / "clip.mkv")
+    wrong = np.full_like(frames, 255)
+    with pytest.raises(RuntimeError,
+                       match="near-lossless verification FAILED"):
+        verify_near_lossless(path, wrong)

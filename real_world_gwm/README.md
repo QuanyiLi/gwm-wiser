@@ -2,7 +2,7 @@
 
 This folder adapts the Grounded World Model (GWM) into the semantic scorer of the TiPToP planning system. Everything here is organized around three pillars:
 
-1. **Data** — [MolmoAct2-DROID](https://huggingface.co/datasets/allenai/MolmoAct2-DROID-Dataset) (real) + the [MolmoBot-Data](https://huggingface.co/datasets/allenai/MolmoBot-Data) Franka subset (sim), with robot appearance state-rendered by the shared Franka renderer (ADR-0016/0017).
+1. **Data** — [MolmoAct2-DROID](https://huggingface.co/datasets/allenai/MolmoAct2-DROID-Dataset) (real) + the [MolmoBot-Data](https://huggingface.co/datasets/allenai/MolmoBot-Data) Franka Pick-and-Place subset (sim; PnP config only, decision D-31), with robot appearance state-rendered by the shared Franka renderer (ADR-0016/0017).
 2. **Sim benchmark** — droid-sim (selection A/B) and the MolmoSpaces leaderboard (ADR-0018).
 3. **Framework** — TiPToP, for both simulation and real hardware; this repo is a read-only dependency of it.
 
@@ -42,9 +42,10 @@ hf download Qwen/Qwen3-VL-Embedding-8B
 # MolmoBot Pick val shard 0 (12 scene packages)
 python -m real_world_gwm.scripts.setup_data --test-split
 
-# Full-scale selectors (cluster): see the module docstring
+# Full-scale selectors (cluster) — MolmoBot run-1 corpus is PnP-only,
+# train shards 0-100 (decision D-31):
 python -m real_world_gwm.scripts.setup_data --source molmobot \
-    --configs FrankaPickOmniCamConfig --split train --shards 0 10
+    --split train --shards 0 100 --prune-extracted --purge-shard-cache
 ```
 
 Then recover DROID calibration, render the robot-only streams, and inspect
@@ -80,8 +81,8 @@ Data pipeline (per-source logic lives here and only here — decision D-18):
 - `renderer/assets.py` — clones the URDF source repos (ManiSkill Panda, FR3Env FR3, ManiSkill-Robotiq_2F) and welds per-rig arm+gripper URDFs (no public combined URDF exists).
 - `renderer/franka_renderer.py` — the shared `FrankaRobotRenderer` (SAPIEN offscreen, per-call camera K/pose/resolution, 2F-85 mimic expansion from driver values; decision D-1 — consumed read-only by tiptop's `gwm-server`) plus `fit_arm_mount` (per-episode mount recovery ≤2 mm kinematics gate) and the closed-loop-verified OpenCV↔SAPIEN camera-pose conversions.
 - `renderer/edge_gate.py` — the DROID admission gate (D-28): oriented-edge alignment lift of the rendered silhouette over the observed frame, chance-normalized (contrast-invariant) and contrasted against a deliberately perturbed camera; thresholds calibrated on the smoke subset against visually labeled overlays.
-- `scripts/render_actions.py` — offline rendering of EVERY frame into the normalized rendered tree `data/rendered/<source>/<clip_id>/` as one FFV1 lossless video per clip, bit-exact-verified at write time (D-27; resumable; `--shard-index/--num-shards` for slurm arrays). MolmoBot streams pass the mount-fit gate; DROID streams pass the edge gate, and their keep_ranges non-idle segments become separate clips (`…__seg<k>`) — idle frames are never rendered (D-28).
-- `lossless_video.py` — the FFV1 write/read/verify helpers behind D-27.
+- `scripts/render_actions.py` — offline rendering of EVERY frame into the normalized rendered tree `data/rendered/<source>/<clip_id>/` as one video per clip — FFV1 lossless bit-exact for real sources (D-27), near-lossless VP9 for MolmoBot (D-32) — verified at write time (resumable; `--shard-index/--num-shards` for slurm arrays). MolmoBot streams pass the mount-fit gate; DROID streams pass the edge gate, and their keep_ranges non-idle segments become separate clips (`…__seg<k>`) — idle frames are never rendered (D-28).
+- `lossless_video.py` — the FFV1 lossless (D-27) and VP9 near-lossless (D-32) write/read/verify helpers.
 
 Training core (source-agnostic — consumes only the rendered tree):
 

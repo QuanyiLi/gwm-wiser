@@ -4,8 +4,9 @@ Training consumes ONE on-disk contract regardless of source (decision D-18):
 
     <data_root>/rendered/<source>/<clip_id>/
         robot_only.mkv               state-rendered robot-only RGB, native res
-                                     (FFV1 lossless, bit-exact-verified at
-                                     write time — D-27)
+                                     (real sources: FFV1 lossless bit-exact,
+                                     D-27; molmobot: near-lossless VP9, D-32
+                                     — verified at write time either way)
         meta.json                    written last by render_actions (completion
                                      mark); pairs the stream with its source
                                      RGB video and timestamps

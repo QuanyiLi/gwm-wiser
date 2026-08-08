@@ -5,8 +5,11 @@ subsampling — frame-step decisions belong to training, decision D-24) with the
 shared Franka renderer and writes:
 
     <data_root>/rendered/<source>/<clip_id>/
-        robot_only.mkv                    FFV1 lossless video, native res
-                                          (bit-exact-verified per clip, D-27)
+        robot_only.mkv                    one video per clip, native res —
+                                          FFV1 lossless bit-exact for real
+                                          sources (D-27); near-lossless VP9
+                                          for molmobot (D-32) — verified per
+                                          clip at write time
         meta.json                         alignment + provenance record
 
 meta.json carries everything training needs to pair the robot-only stream
@@ -103,20 +106,30 @@ def _clip_done(clip_dir: Path, n_frames: int) -> bool:
 
 
 def _write_clip(clip_dir: Path, frames: np.ndarray, meta: dict,
-                fps: float) -> None:
-    """Write robot_only.mkv (verified bit-exact) then meta.json (completion
-    mark). Every clip write is its own losslessness gate."""
-    from real_world_gwm.lossless_video import (
-        verify_lossless,
-        write_lossless_video,
-    )
+                fps: float, codec: str = "ffv1") -> None:
+    """Write robot_only.mkv (verified) then meta.json (completion mark).
+
+    codec="ffv1": bit-exact lossless, the real-source contract (D-27).
+    codec="vp9": near-lossless VP9 for the high-volume sim tree (D-32),
+    verified against the calibrated tolerance gates. Every clip write is its
+    own verification gate either way.
+    """
+    from real_world_gwm import lossless_video as lv
 
     clip_dir.mkdir(parents=True, exist_ok=True)
     video_path = clip_dir / "robot_only.mkv"
-    write_lossless_video(frames, video_path, fps=fps)
-    verify_lossless(video_path, frames)
+    if codec == "ffv1":
+        lv.write_lossless_video(frames, video_path, fps=fps)
+        lv.verify_lossless(video_path, frames)
+        codec_tag = "ffv1/bgr0"
+    elif codec == "vp9":
+        lv.write_near_lossless_video(frames, video_path, fps=fps)
+        lv.verify_near_lossless(video_path, frames)
+        codec_tag = lv.NEAR_LOSSLESS_CODEC
+    else:
+        raise ValueError(f"unknown clip codec: {codec}")
     meta = {**meta, "robot_only_video": "robot_only.mkv",
-            "robot_only_codec": "ffv1/bgr0"}
+            "robot_only_codec": codec_tag}
     tmp_meta = clip_dir / "meta.json.tmp"
     tmp_meta.write_text(json.dumps(meta, indent=1))
     tmp_meta.rename(clip_dir / "meta.json")  # meta.json last = completion mark
@@ -195,7 +208,7 @@ def render_molmobot(args, provenance: dict) -> dict:
             "renderer_provenance": {"arm": "fr3", "urdf": str(urdf),
                                     **provenance},
         }
-        _write_clip(clip_dir, frames, meta, fps=1.0 / ep.dt_s)
+        _write_clip(clip_dir, frames, meta, fps=1.0 / ep.dt_s, codec="vp9")
         stats["rendered"] += 1
         logging.info("rendered %s (%d frames, mount rms %.2f mm)",
                      ep.clip_id, ep.n_frames, rms * 1000)
