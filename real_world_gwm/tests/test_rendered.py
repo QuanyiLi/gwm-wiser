@@ -107,6 +107,23 @@ def test_random_scale_draws_vary_and_fall_back(synthetic_rendered_root):
     assert len(seen) > 1   # augmentation actually varies the window
 
 
+def test_prediscovered_clips_are_reused(synthetic_rendered_root):
+    """A caller-supplied clips list must behave exactly like discovery
+    (train.py shares one scan across the audit and every split)."""
+    clips = discover_rendered_clips(synthetic_rendered_root)
+    ref = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                                jitter_prob=0.0)
+    ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                               jitter_prob=0.0, clips=clips)
+    assert [c.clip_id for c in ds.clips] == [c.clip_id for c in ref.clips]
+    assert ds.index == ref.index
+    # the sources filter still applies to a pre-discovered list
+    empty = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                                  jitter_prob=0.0, clips=clips,
+                                  sources=["molmoact2_droid"])
+    assert len(empty.clips) == 0
+
+
 def test_per_source_scale_ranges(synthetic_rendered_root):
     import random
 

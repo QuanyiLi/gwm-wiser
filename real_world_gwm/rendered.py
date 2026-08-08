@@ -183,6 +183,7 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         holdout_permille: int = HOLDOUT_PERMILLE,
         limit_clips: int = None,
         limit_windows: int = None,
+        clips: list = None,
     ):
         from real_world_gwm.windows import DEFAULT_TOLERANCE_S
 
@@ -203,7 +204,12 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         self.anchor_jitter_s = ({s: v / 2 for s, v in stride_s.items()}
                                 if anchor_jitter_s is None else anchor_jitter_s)
 
-        clips = discover_rendered_clips(self.data_root, sources)
+        # ``clips`` lets one process share a single discovery scan across the
+        # train/held-out/sweep datasets (the scan is O(all clips) on GPFS).
+        if clips is None:
+            clips = discover_rendered_clips(self.data_root, sources)
+        elif sources:
+            clips = [c for c in clips if c.source in sources]
         self.clips = split_clips(clips, split, holdout_permille)
         if limit_clips is not None:
             self.clips = self.clips[:limit_clips]

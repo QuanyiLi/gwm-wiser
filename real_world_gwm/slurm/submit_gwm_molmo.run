@@ -19,7 +19,16 @@
 # Prerequisites on kuma (each its own slurm job; nothing on the login node):
 #   sbatch real_world_gwm/slurm/submit_setup_data.run      # data + URDF assets
 #   sbatch real_world_gwm/slurm/submit_render_actions.run  # rendered tree
-# The audit runs automatically at startup and fail-fasts on off-grid clips.
+# The audit runs automatically at startup and fail-fasts on off-grid clips;
+# pre-generate it once (python -m real_world_gwm.audit, ~20 min CPU) and pass
+# MANIFEST= so the 12 ranks skip it.
+#
+# Measured on the 2026-08-08 preflight (2xH100 debug smoke, full-size model,
+# bs 32/rank): 0.59 steps/s steady, 78 GB/GPU peak, 3.6 GB per checkpoint
+# step dir, ~26 ms per Qwen embed forward. At that rate 90k steps need
+# ~42-45 h: chain 24 h segments with RESUME=<out>/step_*/train_state.pt.
+# Held-out eval costs ~7 s per eval batch per loader (dev + 2 sweeps), so
+# --eval_batches 64 is ~14 min per eval point; trim via EXTRA_ARGS if needed.
 
 set -eo pipefail
 
@@ -35,6 +44,14 @@ BATCH_SIZE=${BATCH_SIZE:-32}
 # Corpus selection (run-1 default: real + sim, natural mixture — D-28).
 # Single-source runs: SOURCES=molmobot or SOURCES=molmoact2_droid.
 SOURCES=${SOURCES:-molmobot molmoact2_droid}
+# Pre-generated audit manifest (python -m real_world_gwm.audit) — skips the
+# per-rank startup audit; strongly recommended for multi-node runs.
+MANIFEST=${MANIFEST:-}
+# Resume from a step_*/train_state.pt of a previous run (walltime chaining).
+RESUME=${RESUME:-}
+# Appended last; argparse last-wins, so flags here override the ones below
+# (e.g. EXTRA_ARGS="--eval_batches 8 --save_every 5000").
+EXTRA_ARGS=${EXTRA_ARGS:-}
 
 # The code is imported via PYTHONPATH, but the interpreter still has to be the
 # one holding lerobot 0.4.3 / transformers 4.57.6 / torchcodec + ffmpeg.
@@ -79,4 +96,7 @@ srun torchrun \
     --batch_size $BATCH_SIZE \
     --num_workers 8 \
     --eval_every 2000 --eval_batches 64 \
-    --wandb_enable --wandb_project gwm_molmo
+    --wandb_enable --wandb_project gwm_molmo \
+    ${MANIFEST:+--manifest $MANIFEST} \
+    ${RESUME:+--resume $RESUME} \
+    $EXTRA_ARGS

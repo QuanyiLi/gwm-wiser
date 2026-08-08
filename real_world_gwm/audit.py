@@ -62,9 +62,13 @@ def build_manifest(
     holdout_permille: int = HOLDOUT_PERMILLE,
     pixel_budget: dict = None,
     limit_clips: int = None,
+    clips: list = None,
 ):
     stride_s = {**DEFAULT_STRIDE_S, **(stride_s or {})}
-    clips = discover_rendered_clips(data_root, sources)
+    if clips is None:
+        clips = discover_rendered_clips(data_root, sources)
+    elif sources:
+        clips = [c for c in clips if c.source in sources]
     if limit_clips is not None:
         clips = clips[:limit_clips]
 

@@ -269,6 +269,22 @@ def main(argv=None):
     max_pixels = DEFAULT_MAX_PIXELS if args.max_pixels is None else args.max_pixels
     output_dir = Path(args.output_dir)
 
+    # One discovery scan per process, shared by the audit and every dataset
+    # split — the scan reads every clip's meta.json, O(all clips) on GPFS.
+    from real_world_gwm.rendered import (
+        DEFAULT_SCALE_RANGES,
+        RenderedWindowDataset,
+        discover_rendered_clips,
+    )
+
+    t_scan = time.time()
+    all_clips = discover_rendered_clips(args.data_root, args.sources)
+    if is_main:
+        logging.info(
+            f"discovered {len(all_clips)} rendered clips "
+            f"in {time.time() - t_scan:.0f}s"
+        )
+
     if args.manifest:
         manifest = json.loads(Path(args.manifest).read_text())
     else:
@@ -287,6 +303,7 @@ def main(argv=None):
             holdout_permille=args.holdout_permille,
             pixel_budget={"min_pixels": min_pixels, "max_pixels": max_pixels},
             limit_clips=args.limit_clips,
+            clips=all_clips,
         )
         if is_main:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -309,8 +326,6 @@ def main(argv=None):
     manifest_hash = manifest["manifest_hash"]
 
     # ---- dataset ----
-    from real_world_gwm.rendered import RenderedWindowDataset
-
     def build_split(split, jitter, scale_range=None, anchor_jitter_s=None):
         return RenderedWindowDataset(
             args.data_root,
@@ -327,9 +342,8 @@ def main(argv=None):
             holdout_permille=args.holdout_permille,
             limit_clips=args.limit_clips,
             limit_windows=args.limit_windows,
+            clips=all_clips,
         )
-
-    from real_world_gwm.rendered import DEFAULT_SCALE_RANGES
 
     if args.time_scale is None:
         train_scale = DEFAULT_SCALE_RANGES     # per-source (D-33)
