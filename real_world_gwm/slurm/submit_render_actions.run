@@ -18,6 +18,18 @@
 # skipped), so requeueing a failed array task is always safe. No temporal
 # subsampling happens here — frame-step decisions belong to training.
 #
+# Requeueing single shards: a partial array (sbatch --array=3,53,56) makes
+# SLURM_ARRAY_TASK_COUNT equal the RETRY size, silently changing every
+# task's slice — two tasks then race on the same clips (the meta.json-last
+# + verify contract contains the damage, but the run wastes itself). Pin
+# the original geometry via NUM_SHARDS:
+#     SOURCE=molmobot NUM_SHARDS=64 sbatch --array=3,53,56 \
+#         real_world_gwm/slurm/submit_render_actions.run
+# Partition: l40s default (graphics-class, 2.4x cheaper); `-p h100` works
+# when l40s is full — but a task sitting at ZERO "rendered" log lines is a
+# node whose broken Vulkan ICD hangs SAPIEN init (seen on kh044/kh045/
+# kh082): scancel it and resubmit with --exclude=<nodes>.
+#
 # Sizing (l40s: graphics-class GPU, billing weight 2141 vs 5174 for h100):
 # measured end-to-end ~100 fps/GPU on an RTX 3090 (gate probes + SAPIEN +
 # FFV1 + bit-exact verify). Full DROID = 74,604 eps x 2 cams = 35.5M frames
@@ -72,5 +84,5 @@ srun python -m real_world_gwm.scripts.render_actions \
     --data-root "$DATA_ROOT" \
     --source "$SOURCE" \
     --shard-index "${SLURM_ARRAY_TASK_ID:-0}" \
-    --num-shards "${SLURM_ARRAY_TASK_COUNT:-1}" \
+    --num-shards "${NUM_SHARDS:-${SLURM_ARRAY_TASK_COUNT:-1}}" \
     $RENDER_ARGS
