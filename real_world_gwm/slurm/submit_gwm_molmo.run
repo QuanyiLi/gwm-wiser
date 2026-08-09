@@ -83,7 +83,9 @@ export OMP_NUM_THREADS=8
 # the machine-wide ~/.netrc login (WANDB_API_KEY has precedence in wandb).
 # Create it as:  echo 'export WANDB_API_KEY=<key>' > <repo>/.wandb_api_key.env
 #                chmod 600 <repo>/.wandb_api_key.env
-[ -f "${REPO_ROOT}/.wandb_api_key.env" ] && source "${REPO_ROOT}/.wandb_api_key.env"
+if [ -f "${REPO_ROOT}/.wandb_api_key.env" ]; then
+    source "${REPO_ROOT}/.wandb_api_key.env"
+fi
 
 # Never inherit Hugging Face cache locations from the login environment.
 export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
