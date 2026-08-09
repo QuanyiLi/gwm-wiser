@@ -8,7 +8,9 @@
 #SBATCH --cpus-per-task=64
 #SBATCH --gpus-per-node=4
 #SBATCH --nodes=3
-#SBATCH --time=24:00:00
+# QoS normal allows 3-00:00:00; 37.5k steps at the measured 0.30 steps/s
+# need ~35 h, so the default fits a full run in ONE segment.
+#SBATCH --time=40:00:00
 # --mem deliberately omitted -> the per-node maximum (64 cores x 5900 MB
 # ~ 369 G). Job 4047278 OOM-killed at a 200 G cap (MaxRSS hit it exactly).
 
@@ -24,10 +26,11 @@
 # pre-generate it once (python -m real_world_gwm.audit, ~20 min CPU) and pass
 # MANIFEST= so the 12 ranks skip it.
 #
-# Measured on the 2026-08-08 preflight (2xH100 debug smoke, full-size model,
-# bs 32/rank): 0.59 steps/s steady, 78 GB/GPU peak, 3.6 GB per checkpoint
-# step dir, ~26 ms per Qwen embed forward. At that rate 90k steps need
-# ~42-45 h: chain 24 h segments with RESUME=<out>/step_*/train_state.pt.
+# Measured 2026-08-09 on the real 3x4 H100 run: 0.30 steps/s steady (the
+# 2-rank debug smoke gives 0.59 — inter-node allreduce/IO halves it),
+# ~80 GB/GPU and ~82 GB/node RSS, 3.6 GB per checkpoint step dir, ~26 ms
+# per Qwen embed forward. 37.5k steps ~ 35 h -> single 40 h segment; for
+# longer recipes chain segments with RESUME=<out>/step_*/train_state.pt.
 # Held-out eval costs ~7 s per eval batch per loader (dev + 2 sweeps), so
 # --eval_batches 64 is ~14 min per eval point; trim via EXTRA_ARGS if needed.
 
@@ -49,9 +52,11 @@ SOURCES=${SOURCES:-molmobot molmoact2_droid}
 # per-rank startup audit; strongly recommended for multi-node runs.
 MANIFEST=${MANIFEST:-}
 # Clip discovery cache (see --discovery_cache): turns the ~21 min per-rank
-# meta.json walk into a seconds-long sequential read. Regenerate after any
-# re-render.
-DISCOVERY_CACHE=${DISCOVERY_CACHE:-}
+# meta.json walk into a seconds-long sequential read. ON by default — the
+# tree signature auto-invalidates it when clips are added/removed/renamed
+# (an in-place re-render into identical names needs a manual delete).
+# DISCOVERY_CACHE="" disables.
+DISCOVERY_CACHE=${DISCOVERY_CACHE-${DATA_ROOT}/rendered_discovery_cache.json}
 # Resume from a step_*/train_state.pt of a previous run (walltime chaining).
 RESUME=${RESUME:-}
 # Appended last; argparse last-wins, so flags here override the ones below
