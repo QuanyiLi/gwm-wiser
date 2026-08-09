@@ -53,3 +53,4 @@ third_party
 /real_world_gwm/droid_viz/
 /real_world_gwm/molmobot_viz/
 /real_world_gwm/data/
+/.wandb_api_key.env

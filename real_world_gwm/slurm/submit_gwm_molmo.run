@@ -75,6 +75,12 @@ export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
 # silently starves the dataloader workers.
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=8
+# Repo-scoped wandb identity: if the gitignored key file exists, it wins over
+# the machine-wide ~/.netrc login (WANDB_API_KEY has precedence in wandb).
+# Create it as:  echo 'export WANDB_API_KEY=<key>' > <repo>/.wandb_api_key.env
+#                chmod 600 <repo>/.wandb_api_key.env
+[ -f "${REPO_ROOT}/.wandb_api_key.env" ] && source "${REPO_ROOT}/.wandb_api_key.env"
+
 # Never inherit Hugging Face cache locations from the login environment.
 export HF_HOME=${GWM_HF_HOME:-/work/vita/lanfeng/.huggingface}
 export HF_HUB_CACHE=${HF_HOME}/hub
