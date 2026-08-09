@@ -124,6 +124,37 @@ def test_prediscovered_clips_are_reused(synthetic_rendered_root):
     assert len(empty.clips) == 0
 
 
+def test_discovery_cache_roundtrip_and_staleness(synthetic_rendered_root,
+                                                 tmp_path):
+    from real_world_gwm.rendered import (
+        load_discovery_cache,
+        save_discovery_cache,
+    )
+
+    clips = discover_rendered_clips(synthetic_rendered_root)
+    cache = tmp_path / "cache.json"
+    save_discovery_cache(cache, clips, synthetic_rendered_root)
+
+    loaded = load_discovery_cache(cache, synthetic_rendered_root)
+    assert [c.clip_id for c in loaded] == [c.clip_id for c in clips]
+    assert loaded[0].meta == clips[0].meta
+    assert loaded[0].clip_dir == clips[0].clip_dir
+    assert load_discovery_cache(cache, synthetic_rendered_root,
+                                sources=["nope"]) == []
+
+    # a dataset built from cached clips is identical to a scanned one
+    ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                               jitter_prob=0.0, clips=loaded)
+    ref = RenderedWindowDataset(synthetic_rendered_root, split="all",
+                                jitter_prob=0.0)
+    assert ds.index == ref.index
+
+    # growing the tree invalidates the cache (new clip dir -> None)
+    (synthetic_rendered_root / "rendered" / "molmobot"
+     / "houseZ__ep9__camA").mkdir(parents=True)
+    assert load_discovery_cache(cache, synthetic_rendered_root) is None
+
+
 def test_per_source_scale_ranges(synthetic_rendered_root):
     import random
 

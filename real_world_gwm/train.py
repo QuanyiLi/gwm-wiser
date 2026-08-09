@@ -53,6 +53,10 @@ def parse_args(argv=None):
                    help="audit manifest JSON; omitted -> the audit runs "
                         "automatically at startup and is written into "
                         "output_dir, so a single command works on slurm")
+    p.add_argument("--discovery_cache", default=None,
+                   help="clip discovery cache JSON: loaded when the file "
+                        "exists, else written after the scan (rank 0). "
+                        "Regenerate after any re-render.")
     p.add_argument("--stride_s", type=json.loads, default=None,
                    help='JSON per-source anchor stride override, e.g. '
                         '\'{"molmobot": 3.0}\'')
@@ -284,13 +288,31 @@ def main(argv=None):
         DEFAULT_SCALE_RANGES,
         RenderedWindowDataset,
         discover_rendered_clips,
+        load_discovery_cache,
+        save_discovery_cache,
     )
 
     t_scan = time.time()
-    all_clips = discover_rendered_clips(args.data_root, args.sources)
+    cache = Path(args.discovery_cache) if args.discovery_cache else None
+    all_clips, how = None, "scan"
+    if cache and cache.is_file():
+        all_clips = load_discovery_cache(cache, args.data_root, args.sources)
+        if all_clips is None:
+            if is_main:
+                logging.info("discovery cache is stale; rescanning")
+        else:
+            how = f"cache {cache.name}"
+    if all_clips is None:
+        # The cache must hold the UNFILTERED tree so a later run with a
+        # different --sources selection stays correct.
+        unfiltered = discover_rendered_clips(args.data_root, None)
+        if cache and is_main:
+            save_discovery_cache(cache, unfiltered, args.data_root)
+        all_clips = ([c for c in unfiltered if c.source in args.sources]
+                     if args.sources else unfiltered)
     if is_main:
         logging.info(
-            f"discovered {len(all_clips)} rendered clips "
+            f"discovered {len(all_clips)} rendered clips via {how} "
             f"in {time.time() - t_scan:.0f}s"
         )
 

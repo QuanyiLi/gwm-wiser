@@ -128,6 +128,56 @@ def discover_rendered_clips(data_root, sources=None) -> list:
     return clips
 
 
+def tree_signature(data_root) -> dict:
+    """Cheap staleness signal for the discovery cache: per-source counts and
+    a hash of the sorted clip-directory names. Costs one readdir per source
+    (seconds), not one file read per clip (~21 min for 147k clips on GPFS).
+    Catches clips added, removed, or renamed; an in-place re-render into the
+    SAME directories is invisible to it — delete the cache file then."""
+    root = Path(data_root) / "rendered"
+    sig = {}
+    if not root.is_dir():
+        return sig
+    for src_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        names = sorted(p.name for p in src_dir.iterdir())
+        sig[src_dir.name] = {
+            "n": len(names),
+            "sha": hashlib.sha256("\n".join(names).encode()).hexdigest(),
+        }
+    return sig
+
+
+def save_discovery_cache(path, clips, data_root) -> None:
+    """Serialize a discovery result (clip dirs stored data_root-relative);
+    stamped with tree_signature so a changed tree invalidates it."""
+    root = Path(data_root)
+    payload = {
+        "version": 2,
+        "signature": tree_signature(root),
+        "clips": [
+            {"clip_dir": str(c.clip_dir.relative_to(root)), "meta": c.meta}
+            for c in clips
+        ],
+    }
+    Path(path).write_text(json.dumps(payload))
+
+
+def load_discovery_cache(path, data_root, sources=None):
+    """Clips from a cache file, or None when the cache is stale (the tree
+    signature changed — e.g. new shards were rendered) or incompatible."""
+    root = Path(data_root)
+    payload = json.loads(Path(path).read_text())
+    if payload.get("version") != 2:
+        return None
+    if payload["signature"] != tree_signature(root):
+        return None
+    clips = [RenderedClip(clip_dir=root / e["clip_dir"], meta=e["meta"])
+             for e in payload["clips"]]
+    if sources:
+        clips = [c for c in clips if c.source in sources]
+    return clips
+
+
 def is_heldout(episode_uid: str, permille: int = HOLDOUT_PERMILLE) -> bool:
     digest = hashlib.sha256(episode_uid.encode()).digest()
     return int.from_bytes(digest[:8], "big") % 1000 < permille

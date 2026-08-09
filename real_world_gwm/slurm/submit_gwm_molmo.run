@@ -48,6 +48,10 @@ SOURCES=${SOURCES:-molmobot molmoact2_droid}
 # Pre-generated audit manifest (python -m real_world_gwm.audit) — skips the
 # per-rank startup audit; strongly recommended for multi-node runs.
 MANIFEST=${MANIFEST:-}
+# Clip discovery cache (see --discovery_cache): turns the ~21 min per-rank
+# meta.json walk into a seconds-long sequential read. Regenerate after any
+# re-render.
+DISCOVERY_CACHE=${DISCOVERY_CACHE:-}
 # Resume from a step_*/train_state.pt of a previous run (walltime chaining).
 RESUME=${RESUME:-}
 # Appended last; argparse last-wins, so flags here override the ones below
@@ -105,5 +109,6 @@ srun torchrun \
     --eval_every 2000 --eval_batches 64 \
     --wandb_enable --wandb_project gwm_molmo \
     ${MANIFEST:+--manifest $MANIFEST} \
+    ${DISCOVERY_CACHE:+--discovery_cache $DISCOVERY_CACHE} \
     ${RESUME:+--resume $RESUME} \
     $EXTRA_ARGS
