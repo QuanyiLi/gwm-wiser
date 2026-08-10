@@ -1,4 +1,4 @@
-# our-droid-sim-evals
+# droid-sim-evals-ours
 
 Custom DROID-sim evaluation tasks for TiPToP, layered on [`../droid-sim-evals`](../droid-sim-evals)
 (same IsaacLab `.venv`, same runner, same CSV schema — `grasp_eval.py` imports `batch_eval_v2`

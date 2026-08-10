@@ -13,6 +13,6 @@ Naming note: the two repos use two numbering schemes. `M0–M4` = system milesto
 
 ## Code layout (once implementation starts)
 
-- `gwm_tiptop/` (new package in this repo, own git branch) — mask-free perception, `run_proposals` orchestrator over cuTAMP-as-a-library, thin gwm-server HTTP client. **The original `tiptop/` package is not modified** — the Gemini baseline arm must stay runnable for the A/B.
+- `droid/gwm_tiptop/` (sibling of the pristine `tiptop/` clone in the gwm-wiser monorepo) — mask-free perception, `run_proposals` orchestrator over cuTAMP-as-a-library, thin gwm-server HTTP client. **The original `tiptop/` repo is not modified** — the Gemini baseline arm must stay runnable for the A/B.
 - `gwm-server` lives in the gwm-wiser repo (its pinned environment owns the model stack).
 - droid-sim-evals is forked to add: external-cam observation, automatic pick-success detection, and a batch runner.

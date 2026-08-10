@@ -14,7 +14,7 @@ and the argmax. Backends:
 Run inside the gwm venv:
 
     cd /root/code/gwm/gwm-wiser && .venv/bin/python -m droid.server.gwm_server \
-        --backend dummy --urdf /root/code/gwm/gwm-wiser/droid/tiptop/gwm_tiptop/assets/panda_robotiq_droidsim.urdf
+        --backend dummy --urdf /root/code/gwm/gwm-wiser/droid/gwm_tiptop/assets/panda_robotiq_droidsim.urdf
 """
 
 import argparse

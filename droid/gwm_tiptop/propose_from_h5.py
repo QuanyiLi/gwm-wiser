@@ -2,11 +2,12 @@
 
 Mirrors the tiptop-h5 offline path but with the Gemini/SAM2 stage replaced by
 geometric scene decomposition (perception_geometric) and single-plan cuTAMP
-replaced by run_proposals. Requires the M2T2 server. Run inside `pixi shell`:
+replaced by run_proposals. Requires the M2T2 server. Run inside `pixi shell`
+of droid/tiptop (gwm_tiptop resolves via the env's gwm_tiptop.pth):
 
     python -m gwm_tiptop.propose_from_h5 \
         --h5-path /root/code/gwm/gwm-wiser/droid/droid-sim-evals/tiptop_assets/smoke_test.h5 \
-        --output-dir ../gwm_integrate_doc/proposals/scene1
+        --output-dir /root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene1
 """
 
 import argparse

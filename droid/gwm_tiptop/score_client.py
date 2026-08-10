@@ -1,7 +1,7 @@
 """Thin HTTP client for gwm-server + GI-4 driver: score saved proposals, pick the winner.
 
     python -m gwm_tiptop.score_client \
-        --proposals-dir ../gwm_integrate_doc/proposals/scene1 \
+        --proposals-dir /root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene1 \
         --external-h5 /root/code/gwm/gwm-wiser/droid/droid-sim-evals/tiptop_assets/external_scene1_0.h5 \
         --instruction "pick up the Rubik's cube"
 

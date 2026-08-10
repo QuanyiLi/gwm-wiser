@@ -5,9 +5,9 @@ at the captured joint state with the captured K / camera pose, and writes
 side-by-side + alpha-blend comparison images. Run inside the gwm-wiser venv:
 
     cd /root/code/gwm/gwm-wiser && .venv/bin/python \
-        /root/code/gwm/gwm-wiser/droid/tiptop/gwm_tiptop/validate_renderer_overlay.py \
+        /root/code/gwm/gwm-wiser/droid/gwm_tiptop/validate_renderer_overlay.py \
         --h5 /root/code/gwm/gwm-wiser/droid/droid-sim-evals/tiptop_assets/external_scene1_0.h5 \
-        --out-dir /root/code/gwm/gwm-wiser/droid/tiptop/gwm_integrate_doc/overlays
+        --out-dir /root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/overlays
 """
 
 import argparse
