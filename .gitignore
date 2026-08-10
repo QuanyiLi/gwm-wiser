@@ -49,8 +49,18 @@ __pycache__/
 /third_party/**/__pycache__/
 third_party
 /wiser_dataset/
-/real_world_gwm/viz/
-/real_world_gwm/droid_viz/
-/real_world_gwm/molmobot_viz/
-/real_world_gwm/data/
+/real_data_train/viz/
+/real_data_train/droid_viz/
+/real_data_train/molmobot_viz/
+/real_data_train/data/
 /.wandb_api_key.env
+
+# droid/ monorepo absorption (2026-08-10): env dirs, weights, secrets, run artifacts
+/droid/**/.pixi/
+/droid/**/.venv/
+/droid/tiptop/.env
+/droid/tiptop/tiptop/.cache/
+/droid/M2T2/weights/
+/droid/droid-sim-evals/runs/
+/droid/droid-sim-evals/assets.zip
+/droid/droid-sim-evals/assets/

@@ -1,0 +1,51 @@
+#!/bin/bash -l
+#SBATCH --job-name=gwm_droid_calib
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --time=8:00:00
+#SBATCH --mem=64G
+
+# CPU-bound DROID calibration join (prepare_droid_calibration.py): matches
+# MolmoAct2-DROID episodes to the KarlP/droid release by their verbatim
+# language-annotation triple and writes
+# $DATA_ROOT/molmoact2_droid_calib/calibration.json (decision D-28).
+# Kuma rejects GPU-less jobs (QOSMinGRES), so 1 GPU is requested; cheapest:
+#     sbatch -p mig12gb --cpus-per-task=2 --mem=11G \
+#         real_data_train/slurm/submit_prepare_droid_calib.run
+#
+# Order in the DROID pipeline — every step its own slurm job:
+#   1. submit_setup_data.run      (downloads videos/parquets + KarlP JSONs)
+#   2. submit_prepare_droid_calib.run   (this job; re-run after any new
+#      setup_data download — the join only covers episodes on disk)
+#   3. submit_render_actions.run  with SOURCE=molmoact2_droid
+#
+# Safe to re-run any time; the output is rewritten atomically.
+
+set -eo pipefail
+
+REPO_ROOT=${REPO_ROOT:-/work/vita/lanfeng/vlas/gwm-wiser}
+DATA_ROOT=${DATA_ROOT:-${REPO_ROOT}/real_data_train/data}
+CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
+CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
+PREP_ARGS=${PREP_ARGS:-}
+
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda activate "${CONDA_ENV}"
+
+for d in "${REPO_ROOT}/real_data_train" "${DATA_ROOT}/karlp_droid"; do
+    [ -d "$d" ] || { echo "missing required path: $d (run setup_data first)" >&2; exit 1; }
+done
+
+export PYTHONPATH=$REPO_ROOT:$PYTHONPATH
+# slurm >= 22.05 no longer propagates --cpus-per-task to srun steps.
+export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
+
+srun python -m real_data_train.scripts.prepare_droid_calibration \
+    --data-root "$DATA_ROOT" \
+    $PREP_ARGS

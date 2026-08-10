@@ -1,0 +1,103 @@
+import json
+import logging
+import os
+from pathlib import Path
+
+import numpy as np
+from jaxtyping import Float
+from omegaconf import DictConfig, OmegaConf
+from scipy.spatial.transform import Rotation
+
+_log = logging.getLogger(__name__)
+
+config_dir = Path(__file__).parent
+config_assets_dir = config_dir / "assets"
+calib_info_path = config_assets_dir / "calibration_info.json"
+default_cfg_path = config_dir / "tiptop.yml"
+
+_cached_cfg: DictConfig | None = None
+_cached_cfg_path: Path | None = None
+
+
+def set_tiptop_cfg_from_file(cfg_path: Path, fill_missing: bool = False) -> DictConfig:
+    """Load and cache the TiPToP config from a specific file. Call before any tiptop_cfg() usage.
+
+    Raises if the file omits keys present in the packaged defaults, unless fill_missing is set — recorded configs
+    replayed by tiptop-offline predate later config keys and cannot be updated after the fact.
+    """
+    global _cached_cfg, _cached_cfg_path
+    defaults = OmegaConf.load(default_cfg_path)
+    loaded = OmegaConf.load(cfg_path)
+    cfg = OmegaConf.merge(defaults, loaded)
+    if cfg != loaded:
+        if not fill_missing:
+            raise ValueError(f"{cfg_path} is missing keys present in {default_cfg_path}. Update it to match.")
+        _log.warning(f"{cfg_path} is missing keys present in {default_cfg_path}, filling them in from the defaults")
+    _cached_cfg = cfg
+    _cached_cfg_path = Path(cfg_path)
+    return cfg
+
+
+def tiptop_cfg() -> DictConfig:
+    """Return the cached TiPToP config, loading the default config file on first call."""
+    if _cached_cfg is None:
+        return set_tiptop_cfg_from_file(default_cfg_path)
+    return _cached_cfg
+
+
+def get_tiptop_cfg_path() -> Path:
+    """Return the source path of the currently-cached config. Loads the default config if not yet cached."""
+    if _cached_cfg_path is None:
+        tiptop_cfg()
+    assert _cached_cfg_path is not None
+    return _cached_cfg_path
+
+
+def load_calibration_info():
+    if not os.path.exists(calib_info_path):
+        raise FileNotFoundError(f"{calib_info_path} not found.")
+    with open(calib_info_path, "r") as f:
+        calibration_info = json.load(f)
+    return calibration_info
+
+
+def load_calibration(cam_key: str) -> Float[np.ndarray, "4 4"]:
+    """Load camera calibration 4x4 transform for a given camera serial."""
+    calibration_dict = load_calibration_info()
+    if cam_key not in calibration_dict:
+        raise ValueError(f"{cam_key} not found in {calib_info_path}")
+
+    pose_vec = calibration_dict[cam_key]["pose"]
+    xyz, rpy = pose_vec[:3], pose_vec[3:]
+    cam2frame = np.eye(4)
+    cam2frame[:3, :3] = Rotation.from_euler("xyz", rpy).as_matrix()
+    cam2frame[:3, 3] = xyz
+    return cam2frame
+
+
+def update_calibration_info(cam_key: str, pose: np.ndarray):
+    """Update calibration info with new camera pose.
+
+    Args:
+        cam_key: Camera identifier (e.g., "16779706_left")
+        pose: 6DOF pose vector [x, y, z, roll, pitch, yaw]
+    """
+    import time
+
+    # Load existing calibration info or create empty dict
+    if os.path.exists(calib_info_path):
+        calibration_dict = load_calibration_info()
+    else:
+        calibration_dict = {}
+
+    # Update with new pose and timestamp
+    calibration_dict[cam_key] = {
+        "pose": pose.tolist() if isinstance(pose, np.ndarray) else list(pose),
+        "timestamp": time.time(),
+    }
+
+    # Write back to file
+    with open(calib_info_path, "w") as f:
+        json.dump(calibration_dict, f, indent=2)
+
+    print(f"Updated calibration for {cam_key}")

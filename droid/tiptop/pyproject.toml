@@ -1,0 +1,109 @@
+
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tiptop"
+dynamic = ["version"]
+description = "TiPToP"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["robotics"]
+authors = [
+    { name = "William Shen", email = "willshen@mit.edu" },
+    { name = "Nishanth Kumar", email = "njk@mit.edu" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+    "aiohttp",
+    "bamboo-franka-client>=0.1.1",
+    "dill",
+    "google-genai>=0.6.0",
+    "jaxtyping",
+    "matplotlib",
+    "msgpack-numpy>=0.4.8",
+    "numpy",
+    "omegaconf",
+    "opencv-python>=4.12,<4.13",  # API changes too often
+    "pyrealsense2",
+    "rerun-sdk==0.27.3",  # API changes too often
+    "ruamel.yaml",
+    "scipy",
+    "supervision>=0.17.0",
+    "tyro",
+    "websockets>=12.0",
+    # Git dependencies
+    "SAM-2 @ git+https://github.com/facebookresearch/segment-anything-2.git",
+]
+
+[project.optional-dependencies]
+ur5 = [
+    "ur_rtde",
+]
+sam-server = [
+    "fastapi",
+    "pydantic",
+    "uvicorn",
+]
+test = [
+    "pytest>=9.0.2,<10",
+    "gdown>=5.2.1,<6",
+]
+dev = [
+    "pre-commit",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 120
+
+[project.scripts]
+# SAM server
+sam-server = "tiptop.scripts.sam_server:main"
+
+# Setup and calibration scripts
+tiptop-config = "tiptop.scripts.tiptop_config:entrypoint"
+calibrate-wrist-cam = "tiptop.scripts.calibrate_wrist_cam:calibrate_wrist_camera_entrypoint"
+compute-gripper-mask = "tiptop.scripts.compute_gripper_mask:compute_gripper_mask_entrypoint"
+paint-gripper-mask = "tiptop.scripts.paint_gripper_mask:paint_gripper_mask_entrypoint"
+
+# Robot observations
+get-joint-positions = "tiptop.scripts.get_observation:get_joint_positions"
+
+# Visualization scripts
+viz-calibration = "tiptop.scripts.viz_calibration:viz_calibration_entrypoint"
+viz-gripper-cam = "tiptop.scripts.viz_gripper_cam:viz_gripper_cam_entrypoint"
+viz-scene = "tiptop.scripts.viz_scene:viz_scene_entrypoint"
+viz-tiptop-run = "tiptop.scripts.viz_tiptop_run:viz_tiptop_run_entrypoint"
+
+# Moving robot and gripper
+go-home = "tiptop.scripts.go_to_conf:go_to_home_entrypoint"
+go-to-capture = "tiptop.scripts.go_to_conf:go_to_capture_entrypoint"
+gripper-open = "tiptop.scripts.gripper_actuate:gripper_open_entrypoint"
+gripper-close = "tiptop.scripts.gripper_actuate:gripper_close_entrypoint"
+
+# Main tiptop demo
+tiptop-run = "tiptop.tiptop_run:entrypoint"
+
+# Offline tiptop (no real robot)
+tiptop-h5 = "tiptop.tiptop_offline:h5_entrypoint"
+tiptop-rerun = "tiptop.tiptop_offline:rerun_entrypoint"
+
+# tiptop as a service
+tiptop-server = "tiptop.tiptop_websocket_server:entrypoint"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requires M2T2 server and GOOGLE_API_KEY",
+]
+
+[tool.setuptools.packages]
+find = { include = ["tiptop", "tiptop.*"] }
+
+[tool.setuptools_scm]
+version_scheme = "no-guess-dev"
+local_scheme = "node-and-date"
