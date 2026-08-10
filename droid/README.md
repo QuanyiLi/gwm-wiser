@@ -47,9 +47,14 @@ symlinks** without recreating the environments.
 cd /root/code/gwm/gwm-wiser/droid/M2T2 && pixi run server
 # TiPToP server (:8765; GOOGLE_API_KEY in tiptop/.env, chmod 600, gitignored)
 cd /root/code/gwm/gwm-wiser/droid/tiptop && source .env && pixi run tiptop-server
-# gwm-server scoring service (:8901)
+# gwm-server scoring service (:8901; --backend dummy for mechanics-only)
 cd /root/code/gwm/gwm-wiser && .venv/bin/python -m droid.server.gwm_server \
-    --backend dummy --urdf droid/gwm_tiptop/assets/panda_robotiq_droidsim.urdf
+    --backend gwm --urdf droid/gwm_tiptop/assets/panda_robotiq_droidsim.urdf \
+    --ckpt /root/exp_ret/0810_gwm/checkpoint.pt
+# selection-policy plan server for A/B batches (:8766+, G-19; random | fixed)
+/root/code/gwm/gwm-wiser/droid/droid-sim-evals/.venv/bin/python \
+    /root/code/gwm/gwm-wiser/droid/gwm_tiptop/policy_server.py \
+    --select random --proposals-dir droid/gwm_integrate_doc/proposals/scene1 --port 8766
 # 50-trial paper repro batch
 cd /root/code/gwm/gwm-wiser/droid/droid-sim-evals && bash run_batch_v2_paper.sh
 # grasp-and-hold eval tasks (scene 1, G-17)
