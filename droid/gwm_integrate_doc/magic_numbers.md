@@ -25,6 +25,7 @@
 5. **`xy_margin = 0.02` + table AABB 2/98-percentile crop** — objects overhanging the table edge get clipped out.
 6. **`XY_OFFSETS` max ±18 mm** — sized against the 0.105 m bin mouth (self-consistent with the gripper-fit argument: block edge at 33 mm < 52.5 mm half-mouth, but re-derive for any new container/held object).
 7. **`z_band = (−0.25, 0.15)`** — table-plane search band, rig prior; wrong on any rig where the robot is not table-mounted.
+8. **grasp-gate `MIN_THICKNESS = 0.015`** — vetoes ALL thin-wall pinch grasps (bin walls 4–8 mm, bowl rim 4–7 mm — the latter went 10/10 in G-24, so these are false vetoes). Safe today only because the two-stage `--apply` falls back to the ungated winner inside the argmax object; re-tune (e.g. a "thin but symmetric and deep" branch) before gating any rim-pinch target.
 
 ## perception_geometric.py
 
@@ -120,6 +121,21 @@ Module-level (named, commented in-file — the already-centralized ones):
 | `GRIPPER_PAUSE_SUBSTEPS` | 7 | G | scoring-side timeline discretization only (no executor counterpart) |
 | `--rat-scale` | 3.0 | — | the *real* hyperparameter (G-20 decision), not a magic number; `none` = uniform-6 |
 | request timeout | 1800 s | G | |
+
+## grasp_gate.py (closing-line grasp gate, added 2026-08-11 after the census — G-27)
+
+| Constant | Value | Class | Notes |
+|---|---|---|---|
+| `MIN_SLAB_PTS` | 150 | **D** | ABSOLUTE raw-point count in the capture box — scales with camera resolution × working distance. Recalibrate on a new rig, or replace with a per-cluster fraction |
+| `MIN_THICKNESS` | 0.015 m | **D** | solid-body prior (shortlist #8): false-vetoes thin-wall rim pinches that physically work |
+| `MAX_CENTER_OFF` | 0.015 m | E | slab asymmetry between pads (one-pad-first shove precursor) |
+| `MAX_ORTHO_OFF` | 0.012 m | E | slab offset across the pad width (sideways edge clip) |
+| `BOX_PAD` | 0.005 m | E | slop on the self-calibrated pad window |
+| `HAND_CROP_RADIUS` | 0.20 m | E | same value/purpose as place_propose (capture-pose gripper crop) |
+| tip-band filter | z_ee > −0.06, r < 0.03 | **B** | robot-model facts: this URDF's TCP sits at the fingertip plane, arm spheres at −z, pads = small spheres near TCP; cuRobo pads the sphere buffer with negative radii (filter `r > 0` first). Re-derive the band for any other gripper/URDF |
+| open-gripper sanity | `open_half ≥ 0.02` | G | calibration guard (gripper must be open in the model) |
+
+Validation breadth: scene6_rev2 pool + nearbowl only (fragile plan_12 n=62/center 30 mm FAIL vs robust plan_10 n=5718/thick 64 mm/center 0.6 mm PASS; execution 0/5 → 5/5). Cross-tag regression over all refer6 instructions not yet run.
 
 ## policy_server.py
 
