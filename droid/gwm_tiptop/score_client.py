@@ -51,9 +51,10 @@ accuracy goes 9/10 -> 10/10, with the cube/bowl tasks unchanged. The GI-2
 renderer overlay was re-validated on `external_cam_2` before the switch
 (overlays/scene6_external_cam_2/, 13.34 % robot coverage, no ghosting).
 Caveat for any claim built on this: cam_2 was chosen AFTER looking at both
-frames, so the 10/10 is not an unbiased viewpoint estimate — the unbiased
-version is to score from both cameras and average the per-camera object
-aggregates (also 10/10 here, min margin +0.0162), which is not implemented.
+frames, so the 10/10 is not an unbiased viewpoint estimate. The unbiased
+version — pass BOTH cameras (`--cam external_cam,external_cam_2`) and let the
+fusion below average them — needs no such choice, is also 10/10 here, and is
+markedly more robust (see the fusion comment in main()).
 
 Writes winner_{tag}.json (a serialize_plan file, servable via
 gwm_tiptop/policy_server.py --select fixed) and scores_{tag}.json next to the
@@ -147,8 +148,9 @@ def main() -> None:
     ap.add_argument("--instruction", required=True)
     ap.add_argument("--server-url", default="http://localhost:8901")
     ap.add_argument("--cam", default="external_cam_2",
-                    help="which external camera of the capture h5 the scene is scored from; "
-                         "see the viewpoint note in the module docstring")
+                    help="which external camera(s) of the capture h5 the scene is scored from; "
+                         "comma-separate for multi-view fusion (mean of per-candidate scores), "
+                         "e.g. external_cam,external_cam_2. See the viewpoint note in the docstring")
     ap.add_argument("--tag", default="gwm")
     ap.add_argument("--rat-scale", default="3.0",
                     help="WISER schedule scale from trajectory start (G-20 default 3.0); "
@@ -167,27 +169,60 @@ def main() -> None:
         plan = json.loads((args.proposals_dir / entry["file"]).read_text())
         plans.append((entry, plan))
 
+    cams = [c.strip() for c in args.cam.split(",") if c.strip()]
+    views = []
     with h5py.File(args.external_h5) as f:
-        rgb = np.asarray(f[f"{args.cam}/rgb"])[..., :3]
-        K = np.asarray(f[f"{args.cam}/intrinsic_matrix"])
-        pos = np.asarray(f[f"{args.cam}/pos_w"])
-        w, x, y, z = np.asarray(f[f"{args.cam}/quat_w_ros"])
-        c2w = np.eye(4)
-        c2w[:3, :3] = Rotation.from_quat([x, y, z, w]).as_matrix()
-        c2w[:3, 3] = pos
+        for cam in cams:
+            pos = np.asarray(f[f"{cam}/pos_w"])
+            w, x, y, z = np.asarray(f[f"{cam}/quat_w_ros"])
+            c2w = np.eye(4)
+            c2w[:3, :3] = Rotation.from_quat([x, y, z, w]).as_matrix()
+            c2w[:3, 3] = pos
+            views.append((cam, np.asarray(f[f"{cam}/rgb"])[..., :3],
+                          np.asarray(f[f"{cam}/intrinsic_matrix"]), c2w))
 
     sampling = {"rat_scale": rat_scale, "task_image": args.task_image}
+    candidates = [plan_to_candidate(plan) for _, plan in plans]
+    per_view = []
+    for cam, rgb, K, c2w in views:
+        s = dict(sampling)
+        if args.dump_dir:
+            s["dump_dir"] = str(args.dump_dir if len(views) == 1 else args.dump_dir / cam)
+        per_view.append((cam, score_candidates(args.server_url, rgb, K, c2w,
+                                               args.instruction, candidates, s)))
     if args.dump_dir:
         sampling["dump_dir"] = str(args.dump_dir)
-    candidates = [plan_to_candidate(plan) for _, plan in plans]
-    result = score_candidates(args.server_url, rgb, K, c2w, args.instruction, candidates, sampling)
+
+    # Multi-view fusion (G-30): plain arithmetic mean of each candidate's score
+    # across views, then the unchanged two-stage selection. The views score the
+    # SAME candidate set, so averaging per candidate and averaging each object's
+    # per-view aggregate are the same number; per-candidate is the natural place.
+    # Why the mean and not min/max/softmax-product/Borda: measured on this pool,
+    # the mean had the lowest wrong-object rate under score noise at every level
+    # (0.02 % vs cam-2-alone's 2.28 % at sigma 0.01) and adds no hyperparameter.
+    # It is worth doing because the two views DISAGREE where it matters: pooled
+    # correlation of their per-object deviations is only r=+0.58 (r~0.35 on the
+    # four banana tasks, where one view is gripper-shadowed; r>0.85 where the
+    # target is plainly visible in both), and the between-view spread (0.032) is
+    # as large as the semantic signal itself (0.031).
+    result = per_view[0][1]
+    if len(per_view) > 1:
+        scores = np.mean([r["scores"] for _, r in per_view], axis=0)
+        sm = np.mean([r["softmax"] for _, r in per_view], axis=0)
+        result = {**result,
+                  "scores": [float(v) for v in scores],
+                  "softmax": [float(v) for v in sm / sm.sum()],
+                  "argmax": int(np.argmax(scores)),
+                  "stats": {**result["stats"], "fused_views": cams,
+                            "per_view_scores": {c: r["scores"] for c, r in per_view}},
+                  "elapsed_s": sum(r["elapsed_s"] for _, r in per_view)}
 
     ranked = sorted(
         zip(result["scores"], result["softmax"], (e for e, _ in plans)),
         key=lambda t: -t[0],
     )
     print(f"\ninstruction: {args.instruction!r}  backend={result['stats']['backend']} "
-          f"rat_scale={rat_scale} task_image={args.task_image}")
+          f"cams={cams} rat_scale={rat_scale} task_image={args.task_image}")
     for score, sm, entry in ranked:
         print(f"  {score:+.4f} (p={sm:.3f})  {entry['file']}  target={entry['target']}")
 
@@ -219,6 +254,7 @@ def main() -> None:
         "sampling": sampling,
         "server": result["stats"],
         "object_score": args.object_score,
+        "cameras": cams,
         "selected_target": selected,
         "winner_file": win_entry["file"],
         "argmax_file": plans[result["argmax"]][0]["file"],  # per-candidate argmax, provenance only

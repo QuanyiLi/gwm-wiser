@@ -20,10 +20,12 @@ DBG=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/runs/place_v2/rat
 cd /root/code/gwm/gwm-wiser
 
 source /root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/place_tasks.sh
+CAM=${CAM:-external_cam_2}   # comma-separate for multi-view fusion
+SUF=${SUF:-}                 # artifact suffix, keeps viewpoint variants apart
 
 for tag in "${TAGS[@]}"; do
-    echo "=== place_$tag: ${INSTR[$tag]} ==="
-    $PY -m gwm_tiptop.score_client --proposals-dir "$PROP" --external-h5 "$H5" \
-        --instruction "${INSTR[$tag]}" --tag "place_$tag" --dump-dir "$DBG/$tag" || echo "SCORE FAILED: $tag"
+    echo "=== place_$tag$SUF: ${INSTR[$tag]} (cam $CAM) ==="
+    $PY -m gwm_tiptop.score_client --proposals-dir "$PROP" --external-h5 "$H5" --cam "$CAM" \
+        --instruction "${INSTR[$tag]}" --tag "place_$tag$SUF" --dump-dir "$DBG$SUF/$tag" || echo "SCORE FAILED: $tag"
 done
 echo "ALL SCORING DONE"

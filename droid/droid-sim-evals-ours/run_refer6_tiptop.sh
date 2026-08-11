@@ -12,9 +12,10 @@ mkdir -p "$OUT"
 TASK_TIMEOUT=${TASK_TIMEOUT:-3600}
 TRIALS=${TRIALS:-10}
 FAST=${FAST:-}          # set to --fast for mass runs (rendering stays on until the plan arrives)
+ARM=${ARM:-tiptop}
 
 for tag in "${TAGS[@]}"; do
-    csv="$OUT/results_tiptop_$tag.csv"
+    csv="$OUT/results_${ARM}_$tag.csv"
     for attempt in 1 2; do
         n=$( [ -f "$csv" ] && grep -c "^refer6_$tag," "$csv" || echo 0 )
         [ "$n" -ge "$TRIALS" ] && break
@@ -22,7 +23,7 @@ for tag in "${TAGS[@]}"; do
         timeout -s KILL "$TASK_TIMEOUT" $PY -u grasp_eval.py \
             --task-id "refer6_$tag" --scene 6 --variant 0 \
             --instruction "${INSTR[$tag]}" --success-rule "${RULE[$tag]}" \
-            --trials "$TRIALS" --results-csv "$csv" --video-dir "$OUT/videos_tiptop_$tag" ${FAST}
+            --trials "$TRIALS" --results-csv "$csv" --video-dir "$OUT/videos_${ARM}_$tag" ${FAST}
         rc=$?
         n=$( [ -f "$csv" ] && grep -c "^refer6_$tag," "$csv" || echo 0 )
         echo "TASKDONE tiptop $tag attempt=$attempt rc=$rc rows=$n"
