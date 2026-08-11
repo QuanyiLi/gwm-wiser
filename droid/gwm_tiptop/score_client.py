@@ -12,9 +12,54 @@ client inserts). RAT sampling is the single hyperparameter --rat-scale
 "none" = uniform 6 frames over the full trajectory, whatever its length),
 forwarded per request so configs compare without restarting the server.
 
+Selection is TWO-STAGE, and the two stages use DIFFERENT signals (G-28):
+
+- WHICH OBJECT — GWM, reduced per object by --object-score (default `mean`).
+  Semantic grounding is what GWM is for. The old behaviour (global argmax over
+  individual candidates) is `--object-score max`.
+- WHICH GRASP of that object — **M2T2 grasp confidence**, not GWM (GWM score
+  only breaks ties). GWM's RAT frames are robot-only, so grasp robustness is
+  information-theoretically invisible to it: on scene6_rev2's cube its
+  within-object argmax is `plan_12` (M2T2 conf 0.341, a corner clip that
+  shoves the cube — 0/5 in G-26) while M2T2's own ranking puts `plan_10`
+  first (conf 0.778 — 5/5 in G-27). Within-object M2T2 confidence agrees with
+  the closing-line gate on every object of that pool. Since
+  `se3_fps_indices` seeds its farthest-point sampling at the highest-
+  confidence pose, this is usually each object's first emitted candidate.
+
+Why: `proposals.se3_fps_indices` samples each object's candidates by
+DIVERSITY (confidence-weighted SE(3) farthest-point sampling), so with a small
+per-object quota the candidates sit at the extremes of the object's grasp
+family, not at its mode. A per-candidate argmax then compares order statistics
+of extremes across objects, and at the ~0.01 score spread GWM produces within
+a family that comparison is noise-limited. Measured on scene6_rev2 (16
+candidates over 5 clusters, 10 referring expressions), re-reducing the SAME
+saved scores: max 6/10 correct objects, mean/median/logsumexp/top2-mean all
+9/10 — the four banana tasks lost to a red-bin candidate by +0.003..+0.008
+under max. `mean` is the default because it is size-normalised (quotas are
+floor+remainder, so families differ by one) and had the best worst-case margin
+(+0.0052 vs median's +0.0015). The 4 place tasks are 4/4 under every rule.
+
+VIEWPOINT (--cam, default `external_cam_2` since 2026-08-11, G-29): the DROID
+rig carries two third-person cameras and the capture h5 stores both, so the
+scene image the scorer sees is a free choice — and it is a FIRST-ORDER one.
+Scored from `external_cam` the banana sits small, distant and inside the
+gripper's shadow while the two bins dominate the frame, and the four
+banana instructions win by only +0.014…+0.019 (`yellow` loses outright);
+from `external_cam_2` the same instructions win by +0.091…+0.105 and object
+accuracy goes 9/10 -> 10/10, with the cube/bowl tasks unchanged. The GI-2
+renderer overlay was re-validated on `external_cam_2` before the switch
+(overlays/scene6_external_cam_2/, 13.34 % robot coverage, no ghosting).
+Caveat for any claim built on this: cam_2 was chosen AFTER looking at both
+frames, so the 10/10 is not an unbiased viewpoint estimate — the unbiased
+version is to score from both cameras and average the per-camera object
+aggregates (also 10/10 here, min margin +0.0162), which is not implemented.
+
 Writes winner_{tag}.json (a serialize_plan file, servable via
 gwm_tiptop/policy_server.py --select fixed) and scores_{tag}.json next to the
-proposals.
+proposals. scores_{tag}.json carries both the per-candidate `ranking` and the
+`object_ranking` the choice was actually made on; `selected_target` is the
+winning object (grasp_gate reads it to stay inside the same object).
 """
 
 import argparse
@@ -101,12 +146,17 @@ def main() -> None:
     ap.add_argument("--external-h5", required=True, type=Path)
     ap.add_argument("--instruction", required=True)
     ap.add_argument("--server-url", default="http://localhost:8901")
-    ap.add_argument("--cam", default="external_cam")
+    ap.add_argument("--cam", default="external_cam_2",
+                    help="which external camera of the capture h5 the scene is scored from; "
+                         "see the viewpoint note in the module docstring")
     ap.add_argument("--tag", default="gwm")
     ap.add_argument("--rat-scale", default="3.0",
                     help="WISER schedule scale from trajectory start (G-20 default 3.0); "
                          "'none' = uniform 6 frames over the full trajectory")
     ap.add_argument("--task-image", default="current", choices=["current", "none"])
+    ap.add_argument("--object-score", default="mean", choices=["mean", "max", "median"],
+                    help="how each object's candidates reduce to one object score; "
+                         "max = pre-2026-08-11 global per-candidate argmax")
     ap.add_argument("--dump-dir", type=Path)
     args = ap.parse_args()
     rat_scale = None if args.rat_scale.strip().lower() == "none" else float(args.rat_scale)
@@ -141,18 +191,44 @@ def main() -> None:
     for score, sm, entry in ranked:
         print(f"  {score:+.4f} (p={sm:.3f})  {entry['file']}  target={entry['target']}")
 
-    win_entry, _ = plans[result["argmax"]]
+    reduce = {"mean": np.mean, "max": np.max, "median": np.median}[args.object_score]
+    per_object: dict[str, list[float]] = {}
+    for score, _, entry in ranked:
+        per_object.setdefault(entry["target"], []).append(score)
+    object_ranking = sorted(
+        ({"target": t, "score": float(reduce(v)), "n": len(v),
+          "best": float(max(v)), "worst": float(min(v))} for t, v in per_object.items()),
+        key=lambda d: -d["score"],
+    )
+    selected = object_ranking[0]["target"]
+    # Winner = the selected object's most confident M2T2 grasp. `ranked` is
+    # GWM-score-descending and max() keeps the first maximal element, so the
+    # GWM score is the tie-break (and the sole criterion if the proposer
+    # recorded no confidences).
+    conf = {e["file"]: e.get("grasp_confidence") for e in index["proposals"]}
+    win_entry = max((e for _, _, e in ranked if e["target"] == selected),
+                    key=lambda e: (conf.get(e["file"]) if conf.get(e["file"]) is not None else float("-inf")))
+
+    print(f"\nobject ranking ({args.object_score} over each object's candidates):")
+    for d in object_ranking:
+        print(f"  {d['score']:+.4f}  {d['target']}  (n={d['n']}, best {d['best']:+.4f})")
+
     shutil.copy(args.proposals_dir / win_entry["file"], args.proposals_dir / f"winner_{args.tag}.json")
     (args.proposals_dir / f"scores_{args.tag}.json").write_text(json.dumps({
         "instruction": args.instruction,
         "sampling": sampling,
         "server": result["stats"],
-        "argmax_file": win_entry["file"],
+        "object_score": args.object_score,
+        "selected_target": selected,
+        "winner_file": win_entry["file"],
+        "argmax_file": plans[result["argmax"]][0]["file"],  # per-candidate argmax, provenance only
         "elapsed_s": result["elapsed_s"],
+        "object_ranking": object_ranking,
         "ranking": [{"file": e["file"], "target": e["target"], "score": s, "softmax": p}
                     for s, p, e in ranked],
     }, indent=2))
-    print(f"\nwinner: {win_entry['file']} -> {args.proposals_dir / f'winner_{args.tag}.json'}")
+    print(f"\nwinner: {win_entry['file']} (target {selected}) -> "
+          f"{args.proposals_dir / f'winner_{args.tag}.json'}")
 
 
 if __name__ == "__main__":

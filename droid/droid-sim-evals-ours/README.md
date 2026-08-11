@@ -73,6 +73,22 @@ Success rules extend unchanged: `{"objects":["banana"],"lift":0.15}` resolves
   gripper closed on the block must pass the 0.105 m bin mouth: width is
   0.0588 + edge.
 
+Pick pipeline (GWM arm), scene6_0 → `proposals/scene6_rev2`:
+1. `gwm_tiptop/propose_from_h5.py` — 16 whole-scene candidates, the budget split
+   floor+remainder over the perceived clusters (5 here → quotas 4,3,3,3,3).
+2. `run_refer6_score.sh` — per instruction, gwm-server scores every candidate;
+   the OBJECT is chosen by the **mean** of its candidates' scores and the winner
+   is that object's best candidate (`score_client --object-score`, G-28). The
+   older global per-candidate argmax (`--object-score max`) scored 6/10 correct
+   objects against mean's 9/10: `proposals.se3_fps_indices` samples each
+   object's quota for SE(3) *diversity*, so a per-candidate max compares grasp
+   families by their extremes at GWM's ~0.01 within-family spread. Same script
+   then runs `grasp_gate --apply` (G-27), which re-picks within the chosen
+   object only.
+3. `run_refer6_gwm.sh` — fixed-plan replay via policy_server, judged by
+   `grasp_eval.py`; `analyze_refer6.py` aggregates. `run_refer6_tiptop.sh` is
+   the baseline arm (online tiptop planning per trial, no policy server).
+
 Place pipeline (GWM arm, no M2T2 / no cuTAMP — the "grasp" is the weld):
 1. `scenes/capture_place.py --scene 6 --variant 1` — welded captures.
 2. `gwm_tiptop/place_propose.py` (tiptop pixi env) — PERCEPTION-ONLY since the
@@ -89,8 +105,12 @@ Place pipeline (GWM arm, no M2T2 / no cuTAMP — the "grasp" is the weld):
    in-dest pose. v1 (GT-target proposer) is preserved at
    `proposals/scene6_place` for provenance; v2 lives at
    `proposals/scene6_place_v2` with results under `runs/place_v2/`.
-3. `run_place_score.sh` — gwm-server argmax per instruction (4 tasks,
+3. `run_place_score.sh` — gwm-server selection per instruction (4 tasks,
    `place_tasks.sh`, destination referring expressions split 2-2 across bins).
+   Same two-stage `score_client` as the pick arm, but stage 2 is a no-op here:
+   place candidates carry a constant `grasp_confidence` of 1.0 (there is no
+   M2T2 grasp — the "grasp" is the weld), so the winner falls back to the
+   chosen destination's best-scoring candidate.
 4. `run_place_gwm.sh` — fixed-plan replay via policy_server on scene6_1,
    judged by `place_eval.py` (stock placement SuccessTracker + per-candidate
    `_landed_in` bookkeeping); `analyze_place.py` aggregates. TRIALS defaults

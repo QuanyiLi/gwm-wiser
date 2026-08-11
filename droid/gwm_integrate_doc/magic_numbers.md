@@ -25,7 +25,9 @@
 5. **`xy_margin = 0.02` + table AABB 2/98-percentile crop** — objects overhanging the table edge get clipped out.
 6. **`XY_OFFSETS` max ±18 mm** — sized against the 0.105 m bin mouth (self-consistent with the gripper-fit argument: block edge at 33 mm < 52.5 mm half-mouth, but re-derive for any new container/held object).
 7. **`z_band = (−0.25, 0.15)`** — table-plane search band, rig prior; wrong on any rig where the robot is not table-mounted.
-8. **grasp-gate `MIN_THICKNESS = 0.015`** — vetoes ALL thin-wall pinch grasps (bin walls 4–8 mm, bowl rim 4–7 mm — the latter went 10/10 in G-24, so these are false vetoes). Safe today only because the two-stage `--apply` falls back to the ungated winner inside the argmax object; re-tune (e.g. a "thin but symmetric and deep" branch) before gating any rim-pinch target.
+8. **grasp-gate `MIN_THICKNESS = 0.015`** — vetoes ALL thin-wall pinch grasps (bin walls 4–8 mm, bowl rim 4–7 mm — the latter went 10/10 in G-24, so these are false vetoes). Safe today only because the two-stage `--apply` falls back to the ungated winner inside the *selected* object; re-tune (e.g. a "thin but symmetric and deep" branch) before gating any rim-pinch target.
+9. **`score_client` two-stage selection × the per-object quota** — the object choice is only as stable as the number of candidates each object gets. `se3_fps_indices` samples each object's quota by SE(3) *diversity*, so the candidates are the extremes of that object's grasp family, not its mode; reducing by `max` then compares order statistics of extremes across objects at GWM's ~0.01 within-family spread. Measured on scene6_rev2 (16 candidates / 5 clusters / 10 instructions): `max` 6/10 correct objects, `mean` 9/10 (G-28). The same diversity property is why stage 2 (which grasp) uses M2T2 confidence, not GWM. Rule and quota both need re-checking whenever `--k-total` or the cluster count changes — the aggregate's winning margins are +0.005…+0.076, i.e. still small.
+10. **`score_client --cam` (the scoring viewpoint)** — the single largest lever measured so far: the SAME candidates and the SAME instructions score 9/10 vs 10/10 correct objects from the rig's two external cameras, with margins differing 5–7× on the tasks whose target is small or gripper-shadowed in one view (G-29). Look at both captures before trusting any selection number on a new layout.
 
 ## perception_geometric.py
 
@@ -78,6 +80,7 @@ Body: per-object outlier removal `(10, 2.0)` (`:234`).
 | `rot_weight` | 0.1 | G | SE(3) FPS metric: meters + 0.1·radians |
 | confidence clip | ≥ 1e-3 | G | |
 | `max_refine_per_candidate_slack` | 2 | G | refine up to 2·quota particles |
+| *FPS selection policy* | diversity-first | **D** | not a number but the same hazard: `se3_fps_indices` maximizes `(min SE(3) distance) × confidence`, so a small quota returns the grasp family's **extremes** (corner clips, rim pinches — G-26's 0/5 `plan_12` and every bin-wall candidate). Consumers must not treat one object's best candidate as representative of that object; see shortlist #9 |
 | StablePlacement tol / mult | 1e-2 / 1.0 | B | mirrors `tiptop.planning.run_planning` loosening |
 
 ## place_propose.py
@@ -120,6 +123,9 @@ Module-level (named, commented in-file — the already-centralized ones):
 | `GRIPPER_PAUSE_S` | 20/15 s ≈ 1.333 | **F** | **verified identical** to executor defaults `gripper_action_steps=20, sim_control_hz=15.0` (`tiptop_websocket.py:41-42`) |
 | `GRIPPER_PAUSE_SUBSTEPS` | 7 | G | scoring-side timeline discretization only (no executor counterpart) |
 | `--rat-scale` | 3.0 | — | the *real* hyperparameter (G-20 decision), not a magic number; `none` = uniform-6 |
+| `--cam` | `external_cam_2` | **D** | which of the rig's two third-person cameras the scene is scored from (G-29). Switched from `external_cam` on 2026-08-11: object accuracy 9/10 → 10/10 and the banana instructions' margins grew 5–7× purely because that view is not gripper-shadowed. **First-order effect, and chosen post-hoc** — re-pick (or implement the unbiased both-cameras average) for any new layout rather than inheriting this one. The camera POSES themselves are upstream/class-B (`droid_environment.py:44`) |
+| `--object-score` | `mean` | **D** | stage 1 of selection (G-28): the OBJECT is chosen by this aggregate over its candidates' GWM scores. `max` reproduces the pre-2026-08-11 global per-candidate argmax. Chosen over `median`/`logsumexp`/`top2-mean` (all also 9/10 on scene6_rev2) for size-normalisation — quotas are floor+remainder, so families differ by one — and the best worst-case margin (+0.0052 vs median's +0.0015). See shortlist #9 |
+| *within-object rule* | M2T2 confidence | **D** | stage 2 (G-28, user-directed): WHICH grasp of the chosen object, GWM score only as tie-break. GWM cannot see grasp robustness (robot-only RAT frames), and on scene6_rev2's cube its within-object argmax is the 0/5 corner clip `plan_12` (conf 0.341) while M2T2 ranks the 5/5 `plan_10` first (conf 0.778). Validated against the closing-line gate on all 5 objects of one pool + one execution ground truth — **not** an established correlation; re-check when execution data accumulates. cuTAMP soft cost was considered and rejected as the stage-2 signal: `get_ranked_satisfying_particles` already prefers confidence over cost, the cost is never returned, and it scores constraint satisfaction (reach/collision), not grasp stability |
 | request timeout | 1800 s | G | |
 
 ## grasp_gate.py (closing-line grasp gate, added 2026-08-11 after the census — G-27)

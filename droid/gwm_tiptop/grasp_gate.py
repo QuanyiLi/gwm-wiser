@@ -24,9 +24,11 @@ Per pick plan:
                    first and shoves the object)
     ortho_off   -- |mean| across the pad width (edge clip sideways)
 Pass requires all four within thresholds. --apply TAG re-picks the winner as
-the highest-GWM-score PASSING plan from scores_TAG.json and rewrites
-winner_TAG.json (original kept implicitly in the ranking; falls back with a
-warning if nothing passes).
+the most confident (M2T2) PASSING plan of the object score_client selected,
+and rewrites winner_TAG.json (original kept implicitly in the ranking; falls
+back with a warning if nothing passes). Since score_client already ranks
+within an object by M2T2 confidence (G-28), the gate now only changes the
+winner when the most confident candidate is also a fragile one.
 
 Run inside the droid/tiptop pixi env from the gwm-wiser repo root:
 
@@ -231,15 +233,23 @@ def main() -> None:
               f"{sum(1 for r in results.values() if r.get('pass') is False)} fail)")
 
     if args.apply:
-        # Two-stage selection: GWM's argmax decides the OBJECT (its semantic
-        # margin is between objects); the gate only re-picks WITHIN that
-        # object, so a gate-hostile target (e.g. a thin-walled bowl whose rim
-        # pinches all fail) can never flip the selection to a distractor.
+        # Two-stage selection: GWM decides the OBJECT (its semantic margin is
+        # between objects); the gate only re-picks WITHIN that object, so a
+        # gate-hostile target (e.g. a thin-walled bowl whose rim pinches all
+        # fail) can never flip the selection to a distractor. The object comes
+        # from score_client's `selected_target` (object-level aggregate);
+        # pre-2026-08-11 score files only have the per-candidate ranking.
         scores = json.loads((args.proposals_dir / f"scores_{args.apply}.json").read_text())
-        old = scores["argmax_file"]
-        target = scores["ranking"][0]["target"]
-        winner = next((r for r in scores["ranking"]
-                       if r["target"] == target and results.get(r["file"], {}).get("pass")), None)
+        old = scores.get("winner_file", scores["argmax_file"])
+        target = scores.get("selected_target", scores["ranking"][0]["target"])
+        # Rank the survivors the way score_client ranks within an object: M2T2
+        # confidence first, GWM score only as tie-break (`ranking` is GWM-
+        # descending and max keeps the first maximal element).
+        conf = {e["file"]: e.get("grasp_confidence") for e in index["proposals"]}
+        passing = [r for r in scores["ranking"]
+                   if r["target"] == target and results.get(r["file"], {}).get("pass")]
+        winner = max(passing, key=lambda r: (conf.get(r["file"]) if conf.get(r["file"]) is not None
+                                             else float("-inf"))) if passing else None
         if winner is None:
             _log.warning(
                 f"--apply {args.apply}: no {target} plan passes the gate; keeping {old} (ungated)"
