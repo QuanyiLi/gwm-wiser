@@ -59,18 +59,26 @@ cd /root/code/gwm/gwm-wiser && .venv/bin/python -m droid.server.gwm_server \
 cd /root/code/gwm/gwm-wiser/droid/droid-sim-evals && bash run_batch_v2_paper.sh
 # grasp-and-hold eval tasks (scene 1, G-17)
 cd /root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours && ./run_grasp_tasks.sh
-# gwm_tiptop drivers run inside tiptop's pixi env (cwd must be droid/tiptop):
-cd /root/code/gwm/gwm-wiser/droid/tiptop && pixi run python -m gwm_tiptop.propose_from_h5 --help
+# gwm_tiptop drivers: tiptop env's python, run from the gwm-wiser repo root
+cd /root/code/gwm/gwm-wiser && droid/tiptop/.pixi/envs/default/bin/python -m gwm_tiptop.propose_from_h5 --help
 ```
 
-`gwm_tiptop` is not installed into the env; it resolves through a one-line
-`gwm_tiptop.pth` (containing `/root/code/gwm/gwm-wiser/droid`) in the tiptop pixi
-env's site-packages. If the env is ever recreated, restore it with:
+`gwm_tiptop` is installed into the tiptop pixi env as a site-packages symlink
+(G-21). If the env is ever recreated, restore it with:
 
 ```bash
-cd /root/code/gwm/gwm-wiser/droid/tiptop && echo /root/code/gwm/gwm-wiser/droid > \
-    "$(.pixi/envs/default/bin/python -c 'import site; print(site.getsitepackages()[0])')/gwm_tiptop.pth"
+ln -sfn /root/code/gwm/gwm-wiser/droid/gwm_tiptop \
+    "$(/root/code/gwm/gwm-wiser/droid/tiptop/.pixi/envs/default/bin/python -c 'import site; print(site.getsitepackages()[0])')/gwm_tiptop"
 ```
+
+Do NOT reinstate the earlier `gwm_tiptop.pth` mechanism: `tiptop` and `cutamp`
+are editable installs served by setuptools *meta-path* finders, and any
+sys.path dir containing a `tiptop/`-shaped subdir (the .pth's `droid/`, but
+also cwd `/root/code/gwm` via its compat symlinks, or cwd `droid/tiptop` for
+`cutamp/`) shadows them with an `__file__ = None` namespace package — that is
+what broke tiptop-server's SAM2 cache-dir lookup (G-21). Console scripts
+(`pixi run tiptop-server`) put no cwd on sys.path and are immune; python
+`-c`/`-m` runs should use a neutral cwd such as the gwm-wiser root.
 
 Not tracked by git (see root `.gitignore` + per-dir ones): `.pixi/`, `.venv/`,
 `tiptop/.env` (secret), `tiptop/tiptop/.cache/` (SAM-2 weights), `M2T2/weights/`
