@@ -53,6 +53,15 @@ class PlaceTracker(batch_eval_v2.SuccessTracker):
         self.candidates = {c: self.bodies[c] for c in cands}
         self.bodies = {p: self.bodies[p] for p in rule["objects"]}
         self.rule = rule
+        self._scene = scene
+
+    def snapshot(self) -> None:
+        # The one per-step seam batch_eval_v2 already calls: check whether the
+        # gripper reopened and, if so, drop the weld so a released block can
+        # actually fall (G-31). No-op for plans that never open the gripper.
+        if hasattr(self, "_scene"):
+            weld_held_block.maybe_release(self._scene)
+        super().snapshot()
 
     def judge(self) -> tuple[bool, dict]:
         ok, detail = super().judge()

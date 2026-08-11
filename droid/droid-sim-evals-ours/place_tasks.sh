@@ -13,6 +13,13 @@
 # drop/plan-failure separate cleanly in the CSV.
 TAGS=(red green tomato grass)
 declare -A INSTR RULE
+# The band is UNCHANGED since the eval began, and deliberately so: all four arms
+# are scored by byte-identical rules. It was briefly widened to -0.05 on
+# 2026-08-11 to cover a released block resting on the bin floor, which I had
+# estimated at z_rel ~= -0.033; the first release-hook trial measured -0.016
+# (the KLT's inner floor sits higher than that estimate), so the widening was
+# unnecessary and was reverted. Both end states fit here: held inside the bin
+# (GWM candidates, +0.005..+0.008) and resting after a release (tiptop, -0.016).
 _R() { printf '{"objects":["held_block"],"container":"%s","candidates":["red_bin","green_bin"],"xy_tol":0.05,"z_rel":[-0.03,0.03]}' "$1"; }
 INSTR[red]="put the block into the red box";                                RULE[red]=$(_R red_bin)
 INSTR[green]="put the block into the green box";                            RULE[green]=$(_R green_bin)

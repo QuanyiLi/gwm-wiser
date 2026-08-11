@@ -38,11 +38,20 @@ PhysX 107.3.18 by direct source read):
   `SimulationManager.get_physics_sim_view().check()` guards it -- fail loudly
   rather than record garbage episodes.
 
-The gripper stays OPEN the whole episode (the place plans carry no gripper
-step): the 30 mm block sits between pads 85 mm apart with 12.5 mm clearance a
-side, so there is no finger contact to fight the weld and no collision
-filtering is needed. This also defuses settle_sim's lossy gripper round-trip
-(observation -> binary threshold), which would re-open a closed gripper.
+RELEASE (added 2026-08-11, G-31): the weld is disabled the first time the
+gripper REOPENS after having closed on the block. Without it the place
+benchmark is asymmetric. The GWM place candidates end holding the block inside
+the bin, but TiPToP's native place plan hovers at the bin mouth and RELEASES,
+so a no-op release makes the arm carry the block home and the score measures
+the weld, not the grounding — measured on the smoke run, tiptop puts the block
+3-10 mm from the correct bin centre in xy (tighter than any GWM arm's 14-35 mm)
+yet z_rel +0.061..+0.065 lands it outside the judge band.
+
+Releasing on reopen costs the GWM arms nothing: their plans close the gripper
+and never open it, so `_closed_seen` latches and the joint is never disabled —
+already-recorded GWM results stay valid. `ensure_weld` re-enables the joint at
+every settle, so a trial that released does not leak into the next one (and
+settle_sim's lossy gripper round-trip stays defused).
 """
 
 import logging
@@ -58,6 +67,15 @@ _log = logging.getLogger("weld_held_block")
 JOINT_NAME = "weld_to_gripper"
 GRIPPER_LINK = "base_link"  # Robotiq 2F-85 base, the wrist_cam's parent link
 _MAX_FORCE = 3.4e38  # unbreakable, matches omni.physx utils' MAX_FLOAT convention
+
+# Release thresholds on the Robotiq driver joint (`finger_joint`, rad: 0 = open,
+# pi/4 = fully closed; the observation term rescales by pi/4). Closing on the
+# 30 mm block lands near 0.5 rad, so 0.30/0.12 sit either side of it with room.
+CLOSE_RAD = 0.30
+OPEN_RAD = 0.12
+
+_closed_seen = False
+_released = False
 
 
 def _quat_conj(q):
@@ -98,10 +116,66 @@ def _root_pose(asset):
     return data.root_pos_w[0].tolist(), data.root_quat_w[0].tolist()
 
 
+def _joint_prim(scene):
+    """The weld joint prim if it has been authored, else None."""
+    from isaacsim.core.utils.stage import get_current_stage
+
+    body_path = scene.rigid_objects["held_block"].root_physx_view.prim_paths[0]
+    prim = get_current_stage().GetPrimAtPath(f"{body_path}/{JOINT_NAME}")
+    return prim if prim.IsValid() else None
+
+
+def _set_joint_enabled(scene, enabled: bool) -> None:
+    import omni.physx
+    from pxr import UsdPhysics
+
+    prim = _joint_prim(scene)
+    if prim is None:
+        return
+    UsdPhysics.Joint(prim).GetJointEnabledAttr().Set(enabled)
+    omni.physx.get_physx_simulation_interface().flush_changes()
+
+
+def maybe_release(scene) -> None:
+    """Per-step hook: drop the weld once the gripper reopens after closing.
+
+    Called from the success tracker's snapshot (the one per-step seam that
+    already exists in batch_eval_v2's loop). Latching on `_closed_seen` is what
+    keeps the GWM arms unaffected — their place plans close and never reopen,
+    and the gripper starts the episode OPEN, which must not count as a release.
+    """
+    global _closed_seen, _released
+    if _released or "held_block" not in scene.rigid_objects:
+        return
+    robot = scene["robot"]
+    idx = [i for i, n in enumerate(robot.data.joint_names) if n == "finger_joint"]
+    if not idx:
+        return
+    q = float(robot.data.joint_pos[0, idx[0]])
+    if q > CLOSE_RAD:
+        _closed_seen = True
+    elif _closed_seen and q < OPEN_RAD:
+        _set_joint_enabled(scene, False)
+        _released = True
+        _log.info(f"weld released: finger_joint {q:.3f} rad after a close — held_block is free")
+
+
 def ensure_weld(env) -> None:
-    """Author the fixed joint once per process; no-op on scenes without the block."""
+    """Author the fixed joint once per process; no-op on scenes without the block.
+
+    Also the per-trial reset seam: a trial that released the weld left the joint
+    disabled, so re-enable it (every reset restores exactly the poses the joint
+    frames encode) and clear the release latch.
+    """
+    global _closed_seen, _released
     scene = env.unwrapped.scene
     if "held_block" not in scene.rigid_objects:
+        return
+    if _joint_prim(scene) is not None:
+        if _released:
+            _set_joint_enabled(scene, True)
+            _log.info("weld re-enabled for the next trial")
+        _closed_seen = _released = False
         return
 
     import omni.physx
@@ -113,9 +187,7 @@ def ensure_weld(env) -> None:
     obj = scene.rigid_objects["held_block"]
     body_path = obj.root_physx_view.prim_paths[0]
     stage = get_current_stage()
-    joint_path = f"{body_path}/{JOINT_NAME}"
-    if stage.GetPrimAtPath(joint_path).IsValid():
-        return
+    joint_path = f"{body_path}/{JOINT_NAME}"   # existence handled above
 
     robot = scene["robot"]
     body_ids, _ = robot.find_bodies(GRIPPER_LINK)

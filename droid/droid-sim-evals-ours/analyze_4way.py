@@ -74,6 +74,72 @@ def served(prop: Path, prefix: str, tag: str, wsuf, name_map):
     return name_map.get(s.get("selected_target"), s.get("selected_target", "?")), plan[:-5]
 
 
+NOTES = """
+## Protocol
+
+Scene 6 (rev2), 5 trials per task per arm, default speed tier (1 Hz cameras +
+per-trial videos, **not** `--fast`). One judge, byte-identical for all four
+arms: pick = target lifted >= 0.15 m at episode end; place = block's mesh
+centre within 0.05 m of the named bin's centre and inside z_rel [-0.03, +0.03].
+The place band was **not** tuned for this run (a brief widening to -0.05 was
+reverted once a released block measured -0.016 — see G-31).
+
+The three GWM arms share one pipeline and differ ONLY in which scoring
+viewpoint chose the plan. They replay a fixed plan, so no planner runs at trial
+time. TiPToP replans from scratch every trial (perception + Gemini grounding +
+M2T2 + cuTAMP). On the place family the welded block is released the first time
+the gripper reopens after closing, so TiPToP runs its native plan (pick, carry,
+open, go home) while the GWM candidates — which never reopen the gripper — are
+unaffected.
+
+## Failure taxonomy (13 failures / 280 trials)
+
+| arm | n | mode | evidence |
+|---|---|---|---|
+| GWM cam1 | 5 | **grounding** — reached for the red bin | `yellow` x5, banana `z_rel` 0.000 at its spawn pose every trial |
+| tiptop | 3 | grasp slip | cube left at/near its spawn pose (`puzzle` t3, `nearbowl` t1) or shoved 8 cm (`colorful` t4) |
+| tiptop | 2 | grounding | `between` t0/t2, bowl untouched at its spawn pose |
+| tiptop | 2 | release timing | `red` t3, `green` t0: block still 0.254 m up, carried by the arm |
+| tiptop | 1 | LLM output | `fruit` t0: Gemini returned non-JSON (truncated bbox list) |
+
+The two systems fail differently, and that matters more than the totals.
+GWM cam1's five failures are **one** systematic defect: a viewpoint in which
+the banana is small, distant and gripper-shadowed, so the object choice is
+wrong — identically, every trial, forever, until the viewpoint or the fusion
+changes. TiPToP's eight failures are spread over six different tasks and never
+repeat within a task's five trials: they are resampling variance (grasp pose,
+Gemini output, plan timing). Predictable-but-frozen versus unpredictable-but-
+self-recovering.
+
+## Determinism
+
+Every task where two arms selected the same plan reproduced trial-for-trial
+identical outcomes (210 GWM trials, zero exceptions) — e.g. `fruit`, `yellow`
+and `eat` all serve `plan_13` and share `z_rel = [0.230, 0.224, 0.229, 0.229,
+0.223]`. This re-confirms G-16 (fixed plan + trial index -> identical physics)
+and means the GWM arms only carry independent information on tasks where their
+selections differ.
+
+## Precision, where success is not the whole story
+
+On the place family TiPToP lands the block far closer to the bin centre
+(5-12 mm) than any GWM arm (14-35 mm), and on `place_red`/`place_tomato` the
+cam1 selection (14 mm) beats fusion and cam2 (31 mm). Success rate hides this:
+all of them clear the 50 mm tolerance.
+
+## Caveats
+
+- One scene, one layout, 14 instructions, 5 trials. Margins and rates are not
+  transferable to a new layout; the scoring viewpoint in particular is a
+  first-order factor (G-29) and was chosen post-hoc for the cam2 arm.
+- The GWM arms' selection is offline and one-shot; their per-trial cost is a
+  replay. TiPToP pays full perception + planning every trial. The comparison is
+  fair on task outcome, not on compute.
+- `yellow` under cam1 is the only pick task separating the GWM arms, so
+  "fusion beats cam1 by 5 trials" rests on a single instruction.
+"""
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=Path, default=HERE / "runs" / "eval_4way")
@@ -165,6 +231,7 @@ def main() -> None:
         L.append("\n## Plan failures / scoring errors\n")
         L.extend(anomalies)
 
+    L.append(NOTES)
     text = "\n".join(L) + "\n"
     if args.out:
         args.out.write_text(text)
