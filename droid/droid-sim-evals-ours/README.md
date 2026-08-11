@@ -75,12 +75,20 @@ Success rules extend unchanged: `{"objects":["banana"],"lift":0.15}` resolves
 
 Place pipeline (GWM arm, no M2T2 / no cuTAMP — the "grasp" is the weld):
 1. `scenes/capture_place.py --scene 6 --variant 1` — welded captures.
-2. `gwm_tiptop/place_propose.py` (tiptop pixi env) — geometric perception for
-   obstacles, then per bin K deterministic cuRobo candidates:
-   [gripper close, approach above bin, constrained straight descent]. No
+2. `gwm_tiptop/place_propose.py` (tiptop pixi env) — PERCEPTION-ONLY since the
+   2026-08-11 audit: inputs are the wrist h5 + the robot's own model, nothing
+   else (no objects.json, no hardcoded bin list — GT object count/pose is
+   judge-side only). The in-hand object is measured from the cloud (points
+   near the FK EE, outside the robot's padded collision spheres); every
+   perceived cluster becomes a destination (hollow → land on its inner floor,
+   solid → on its top face; heights read off the points); the 16-candidate
+   whole-scene budget is split floor+remainder over the clusters. Candidates:
+   [gripper close, approach above dest, constrained straight descent]. No
    GoToInitial: plans are ~7.5 s < 8.85 s, so the GWM RAT window's
    shrink-to-fit branch finally fires and the last frame is the discriminative
-   in-bin pose.
+   in-dest pose. v1 (GT-target proposer) is preserved at
+   `proposals/scene6_place` for provenance; v2 lives at
+   `proposals/scene6_place_v2` with results under `runs/place_v2/`.
 3. `run_place_score.sh` — gwm-server argmax per instruction (4 tasks,
    `place_tasks.sh`, destination referring expressions split 2-2 across bins).
 4. `run_place_gwm.sh` — fixed-plan replay via policy_server on scene6_1,

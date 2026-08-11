@@ -13,8 +13,8 @@ export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1
 cd "$(dirname "$0")"
 source place_tasks.sh
 PY=../droid-sim-evals/.venv/bin/python
-PROP=/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_place
-OUT=runs/place_v1
+PROP=/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_place_v2
+OUT=runs/place_v2
 mkdir -p "$OUT"
 TASK_TIMEOUT=${TASK_TIMEOUT:-3600}
 TRIALS=${TRIALS:-1}

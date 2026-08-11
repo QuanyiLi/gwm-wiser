@@ -7,7 +7,6 @@ particle — collecting every success instead of stopping at the first.
 """
 
 import logging
-import math
 
 import numpy as np
 import torch
@@ -108,8 +107,12 @@ def run_proposals(
     movable_labels = [m.name for m in world.movables]
     if not movable_labels:
         raise ValueError("No movables in environment")
-    k_per = math.ceil(k_total / len(movable_labels))
-    _log.info(f"Proposing for {len(movable_labels)} objects, {k_per} candidates each (budget {k_total})")
+    # k_total is a scene-independent budget; split it over however many clusters
+    # perception found (floor + remainder), so exactly k_total come out no matter
+    # the object count. Per-object shortfalls are not redistributed.
+    n_obj = len(movable_labels)
+    quotas = [k_total // n_obj + (1 if i < k_total % n_obj else 0) for i in range(n_obj)]
+    _log.info(f"Proposing for {n_obj} objects, quotas {quotas} (budget {k_total})")
 
     # Cache initial poses before touching cuRobo (mirrors run_cutamp's ordering),
     # then update the motion-gen world once.
@@ -133,7 +136,7 @@ def run_proposals(
     timer.start("start_optimization")
 
     proposals: list[dict] = []
-    for label in movable_labels:
+    for label, k_per in zip(movable_labels, quotas):
         goal = frozenset({Holding.ground(label)})
         plan_gen = task_plan_generator(
             world.initial_state, goal, operators=operators, explored_state_check=config.explored_state_check
