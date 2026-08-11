@@ -55,3 +55,39 @@ OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1 \
 
 Success rules extend unchanged: `{"objects":["banana"],"lift":0.15}` resolves
 `_11_banana` by substring, like `cube`/`bowl` do.
+
+## Scene 6 rev2 — two colored bins + place eval (2026-08-11)
+
+`make_scene6.py` now authors two variants:
+- `scene6_0` (pick): stock rev1 objects + `red_bin` (0.395, -0.055) and
+  `green_bin` (0.305, -0.250) — squared-off 0.115 m KLT copies recolored via
+  UsdPreviewSurface (layout solved by `scenes/optimize_bin_layout.py` for
+  external-camera pixel separation under wrist-visibility / gripper-shadow /
+  clearance constraints). Two refer6 instructions reworded for the new
+  containers (see `refer6_tasks.sh` header); pre-rev2 results not comparable.
+- `scene6_1` (place): same + `held_block`, a 30 mm blue block spawned inside
+  the open gripper. `weld_held_block.py` (imported by `place_eval.py` /
+  `scenes/capture_place.py`) welds it to the Robotiq base_link with a
+  runtime-authored FixedJoint at first settle; it is never released — episodes
+  end with the block held inside a bin. 30 mm (not stock 47) because the
+  gripper closed on the block must pass the 0.105 m bin mouth: width is
+  0.0588 + edge.
+
+Place pipeline (GWM arm, no M2T2 / no cuTAMP — the "grasp" is the weld):
+1. `scenes/capture_place.py --scene 6 --variant 1` — welded captures.
+2. `gwm_tiptop/place_propose.py` (tiptop pixi env) — geometric perception for
+   obstacles, then per bin K deterministic cuRobo candidates:
+   [gripper close, approach above bin, constrained straight descent]. No
+   GoToInitial: plans are ~7.5 s < 8.85 s, so the GWM RAT window's
+   shrink-to-fit branch finally fires and the last frame is the discriminative
+   in-bin pose.
+3. `run_place_score.sh` — gwm-server argmax per instruction (4 tasks,
+   `place_tasks.sh`, destination referring expressions split 2-2 across bins).
+4. `run_place_gwm.sh` — fixed-plan replay via policy_server on scene6_1,
+   judged by `place_eval.py` (stock placement SuccessTracker + per-candidate
+   `_landed_in` bookkeeping); `analyze_place.py` aggregates. TRIALS defaults
+   to 1 (deterministic replay); raise for formal runs.
+
+Debug bring-up 2026-08-11: hand-picked winners (`plan_00_red_bin` /
+`plan_08_green_bin`) replayed clean — both tasks success=True, block 5–6 mm
+from bin centre, `_landed_in` correct, 60 s/trial.

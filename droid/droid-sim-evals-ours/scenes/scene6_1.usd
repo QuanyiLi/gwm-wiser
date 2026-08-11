@@ -257,6 +257,31 @@ def Xform "World"
         }
     }
 
+    def "held_block" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyAPI"]
+        prepend payload = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1/Isaac/Props/Blocks/basic_block.usd@
+    )
+    {
+        bool physics:kinematicEnabled = 0
+        bool physics:rigidBodyEnabled = 1
+        quatd xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:scale = (0.6382978723404255, 0.6382978723404255, 0.6382978723404255)
+        double3 xformOp:translate = (0.355, 0, 0.3636307955319149)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "Cube" (
+            delete apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyAPI"]
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </World/Looks/held_block> (
+                bindMaterialAs = "strongerThanDescendants"
+            )
+            quatf xformOp:orient = (1, 0.000013202433, -0.000008906386, 2.8827057e-7)
+            float3 xformOp:translate = (-0.0000045487795, -0.0000060538873, -0.039214913)
+        }
+    }
+
     def Scope "Looks"
     {
         def Material "red_bin"
@@ -281,6 +306,20 @@ def Xform "World"
             {
                 uniform token info:id = "UsdPreviewSurface"
                 color3f inputs:diffuseColor = (0.08, 0.6, 0.12)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.45
+                token outputs:surface
+            }
+        }
+
+        def Material "held_block"
+        {
+            token outputs:surface.connect = </World/Looks/held_block/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.05, 0.15, 0.85)
                 float inputs:metallic = 0
                 float inputs:roughness = 0.45
                 token outputs:surface
