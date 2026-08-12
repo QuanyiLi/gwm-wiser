@@ -153,6 +153,15 @@ Validation breadth: scene6_rev2 pool + nearbowl only (fragile plan_12 n=62/cente
 
 `GWM_WISER_ROOT = /root/code/gwm/gwm-wiser` hardcoded absolute path (`:22`); robot mask threshold `max > 8`; blend 0.45/0.55. `assets/panda_robotiq_droidsim.urdf` carries the 18.2 mm Robotiq standoff read from the sim USD — robot *self*-model calibration, not scene knowledge (real-world analogue: measuring the real gripper).
 
+## weld_held_block.py (droid-sim-evals-ours — place-eval harness, G-31)
+
+| Constant | Value | Class | Notes |
+|---|---|---|---|
+| `CLOSE_MIN_RAD` | 0.20 rad | **D** | "gripper actually closed" gate for the release hook; measured close-on-the-30 mm-welded-block is 0.550 rad, open ≈ 0. Re-measure for any new held object |
+| `RELEASE_FRACTION` | 0.5 | G | measured-q fallback: reopening below half the trial's own peak releases |
+| `OPEN_TARGET_RAD` | 0.1 rad | B | threshold on the COMMANDED target; the env's `BinaryJointPositionZeroToOneAction` writes exactly 0.0 (open) / pi/4 (close), so any value in between works |
+| *release criterion* | command-primary | **D** | squeezing a block rigidly welded to the gripper base closes a kinematic loop; at some place poses PhysX pins the fingers shut and a commanded open never moves them (measured: q held 0.550 through ~127 open-command steps). Release must therefore follow COMMAND intent, with measured-q as fallback. Hook history: v1 absolute latches missed 2/20 releases, v2 relative-measured missed the 1/20 full jam, v3 command-primary. GWM place plans never command open, so all three versions are no-ops for them |
+
 ## Upstream / inherited (outside this package — a constants.py could never own these)
 
 | Constant | Value | Where | Class |

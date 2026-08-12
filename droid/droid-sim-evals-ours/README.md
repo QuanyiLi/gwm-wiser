@@ -68,10 +68,15 @@ Success rules extend unchanged: `{"objects":["banana"],"lift":0.15}` resolves
 - `scene6_1` (place): same + `held_block`, a 30 mm blue block spawned inside
   the open gripper. `weld_held_block.py` (imported by `place_eval.py` /
   `scenes/capture_place.py`) welds it to the Robotiq base_link with a
-  runtime-authored FixedJoint at first settle; it is never released — episodes
-  end with the block held inside a bin. 30 mm (not stock 47) because the
-  gripper closed on the block must pass the 0.105 m bin mouth: width is
-  0.0588 + edge.
+  runtime-authored FixedJoint at first settle. Since G-31 the weld is released
+  the first time the gripper is COMMANDED open after having closed — judged on
+  the commanded joint target, not the measured angle, because PhysX can pin
+  the fingers shut while they squeeze a block rigidly welded to their own
+  base (v1/v2 measured-angle hooks missed 3/40 releases that way). GWM place
+  candidates never reopen, so they end holding the block inside a bin, while
+  TiPToP's native plan releases and drops it in; the same judge band covers
+  both end states unchanged. 30 mm (not stock 47) because the gripper closed
+  on the block must pass the 0.105 m bin mouth: width is 0.0588 + edge.
 
 Pick pipeline (GWM arm), scene6_0 → `proposals/scene6_rev2`:
 1. `gwm_tiptop/propose_from_h5.py` — 16 whole-scene candidates, the budget split

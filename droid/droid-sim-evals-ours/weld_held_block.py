@@ -48,10 +48,11 @@ the weld, not the grounding — measured on the smoke run, tiptop puts the block
 yet z_rel +0.061..+0.065 lands it outside the judge band.
 
 Releasing on reopen costs the GWM arms nothing: their plans close the gripper
-and never open it, so `_closed_seen` latches and the joint is never disabled —
-already-recorded GWM results stay valid. `ensure_weld` re-enables the joint at
-every settle, so a trial that released does not leak into the next one (and
-settle_sim's lossy gripper round-trip stays defused).
+and never open it, so the closure peak `_q_max` just sits at its maximum and
+the joint is never disabled — already-recorded GWM results stay valid.
+`ensure_weld` re-enables the joint at every settle, so a trial that released
+does not leak into the next one (and settle_sim's lossy gripper round-trip
+stays defused).
 """
 
 import logging
@@ -68,14 +69,32 @@ JOINT_NAME = "weld_to_gripper"
 GRIPPER_LINK = "base_link"  # Robotiq 2F-85 base, the wrist_cam's parent link
 _MAX_FORCE = 3.4e38  # unbreakable, matches omni.physx utils' MAX_FLOAT convention
 
-# Release thresholds on the Robotiq driver joint (`finger_joint`, rad: 0 = open,
-# pi/4 = fully closed; the observation term rescales by pi/4). Closing on the
-# 30 mm block lands near 0.5 rad, so 0.30/0.12 sit either side of it with room.
-CLOSE_RAD = 0.30
-OPEN_RAD = 0.12
+# Release detection on the Robotiq driver joint (`finger_joint`, rad: 0 = open,
+# pi/4 = fully closed; closing on the welded 30 mm block measures 0.550).
+# A close counts once the MEASURED q exceeds CLOSE_MIN_RAD; after that, a
+# release fires on EITHER of:
+#   - the COMMANDED joint target dropping below OPEN_TARGET_RAD (the env's
+#     BinaryJointPositionZeroToOneAction writes target 0.0 for open, pi/4 for
+#     close), or
+#   - the measured q dropping below RELEASE_FRACTION * its trial peak.
+# Why the command branch is the primary one (G-31 rev3): squeezing a block that
+# is RIGIDLY welded to the gripper base closes a kinematic loop PhysX must
+# solve; at some place poses the contact solver pins the fingers shut and the
+# drive cannot reopen them — grass-rerun t1 held q=0.550 through ~127 steps of
+# commanded open (target 0.0), so any measured-q criterion misses a release the
+# robot plainly commanded. A real gripper has no welded block to jam on, so the
+# jam is a harness artifact and command intent is the faithful signal. The
+# measured branch stays as a fallback. History: v1 absolute latches (>0.30 /
+# <0.12, estimated not measured) missed 2/20; v2 relative-measured missed the
+# full jam 1/20; the crossings are logged so any residual miss is diagnosable
+# from the driver log alone.
+CLOSE_MIN_RAD = 0.20
+RELEASE_FRACTION = 0.5
+OPEN_TARGET_RAD = 0.1
 
-_closed_seen = False
+_q_max = 0.0
 _released = False
+_close_logged = False
 
 
 def _quat_conj(q):
@@ -140,11 +159,11 @@ def maybe_release(scene) -> None:
     """Per-step hook: drop the weld once the gripper reopens after closing.
 
     Called from the success tracker's snapshot (the one per-step seam that
-    already exists in batch_eval_v2's loop). Latching on `_closed_seen` is what
+    already exists in batch_eval_v2's loop). Requiring a close FIRST is what
     keeps the GWM arms unaffected — their place plans close and never reopen,
     and the gripper starts the episode OPEN, which must not count as a release.
     """
-    global _closed_seen, _released
+    global _q_max, _released, _close_logged
     if _released or "held_block" not in scene.rigid_objects:
         return
     robot = scene["robot"]
@@ -152,12 +171,20 @@ def maybe_release(scene) -> None:
     if not idx:
         return
     q = float(robot.data.joint_pos[0, idx[0]])
-    if q > CLOSE_RAD:
-        _closed_seen = True
-    elif _closed_seen and q < OPEN_RAD:
+    tgt = getattr(robot.data, "joint_pos_target", None)
+    tgt = float(tgt[0, idx[0]]) if tgt is not None else None
+    if q > _q_max:
+        _q_max = q
+        if not _close_logged and _q_max > CLOSE_MIN_RAD:
+            _close_logged = True
+            _log.info(f"gripper close registered (finger_joint {q:.3f} rad, target {tgt})")
+    if _q_max > CLOSE_MIN_RAD and (
+        (tgt is not None and tgt < OPEN_TARGET_RAD) or q < RELEASE_FRACTION * _q_max
+    ):
         _set_joint_enabled(scene, False)
         _released = True
-        _log.info(f"weld released: finger_joint {q:.3f} rad after a close — held_block is free")
+        _log.info(f"weld released: commanded target {tgt}, finger_joint {q:.3f} rad "
+                  f"after peak {_q_max:.3f} — held_block is free")
 
 
 def ensure_weld(env) -> None:
@@ -167,7 +194,7 @@ def ensure_weld(env) -> None:
     disabled, so re-enable it (every reset restores exactly the poses the joint
     frames encode) and clear the release latch.
     """
-    global _closed_seen, _released
+    global _q_max, _released, _close_logged
     scene = env.unwrapped.scene
     if "held_block" not in scene.rigid_objects:
         return
@@ -175,7 +202,11 @@ def ensure_weld(env) -> None:
         if _released:
             _set_joint_enabled(scene, True)
             _log.info("weld re-enabled for the next trial")
-        _closed_seen = _released = False
+        elif _q_max > 0.0:
+            # A GWM-style trial (close, never reopen) ends here every time;
+            # for a plan that DID open, this line is the smoking gun.
+            _log.info(f"previous trial ended without a release (peak finger_joint {_q_max:.3f} rad)")
+        _q_max, _released, _close_logged = 0.0, False, False
         return
 
     import omni.physx

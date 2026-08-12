@@ -24,8 +24,8 @@ Arms: three GWM arms replaying the SAME pipeline and differing only in the scori
 
 | task | target | GWM fused (cam1+cam2) | GWM cam1 | GWM cam2 | tiptop (baseline) |
 |---|---|---|---|---|---|
-| red | red_bin | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> | 4/5 <br><sub>red_bin×4</sub> |
-| green | green_bin | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> | 4/5 <br><sub>green_bin×4</sub> |
+| red | red_bin | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> |
+| green | green_bin | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> |
 | tomato | red_bin | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> | 5/5 <br><sub>red_bin×5</sub> |
 | grass | green_bin | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> | 5/5 <br><sub>green_bin×5</sub> |
 
@@ -36,7 +36,7 @@ Arms: three GWM arms replaying the SAME pipeline and differing only in the scori
 | GWM fused (cam1+cam2) | 70/70 (100%) | 70 | 100% |
 | GWM cam1 | 65/70 (93%) | 70 | 100% |
 | GWM cam2 | 70/70 (100%) | 70 | 100% |
-| tiptop (baseline) | 62/70 (89%) | 70 | 100% |
+| tiptop (baseline) | 64/70 (91%) | 70 | 100% |
 
 ## Offline selection provenance (GWM arms)
 
@@ -65,36 +65,51 @@ Arms: three GWM arms replaying the SAME pipeline and differing only in the scori
 
 Scene 6 (rev2), 5 trials per task per arm, default speed tier (1 Hz cameras +
 per-trial videos, **not** `--fast`). One judge, byte-identical for all four
-arms: pick = target lifted >= 0.15 m at episode end; place = block's mesh
-centre within 0.05 m of the named bin's centre and inside z_rel [-0.03, +0.03].
-The place band was **not** tuned for this run (a brief widening to -0.05 was
-reverted once a released block measured -0.016 — see G-31).
+arms and never retuned during the eval: pick = target lifted >= 0.15 m at
+episode end; place = block's mesh centre within 0.05 m of the named bin's
+centre and inside z_rel [-0.03, +0.03]. (A briefly widened place band was
+reverted before any arm was scored under it — G-31.)
 
 The three GWM arms share one pipeline and differ ONLY in which scoring
-viewpoint chose the plan. They replay a fixed plan, so no planner runs at trial
-time. TiPToP replans from scratch every trial (perception + Gemini grounding +
-M2T2 + cuTAMP). On the place family the welded block is released the first time
-the gripper reopens after closing, so TiPToP runs its native plan (pick, carry,
-open, go home) while the GWM candidates — which never reopen the gripper — are
-unaffected.
+viewpoint chose the plan; they replay a fixed plan, so no planner runs at
+trial time. TiPToP replans from scratch every trial (perception + Gemini
+grounding + M2T2 + cuTAMP) and on the place family runs its NATIVE plan —
+pick, carry, open, go home — with the welded block released the moment the
+gripper is COMMANDED open (weld hook v3, G-31). Two superseded tiptop-place
+attempts are kept, with videos and READMEs, in `superseded_weld_v1/` and
+`superseded_weld_v2/`: v1's estimated release thresholds missed 2/20 opens,
+and v2 exposed a PhysX artifact — fingers squeezing a block rigidly welded to
+the gripper base close a kinematic loop, and at some place poses the contact
+solver pins them shut through ~127 steps of commanded open. All three
+superseded failures were harness artifacts: every tiptop place plan contained
+`gripper open`, and every hover was centred over the correct bin. An
+alternative unification (truncate tiptop at its last Place step and judge the
+held block exactly like the GWM arms; `TRUNCATE=Place`) is implemented but
+unused: tiptop hovers ~65 mm above the bin mouth before releasing, so that
+protocol would need a wider z band and would demote "the block lands in the
+bin" to "the block hovers over it".
 
-## Failure taxonomy (13 failures / 280 trials)
+TiPToP's place numbers are from the 2026-08-12 rerun under the v3 hook; its
+pick numbers are from the 2026-08-11 run (the hook does not exist on the pick
+path). GWM results are from 2026-08-11 throughout — their plans never command
+an open, so every hook version is a no-op for them and no GWM trial was rerun.
+
+## Failure taxonomy (11 failures / 280 trials)
 
 | arm | n | mode | evidence |
 |---|---|---|---|
 | GWM cam1 | 5 | **grounding** — reached for the red bin | `yellow` x5, banana `z_rel` 0.000 at its spawn pose every trial |
 | tiptop | 3 | grasp slip | cube left at/near its spawn pose (`puzzle` t3, `nearbowl` t1) or shoved 8 cm (`colorful` t4) |
 | tiptop | 2 | grounding | `between` t0/t2, bowl untouched at its spawn pose |
-| tiptop | 2 | release timing | `red` t3, `green` t0: block still 0.254 m up, carried by the arm |
 | tiptop | 1 | LLM output | `fruit` t0: Gemini returned non-JSON (truncated bbox list) |
 
 The two systems fail differently, and that matters more than the totals.
 GWM cam1's five failures are **one** systematic defect: a viewpoint in which
 the banana is small, distant and gripper-shadowed, so the object choice is
 wrong — identically, every trial, forever, until the viewpoint or the fusion
-changes. TiPToP's eight failures are spread over six different tasks and never
+changes. TiPToP's six failures are spread over five different tasks and never
 repeat within a task's five trials: they are resampling variance (grasp pose,
-Gemini output, plan timing). Predictable-but-frozen versus unpredictable-but-
+Gemini output). Predictable-but-frozen versus unpredictable-but-
 self-recovering.
 
 ## Determinism
@@ -108,10 +123,11 @@ selections differ.
 
 ## Precision, where success is not the whole story
 
-On the place family TiPToP lands the block far closer to the bin centre
-(5-12 mm) than any GWM arm (14-35 mm), and on `place_red`/`place_tomato` the
-cam1 selection (14 mm) beats fusion and cam2 (31 mm). Success rate hides this:
-all of them clear the 50 mm tolerance.
+On the place family TiPToP is both perfect (20/20) and the most precise: after
+release and free fall the block rests 0-26 mm from the bin centre, versus the
+GWM arms' 14-35 mm held poses; on `place_red`/`place_tomato` the cam1
+selection (14 mm) beats fusion and cam2 (31 mm). Success rate hides all of
+this: everything clears the 50 mm tolerance.
 
 ## Caveats
 
@@ -123,4 +139,6 @@ all of them clear the 50 mm tolerance.
   fair on task outcome, not on compute.
 - `yellow` under cam1 is the only pick task separating the GWM arms, so
   "fusion beats cam1 by 5 trials" rests on a single instruction.
+- The weld-release hook went through three versions during this eval; the
+  final protocol (v3) is the only one tiptop's reported place numbers use.
 
