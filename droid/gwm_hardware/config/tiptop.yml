@@ -1,0 +1,95 @@
+# TiPToP configuration for the `zhiwei` hardware rig.
+#
+# This is the AUTHORITATIVE copy. `tiptop/config/tiptop.yml` is a symlink to
+# this file, installed by `gwm_hardware/install_rig_config.py`, so the rig
+# config is versioned here instead of dirtying the pristine tiptop tree
+# (G-18). `tiptop-config` writes through the symlink, so running it edits this
+# file -- review the diff afterwards rather than letting it drift.
+
+# == Robot connection and control ==
+robot:
+  # NOTE: this selects cuTAMP's panda_robotiq_2f_85 model. The rig actually
+  # carries a 2F-140, whose TCP sits 62 mm further out -- see
+  # gwm_hardware/README.md. Until the 2F-140 model is wired in, `tiptop-run`
+  # plans with a gripper 62 mm too short. Do not run it on hardware yet.
+  type: panda_robotiq
+  dof: 7
+
+  # Bamboo control node: the RT machine, reached over the shared 192.168.68.x
+  # WiFi. Measured 2.7 ms RTT / 0.245 ms jitter, vs 29 ms / 37 ms over the
+  # Tailscale path, so this address rather than 100.80.197.100.
+  host: "192.168.68.132"
+
+  port: 5555
+  gripper_port: 5559
+
+  # Start slow. The upstream default at MIT is 0.6 with careful cable
+  # management; this rig has not earned that yet.
+  time_dilation_factor: 0.2
+
+  # Robot configurations
+  q_home: [0.0, -0.628, 0.0, -2.513, 0.0, 1.885, 0.0]
+  # Chosen empirically 2026-08-18 by `gwm_hardware.find_capture_pose`: TiPToP
+  # plans an entire episode from ONE wrist frame taken here, so this pose sets
+  # what the system can see at all.
+  #
+  # TCP [0.45, 0.00, 0.55] straight down, yaw -90. Measured at the pose:
+  # camera 633 mm above the table, tilt 3.3 deg, footprint 0.87 x 0.50 m, and
+  # the table fills 87.8 % of the frame.
+  #
+  # yaw is the redundant DOF for a straight-down TCP and it is NOT free here --
+  # the wrist camera is offset from the TCP axis, so yaw swings where the
+  # footprint lands. Measured at TCP [0.50,-0.15,0.55]: yaw 0 put the robot's
+  # own base across the frame's left third, +180 gave 61.7 % table, +90 gave
+  # 70.2 %, -90 gave 85.8 % with the base out of frame entirely.
+  #
+  # Centred on y = 0, which is both the middle of the (now 1 m, centred) table
+  # and the middle of M2T2's own y in [-0.30, +0.30] input crop.
+  q_capture: [-0.2099, -0.1645, 0.1760, -1.3773, 0.0306, 1.2154, -0.0256]
+
+# == Camera configurations ==
+# Both are RealSense D400s; tiptop feeds their IR stereo pair to
+# FoundationStereo rather than using the ASIC depth. Run
+# `python -m gwm_hardware.rs_preflight` before every session -- the rig comes
+# up with IR auto-exposure off, which saturates the pair and guts the depth.
+cameras:
+  # Wrist camera: TiPToP's only perception viewpoint.
+  hand:
+    serial: "035422072950"      # D435i
+    type: realsense
+
+  # Third-person camera: recording, viz-scene, and the GWM scorer's viewpoint.
+  external:
+    serial: "348522073586"      # D435
+    type: realsense
+
+# Spare, currently unused: D435i 134322070906. Kept plugged in as the second
+# external for the two-camera score fusion (G-30) if the single-view scoring
+# proves noisy; needs moving off its backlit window position first.
+
+# == Perception services ==
+perception:
+  foundation_stereo:
+    url: "http://localhost:1234"
+
+  m2t2:
+    url: "http://localhost:8123"
+    apply_bounds: true
+
+  sam:
+    mode: "local"
+
+  recgen:
+    url: "http://<endpoint>:18324"
+    enabled: false
+    target_faces: 10000
+    concurrency: 6
+
+  depth_trunc_m: 5.0
+  voxel_downsample_size: 0.0075
+  contact_threshold_m: 0.01
+  mask_erosion_pixels: 3
+
+# == Experimental features ==
+experimental:
+  pick_place_next_to: false

@@ -23,12 +23,13 @@ from tiptop.perception.cameras.zed_camera import ZedIntrinsics
 from tiptop.utils import get_robot_client, setup_logging
 from tiptop.workspace import workspace_cuboids
 
-# Charuco Board Params #
-CHARUCOBOARD_ROWCOUNT = SQUARES_Y = 9
-CHARUCOBOARD_COLCOUNT = SQUARES_X = 14
-CHARUCOBOARD_CHECKER_SIZE = 0.020
-# CHARUCOBOARD_MARKER_SIZE = 0.016
-CHARUCOBOARD_MARKER_SIZE = 0.015
+# --- board params patched by gwm_hardware.install_charuco_params ---
+# This rig's board, not DROID's 14x9 / 20 mm one. Grid and dictionary read off
+# a photo with the aruco detector; checker size measured on the board itself.
+CHARUCOBOARD_ROWCOUNT = SQUARES_Y = 8
+CHARUCOBOARD_COLCOUNT = SQUARES_X = 11
+CHARUCOBOARD_CHECKER_SIZE = 0.03431
+CHARUCOBOARD_MARKER_SIZE = 0.02442
 ARUCO_DICT = aruco.getPredefinedDictionary(aruco.DICT_5X5_100)
 
 # Create Board #
@@ -84,7 +85,7 @@ def change_pose_frame(pose, frame, degrees=False):
     return result
 
 
-def calibration_traj(t, pos_scale=0.1, angle_scale=0.2, hand_camera=False):
+def calibration_traj(t, pos_scale=0.1, angle_scale=0.45, hand_camera=False):
     x = -np.abs(np.sin(3 * t)) * pos_scale
     y = -0.8 * np.sin(2 * t) * pos_scale
     z = 0.5 * np.sin(4 * t) * pos_scale

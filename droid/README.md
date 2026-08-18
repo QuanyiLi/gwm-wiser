@@ -15,6 +15,8 @@ G-16 in `gwm_integrate_doc/plan.md`).
 | `gwm_tiptop/` | GWM×TiPToP integration package (ex `tiptop/gwm_tiptop/`); resolves in the tiptop pixi env via `gwm_tiptop.pth`, see below | — (ours) | — |
 | `gwm_integrate_doc/` | GWM×TiPToP plan of record + decision ledger (ex `tiptop/gwm_integrate_doc/`) | — (ours) | — |
 | `droid-sim-evals-ours/` | custom eval tasks layered on droid-sim-evals (grasp-and-hold, G-17) | — (ours) | — |
+| `gwm_hardware/` | hardware-rig code for `zhiwei`: Panda + Robotiq **2F-140** model generation, RealSense pre-flight, perception-server warm-up, bring-up docs. Separate from `gwm_tiptop/` so the droid-sim results stay reproducible from an unchanged tree | — (ours) | — |
+| `FoundationStereo/` | stereo-depth server (`:1234`) — **real-robot only**; droid-sim used GT depth, so this arrived with the hardware bring-up (2026-08-17). RealSense feeds it the IR pair, not the ASIC depth | `b8c58bd` | `https://github.com/williamshen-nz/FoundationStereo.git` (own `.git` kept; gitignored wholesale) |
 
 ## Original `.git` dirs → `/root/code/gwm/upstream-git-backups/`
 
@@ -85,3 +87,84 @@ Not tracked by git (see root `.gitignore` + per-dir ones): `.pixi/`, `.venv/`,
 (model weights, itself a git-lfs clone), `droid-sim-evals/runs/` and
 `droid-sim-evals-ours/runs/` (eval results), `droid-sim-evals/assets*`
 (downloaded scenes).
+
+---
+
+## Rig 2 — `zhiwei` (real robot, bring-up 2026-08-17)
+
+The paths above are the **first machine's** (`/root/code/gwm/...`, droid-sim rig).
+This repo now also lives on the hardware workstation at `/home/quanyi/gwm-wiser`,
+where nothing was carried over: `.pixi/`, `.venv/`, weights and the compat
+symlinks are all gitignored, so every environment was rebuilt from scratch.
+See [`gwm_hardware/docs/hardware-bringup.md`](gwm_hardware/docs/hardware-bringup.md)
+for the full bring-up procedure.
+
+Rig: Franka + Robotiq 2F-85, Bamboo on a separate RT-kernel NUC, two RealSense
+D400s (wrist + external), RTX 5090 32 GB, Ubuntu 22.04.
+
+### Environment rebuild — three things that are not in the upstream docs
+
+**1. `tiptop`'s editable install fails without a pretend version.** `droid/tiptop`
+has no `.git` of its own since the absorption, so `setuptools-scm` cannot infer a
+version and the editable install dies *while `pixi install` still exits 0* — a
+silent failure. Export the version recorded at absorption:
+
+```bash
+export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_TIPTOP="0.0.post1.dev23+gd8f5afdaa"
+pixi install
+```
+
+**2. cuRobo must be pinned by hand.** `install/install-curobo.sh` does
+`git pull --ff-only origin main`, which would drift off the GI-0 pin. Clone and
+check out the pin yourself, then build:
+
+```bash
+cd droid/tiptop && git clone https://github.com/williamshen-nz/curobo.git curobo
+cd curobo && git checkout b5fad1df2a3ac4d3e33e369918b7d62d0e59ebd1
+cd .. && pixi run bash -c 'export CUDA_HOME=$CONDA_PREFIX; \
+  export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH; \
+  export TORCH_CUDA_ARCH_LIST="12.0"; \
+  cd curobo && pip install -e . --no-build-isolation --no-deps'
+pixi run install-cutamp     # pinned by tag from REQUIRED_CUTAMP_VERSION, safe as-is
+```
+
+**3. RTX 5090 (`sm_120`) is fine.** The lockfile resolves torch 2.7.1 / CUDA 12.9,
+whose `arch_list` includes `sm_120`; cuRobo and cuTAMP build and run. Verified
+2026-08-17 with `pixi run cutamp-demo --motion_plan` ("Successful plan found!",
+13 motion-plan solves in 0.93 s). Pass `TORCH_CUDA_ARCH_LIST="12.0"` to any
+CUDA-extension build (cuRobo, M2T2's `pointnet2_ops`).
+
+### Launch commands on this rig
+
+```bash
+cd /home/quanyi/gwm-wiser
+export PATH="$HOME/.pixi/bin:$PATH"
+
+# Camera pre-flight — ALWAYS run first, see gwm_hardware/rs_preflight.py
+pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.rs_preflight
+
+# M2T2 grasp server (:8123)
+cd droid/M2T2 && pixi run server
+# FoundationStereo depth server (:1234) — real-robot only
+cd droid/FoundationStereo && pixi run server
+# TiPToP server / demo (GOOGLE_API_KEY in droid/tiptop/.env, chmod 600)
+cd droid/tiptop && source .env && pixi run tiptop-run
+# gwm-server scoring service (:8901)
+cd /home/quanyi/gwm-wiser && .venv/bin/python -m droid.server.gwm_server \
+    --backend gwm --urdf droid/gwm_tiptop/assets/<rig>.urdf \
+    --ckpt /home/quanyi/0810_gwm/checkpoint.pt
+```
+
+`gwm_tiptop` site-packages symlink for this machine:
+
+```bash
+ln -sfn /home/quanyi/gwm-wiser/droid/gwm_tiptop \
+    "$(/home/quanyi/gwm-wiser/droid/tiptop/.pixi/envs/default/bin/python \
+       -c 'import site; print(site.getsitepackages()[0])')/gwm_tiptop"
+```
+
+### Rerun spawns a GUI viewer that blocks piped output
+
+`cutamp-demo` / `tiptop-run` spawn a `rerun` viewer that inherits stdout, so a
+piped or backgrounded run never sees EOF even after the task finishes. Kill the
+viewer (`pkill -f "rerun --port=9876"`) or run with the viewer disabled.

@@ -66,3 +66,21 @@ third_party
 /droid/droid-sim-evals-ours/scenes/captures/
 /droid/droid-sim-evals/assets.zip
 /droid/droid-sim-evals/assets/
+
+# Hardware bring-up (2026-08-17): FoundationStereo is a real-robot-only dep
+# (droid-sim used GT depth), cloned in-tree like the other absorbed repos.
+# Its own .git is kept, so it is ignored wholesale rather than absorbed.
+/droid/FoundationStereo/
+# cuRobo / cuTAMP are cloned into droid/tiptop/ by setup-planners
+/droid/tiptop/curobo/
+/droid/tiptop/cutamp/
+
+# Hardware rig (droid/gwm_hardware/): the generated Panda + 2F-140 model carries
+# absolute mesh paths into the gitignored cuTAMP/cuRobo clones, so it is
+# machine-local. The GENERATORS are versioned; regenerate after any reinstall:
+#   python -m gwm_hardware.build_2f140 && python -m gwm_hardware.build_2f140_cfg
+/droid/gwm_hardware/assets/
+
+# Pristine copies the gwm_hardware install_* scripts keep before patching the
+# tiptop worktree. Regenerated on demand; the patches themselves are versioned.
+/droid/tiptop/tiptop/**/*.py.orig
