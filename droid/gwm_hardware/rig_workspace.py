@@ -58,6 +58,27 @@ TABLE_BACK_X = -0.50       # table extends this far behind the base
 TABLE_NEAR_X = 0.15
 KEEPOUT_HEIGHT = 1.20      # taller than anything the arm can reach
 
+# How far below the real surface to sink the collision slab.
+#
+# tiptop inserts its OWN table into the collision world, from the RANSAC fit of
+# the live point cloud, and deliberately sinks it 20 mm:
+#
+#     segmentation.py:237
+#     height_offset = surface_z - table_center[2] - extents[2] / 2 - 0.02
+#
+# That 20 mm is the clearance a grasp needs -- fingers have to close around an
+# object that is *resting on* the surface, so a collision table flush with the
+# surface makes every top-down grasp a collision.
+#
+# Our slab is a second table on top of that one. At TABLE_TOP_Z it sat 20 mm
+# HIGHER than the one tiptop had just carved clearance into, which re-blocked
+# exactly the gap and made every pick fail with
+# MotionGenStatus.INVALID_START_STATE_WORLD_COLLISION (first tiptop-run,
+# 2026-08-18: 224 particles satisfied the constraints, 0 survived motion
+# refinement). Matching tiptop's own 20 mm hands the tabletop back to the
+# detected table, which is the one that tracks the real surface.
+TABLE_COLLISION_SINK = 0.020
+
 # --- ASSUMED ---------------------------------------------------------------
 TABLE_FRONT_X = 1.00       # past the arm's reach, so the exact value is moot
 CEILING_Z = 1.20           # nothing is physically overhead; this only caps
@@ -75,9 +96,12 @@ def _slab(name, x0, x1, y0, y1, z0, z1, color):
 
 
 def zhiwei_workspace() -> tuple[Cuboid, ...]:
+    # Top sunk by TABLE_COLLISION_SINK so tiptop's detected table governs the
+    # surface. This slab's job is the volume BELOW the table, and the region
+    # outside whatever the camera happened to see.
     table = _slab("table_body",
                   TABLE_NEAR_X, TABLE_FRONT_X, EDGE_RIGHT_Y, EDGE_LEFT_Y,
-                  TABLE_TOP_Z - TABLE_HEIGHT, TABLE_TOP_Z,
+                  TABLE_TOP_Z - TABLE_HEIGHT, TABLE_TOP_Z - TABLE_COLLISION_SINK,
                   color=[222, 184, 135])
 
     # Both sides are open air now. Nothing to collide with, but nothing to catch

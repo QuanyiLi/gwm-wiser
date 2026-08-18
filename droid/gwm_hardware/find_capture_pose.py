@@ -65,9 +65,30 @@ def candidates():
         yaw  +90 -> 70.2 % table
         yaw  -90 -> 85.8 % table, base out of frame entirely
 
-    so -90 leads, and the remaining freedom is where to centre it. Worth
-    knowing while choosing: M2T2 crops its input to y in [-0.30, +0.30], so
-    only the middle 0.6 m of the 1 m table can produce grasps at all.
+    so -90 leads, and the remaining freedom is where to centre it.
+
+    WHICH IMAGE AXIS IS WHICH WORLD AXIS (measured 2026-08-18, forward
+    kinematics at q_capture through the hand-eye extrinsic -- not assumed, and
+    the opposite of the intuitive reading):
+
+        image width  (1.380 per m) -> world  y
+        image height (0.782 per m) -> world -x
+
+    At TCP [0.45, 0, 0.55] the camera sits 0.633 m above the table, so:
+
+        y in [-0.40, +0.47]   already WIDER than M2T2's crop of y in [-0.30, +0.30]
+        x in [ 0.27,  0.77]
+
+    That settles where to put objects: **spread them along y, not along x**.
+    y is capped at +-0.30 by M2T2 regardless of what the camera sees, and x is
+    the axis the frame actually runs out of.
+
+    Raising the camera was tried and rejected on 2026-08-18. It buys nothing in
+    y (M2T2's crop binds first) and IK runs out before it buys much in x: with
+    the 2F-140's TCP 212 mm past the flange and panda_joint4 unable to
+    straighten, a straight-down TCP solves only up to z ~ 0.65-0.67, and only
+    for tx <= 0.37. That pose sees x in [0.14, 0.73] -- it trades the far end
+    of the table for the near end rather than covering more of it.
     """
     for tz in (0.55,):
         for tx in (0.50, 0.45, 0.55):

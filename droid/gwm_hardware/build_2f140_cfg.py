@@ -292,7 +292,12 @@ def build_cfg(urdf_path: Path, out_path: Path, camera_spheres: bool) -> Path:
     buffer["attached_object"] = 0.0
 
     kin.update({
-        "urdf_path": URDF_NAME,
+        # Absolute, not URDF_NAME. cuTAMP's load_panda_robotiq_rerun() resolves
+        # this against its OWN assets dir (cutamp/robots/assets/), where our
+        # 2F-140 does not live, so a relative name makes tiptop-run die on
+        # get_robot_rerun(). Both cuRobo's join_path and pathlib drop the prefix
+        # when the suffix is absolute, so this is correct for every consumer.
+        "urdf_path": str(urdf_path.resolve()),
         "ee_link": "grasp_frame",
         "collision_link_names": [*ARM_LINKS, *gripper_links, "attached_object"],
         "collision_spheres": spheres,

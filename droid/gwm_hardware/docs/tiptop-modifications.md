@@ -30,11 +30,12 @@ $P python -m gwm_hardware.build_2f140
 $P python -m gwm_hardware.build_2f140_cfg
 $P python -m gwm_hardware.validate_2f140          # expect 10/10
 
-# 3. the four tiptop deviations
+# 3. the five tiptop deviations
 $P python -m gwm_hardware.install_rig_config      # tiptop.yml  -> symlink
 $P python -m gwm_hardware.install_rig_workspace   # workspace.py dispatch
 $P python -m gwm_hardware.install_2f140_cutamp    # cuTAMP robot model
 $P python -m gwm_hardware.install_charuco_params --checker-mm 34.31
+$P python -m gwm_hardware.install_client_lifetime_fix   # go_to_q closes the shared client
 
 # 4. rig calibration (needs the robot and a human)
 #    pixi run calibrate-wrist-cam        -> config/assets/calibration_info.json
@@ -76,6 +77,26 @@ so the diff in the tiptop tree is three lines.
 **droid-sim impact: none.** `tiptop_websocket_server` defaults to
 `include_workspace=False`, so the sim path never calls `workspace_cuboids()`.
 
+### The tabletop must be sunk 20 mm — `rig_workspace.TABLE_COLLISION_SINK`
+
+Non-obvious and it silently kills every pick. tiptop puts its **own** table in
+the collision world, from the RANSAC fit of the live cloud, and deliberately
+sinks it 20 mm below the detected surface (`segmentation.py:237`,
+`... - extents[2] / 2 - 0.02`). That 20 mm is the clearance a top-down grasp
+needs: the fingers close around an object *resting on* the surface, so a
+collision table flush with the surface makes every grasp a collision.
+
+Our slab is a **second** table on top of that one. Built to `TABLE_TOP_Z` it
+sat 20 mm higher than the table tiptop had just carved clearance into, and
+re-blocked exactly the gap. First `tiptop-run` on this rig: perception fine,
+224 particles satisfied the constraints, **zero** survived motion refinement —
+every one `MotionGenStatus.INVALID_START_STATE_WORLD_COLLISION` on the retract,
+whose start state is the grasp configuration.
+
+Fixed by sinking our slab by the same 20 mm, so the detected table governs the
+surface and ours only owns the volume below it and the region outside whatever
+the camera saw.
+
 ## 3. cuTAMP `robots/franka_robotiq.py` — the gripper model ⚠️
 
 **Installer:** `install_2f140_cutamp.py`  ·  **Backup:** `franka_robotiq.py.orig`
@@ -90,6 +111,13 @@ spheres cuTAMP uses to reject grasps that collide with the target.
 cuTAMP is not forked — G-4 holds, the algorithm is untouched, only which robot
 it loads. The clone is gitignored and rebuilt by `install-cutamp.sh`, so this
 is a replayable install step; **re-run it after any cuTAMP reinstall.**
+
+`urdf_path` in the generated `panda_robotiq_2f_140.yml` is **absolute**, and
+has to be: cuTAMP's `load_panda_robotiq_rerun()` resolves it against its own
+`robots/assets/` dir, where our model does not live, so a bare filename makes
+`tiptop-run` die in `get_robot_rerun()` right after the instruction prompt.
+Both cuRobo's `join_path` and `pathlib` drop the prefix when the suffix is
+absolute, so one absolute path satisfies every consumer.
 
 **⚠️ droid-sim impact: this is the one that matters.** The redirect is global
 to `panda_robotiq`, and the sim reads the same robot type while its simulated
@@ -148,6 +176,33 @@ frame edge.
 
 **droid-sim impact: none.** `tiptop_websocket_server.py:250` passes
 `gripper_mask=None`.
+
+## 7. `tiptop/motion_planning.py` — `go_to_q` closed the shared client
+
+**Installer:** `install_client_lifetime_fix.py`  ·  **Backup:** `motion_planning.py.orig`
+
+`go_to_q` called `client.close()` right after executing its trajectory.
+`tiptop.utils.get_robot_client` is `@cache`d, so that is the same
+`BambooFrankaClient` object `tiptop_run` holds as `container.robot`, and
+`close()` is not a soft close — it does `zmq_context.term()`, and the gripper
+path has no recreate logic. So:
+
+```
+go_to_capture(...)              # closes the shared client
+container.robot.open_gripper()  # zmq.error.ZMQError: Socket operation on non-socket
+```
+
+This blocks `tiptop-run` outright — it dies before the instruction prompt. The
+traceback is invisible because `_sync_entrypoint`'s `finally` calls
+`sys.exit(exit_code)` with `exit_code` still 1, which replaces the propagating
+exception: the symptom is a clean-looking exit 1 straight after
+"Executed trajectory on the robot".
+
+Harmless for `scripts/go_to_conf.py`, a one-shot CLI that exits immediately
+afterwards, which is very likely where it came from. `tiptop_run` closes the
+client itself in its own `finally` (`tiptop_run.py:817`).
+
+**droid-sim impact: none.** The sim does not drive a Bamboo client.
 
 ---
 
