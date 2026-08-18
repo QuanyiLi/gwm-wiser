@@ -118,9 +118,20 @@ def main() -> None:
     print(f"  TCP      ({tcp[0]:+.3f}, {tcp[1]:+.3f}, {tcp[2]:+.4f})   {tilt_grasp:.1f} deg from vertical")
     print(f"  TCP is {np.linalg.norm(tcp[:2]-ctr[:2])*1000:.0f} mm from the object centre in xy")
 
+    bands = pad_bands(q_grasp)
+    if len(bands) == 2:
+        (l, r) = bands.values()
+        dz = abs((l["z_hi"] + l["z_lo"]) / 2 - (r["z_hi"] + r["z_lo"]) / 2)
+        dxy = np.hypot(l["x"] - r["x"], l["y"] - r["y"])
+        close_tilt = np.degrees(np.arctan2(dz, dxy))
+        print(f"  closing axis is {close_tilt:.1f} deg off horizontal  ->  {dz*1000:.0f} mm between the pads")
+        print(f"    this, not the TCP tilt, is what decides whether both pads reach: a tilt")
+        print(f"    lying in the closing plane turns straight into pad height difference,")
+        print(f"    scaled by the 136 mm open span (a 2F-85 would scale it by 85 mm).")
+
     print(f"\nfinger pads at this configuration (gripper OPEN)")
     ok = True
-    for n, p in pad_bands(q_grasp).items():
+    for n, p in bands.items():
         r = np.linalg.norm([p["x"] - ctr[0], p["y"] - ctr[1]]) * 1000
         overlap = min(p["z_hi"], hi[2]) - max(p["z_lo"], lo[2])
         flag = "" if overlap > 0.005 else "   <-- NO vertical overlap with the object"
