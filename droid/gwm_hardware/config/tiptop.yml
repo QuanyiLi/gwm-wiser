@@ -8,10 +8,10 @@
 
 # == Robot connection and control ==
 robot:
-  # NOTE: this selects cuTAMP's panda_robotiq_2f_85 model. The rig actually
-  # carries a 2F-140, whose TCP sits 62 mm further out -- see
-  # gwm_hardware/README.md. Until the 2F-140 model is wired in, `tiptop-run`
-  # plans with a gripper 62 mm too short. Do not run it on hardware yet.
+  # `panda_robotiq` is redirected to our 2F-140 model by
+  # gwm_hardware/install_2f140_cutamp.py -- the rig carries a 2F-140, whose TCP
+  # sits 62 mm further out than the stock 2F-85 cuTAMP would otherwise load.
+  # Set GWM_TIPTOP_GRIPPER=2f85 to get the stock model back (droid-sim).
   type: panda_robotiq
   dof: 7
 
