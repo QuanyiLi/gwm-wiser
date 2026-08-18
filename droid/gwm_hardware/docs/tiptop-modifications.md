@@ -234,6 +234,60 @@ holding the object up.
 
 ---
 
+## Gripper collision spheres: what the checks have to bound
+
+Rebuilt 2026-08-18 after measuring the model against its own meshes -- no
+object involved, which matters, because this was found while chasing a grasp
+failure and the fix must not be fitted to the object that exposed it.
+
+The old fitter put one sphere at each voxel centre with the **cube
+circumradius**, `pitch * sqrt(3) / 2`. That assumes every voxel is solid. A
+plate thinner than the pitch is not, so thin parts were modelled 1.73x too
+thick (sqrt(3)) or 2.73x (1 + sqrt(3), when grid alignment put two layers
+across the thickness). Measured: the outer finger, 27.1 mm of real bracket,
+came out a 72.8 mm slab.
+
+Two things now bound it, and **both directions are needed**:
+
+| check | what it stops |
+|---|---|
+| `MIN_COVERAGE` on 40 k surface samples | spheres the planner can see through |
+| `MAX_THICKNESS_INFLATION`, **worst of all three axes** | spheres far fatter than the part |
+
+Coverage alone is satisfied by arbitrarily fat spheres -- which is exactly how
+2.73x went unnoticed. The axis clause is not incidental either: the first
+rebuild bounded only the thin axis, passed, and modelled the gripper base as
+four 106 mm balls that bulged sideways.
+
+The fitter is now anisotropic -- a lateral grid, with layers through the
+thickness only where the part is genuinely thick. An isotropic grid pays n^3 to
+refine when only the lateral n^2 buys tightness, and could not get under ~1.4x
+without ~2000 spheres. The measured trade is recorded at
+`MAX_THICKNESS_INFLATION`; the chosen point beats the old fitter on both axes
+at once:
+
+|  | spheres | worst inflation | plan time vs 2F-85 |
+|---|---|---|---|
+| old | 334 | 1.73 - 2.73x (thin axis only; lateral unbounded) | 1.88x |
+| new | 273 | 1.42 - 1.78x (all axes) | 1.50x |
+
+Why it is not cosmetic: `build_gripper_spheres` derives cuTAMP's **grasp
+filter** from these spheres, and cuTAMP keeps that envelope clear of the target
+object, so an over-thick gripper pushes every grasp outward. On the first three
+objects tried, the executed grasp landed 8-12 mm above *every* M2T2 proposal --
+survivable on a tomato, fatal on a 77 mm open cup where it puts the pads over
+the rim. Against cuTAMP's own 2F-85 filter the thickness ratio moved 2.00x ->
+1.77x, where y and z already matched the real geometric ratios (1.61 vs 1.60
+for the open span, 1.33 vs 1.65 for the length).
+
+**Not yet confirmed on hardware.** Whether this actually lowers the chosen
+grasp needs a `tiptop-run --no-execute-plan` on a tall object. Offline replay
+was attempted and abandoned: cuTAMP's environment pickle does not round-trip
+mesh poses (`cutamp/envs/utils.py:184`), so a replayed scene collapses every
+object onto the origin and reports everything in collision with everything.
+
+---
+
 ## Known unresolved issue: ~3° hand-eye rotational residual
 
 Reconstructing the tabletop through FK → `ee_from_cam` → depth gives a plane

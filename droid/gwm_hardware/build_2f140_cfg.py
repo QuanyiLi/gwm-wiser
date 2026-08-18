@@ -37,18 +37,23 @@ ARM_LINKS = [f"panda_link{i}" for i in range(8)]
 # Gripper links that get collision geometry, and how many spheres each gets.
 # Budgets scale with the part's volume; the fingers get the most because they
 # are what actually approaches the object and the table.
+# Ceilings, not targets: _cover_with_spheres stops at the first pitch that
+# meets MAX_THICKNESS_INFLATION and only spends more spheres if it has to.
+# Raised on 2026-08-18 -- the old values were far below what the old fitter
+# actually emitted (the 8-sphere pad budget produced 55), so they constrained
+# nothing, while a tight fit on the plate-like links genuinely needs the room.
 GRIPPER_SPHERE_BUDGET = {
-    "robotiq_140_base_link": 24,
-    "left_outer_knuckle": 8,
-    "right_outer_knuckle": 8,
-    "left_outer_finger": 14,
-    "right_outer_finger": 14,
-    "left_inner_knuckle": 12,
-    "right_inner_knuckle": 12,
-    "left_inner_finger": 10,
-    "right_inner_finger": 10,
-    "left_inner_finger_pad": 8,
-    "right_inner_finger_pad": 8,
+    "robotiq_140_base_link": 200,
+    "left_outer_knuckle": 200,
+    "right_outer_knuckle": 200,
+    "left_outer_finger": 200,
+    "right_outer_finger": 200,
+    "left_inner_knuckle": 200,
+    "right_inner_knuckle": 200,
+    "left_inner_finger": 200,
+    "right_inner_finger": 200,
+    "left_inner_finger_pad": 200,
+    "right_inner_finger_pad": 200,
 }
 
 # Wrist-camera mount.
@@ -123,9 +128,56 @@ COVERAGE_SLACK_M = 0.0005
 # emitted config's header.
 THICKNESS_MULTIPLE = 1.0
 
+# The other half of the check that was missing until 2026-08-18.
+#
+# MIN_COVERAGE only asks "do the spheres cover the mesh". Fat spheres satisfy
+# that trivially, so it never noticed that thin parts were being modelled
+# 1.73-2.73x thicker than they are -- the outer finger, 27.1 mm of real
+# bracket, came out as a 72.8 mm slab. 1.73 is sqrt(3), the circumradius of a
+# cube: the old radius assumed every voxel was FULL, so a plate one voxel thick
+# got a sphere sized for a solid cube of that pitch. 2.73 is 1 + sqrt(3), the
+# same thing when grid alignment puts two layers across the thickness.
+#
+# That inflation propagates: build_gripper_spheres derives cuTAMP's grasp
+# filter from these spheres, and cuTAMP keeps that envelope clear of the target
+# object, so an over-thick gripper pushes every grasp outward. Measured
+# consequence -- the executed grasp landed 8-12 mm above EVERY M2T2 proposal on
+# all three objects tried, which is survivable on a tomato and fatal on a 77 mm
+# open cup, where it puts the pads above the rim.
+# 1.80 is a REGRESSION GUARD, not a target -- it sits just above what the
+# fitter reaches at a sphere count cuRobo can plan with. The measured trade,
+# total gripper spheres against worst-link inflation:
+#
+#     lateral pitch = thickness      190 spheres    1.42 - 1.78x   <- chosen
+#                   = thickness/1.5  806            1.52 - 1.94x
+#                   = thickness/2   1305            1.36 - 1.71x
+#                   = thickness/3   3241            1.32 - 1.47x
+#
+# Inflation is not even monotonic in the pitch (grid alignment decides whether
+# a layer boundary lands on the surface), and the floor is ~1.3x at 17x the
+# spheres. The old cube-circumradius fitter sat at 287 spheres / 1.73 - 2.73x,
+# so the chosen point is better on both axes at once; buying the last 0.3x
+# would cost more planning time than the tighter model is worth.
+MAX_THICKNESS_INFLATION = 1.80
+SURFACE_SAMPLES = 40000
+
+
+def _surface_points(mesh):
+    """Dense, deterministic sample of the mesh surface, plus its vertices.
+
+    Vertices alone are a weak test: a coarse mesh has few of them and they sit
+    at extremes, so spheres can pass a vertex check while leaving whole faces
+    outside.
+    """
+    import numpy as np
+
+    pts, _ = __import__("trimesh").sample.sample_surface_even(mesh, SURFACE_SAMPLES,
+                                                              seed=0)
+    return np.vstack([np.asarray(mesh.vertices), np.asarray(pts)])
+
 
 def _coverage(vertices, rows) -> float:
-    """Fraction of collision-mesh vertices enclosed by the fitted spheres."""
+    """Fraction of collision-mesh sample points enclosed by the fitted spheres."""
     import numpy as np
 
     centers = np.array([r["center"] for r in rows])
@@ -191,32 +243,70 @@ def _cover_with_spheres(mesh, budget: int):
     # planner's eyes that it collides with everything it tries to grasp.
     # Over-approximating a finger refuses valid grasps just as surely as
     # under-approximating one drives it through the table.
-    pitch_cap = float(mesh.extents.min()) * THICKNESS_MULTIPLE
-    lo, hi = float(mesh.extents.max()) / 60.0, pitch_cap
+    surf = _surface_points(mesh)
+    ext = np.asarray(mesh.extents, dtype=float)
+    ax = int(np.argmin(ext))                 # thin axis
+    la, lb = [k for k in range(3) if k != ax]
+    thin = float(ext[ax])
+
+    def fit(pitch):
+        """Anisotropic: a lateral grid, and only as many layers through the
+        thin axis as the local material actually needs.
+
+        An isotropic voxel grid pays n^3 to refine when only the lateral n^2
+        buys tightness, which is why the cube-circumradius version could not
+        get under ~1.4x without ~2000 spheres. Here each lateral cell looks at
+        the material actually in it: one sphere centred on that material, sized
+        to reach it, and extra layers only where the part is genuinely thick.
+        """
+        lo = surf.min(0)
+        idx = np.floor((surf[:, [la, lb]] - lo[[la, lb]]) / pitch).astype(int)
+        rows = []
+        for key in np.unique(idx, axis=0):
+            m = (idx == key).all(1)
+            q = surf[m]
+            span = float(q[:, ax].max() - q[:, ax].min())
+            layers = max(1, int(np.ceil(span / pitch)))
+            edges = np.linspace(q[:, ax].min(), q[:, ax].max(), layers + 1)
+            for k in range(layers):
+                sel = (q[:, ax] >= edges[k] - 1e-9) & (q[:, ax] <= edges[k + 1] + 1e-9)
+                if not sel.any():
+                    continue
+                blk = q[sel]
+                c = np.empty(3)
+                c[la] = lo[la] + (key[0] + 0.5) * pitch
+                c[lb] = lo[lb] + (key[1] + 0.5) * pitch
+                c[ax] = 0.5 * (blk[:, ax].min() + blk[:, ax].max())
+                r = float(np.linalg.norm(blk - c, axis=1).max())
+                # reach half a cell diagonally so neighbouring spheres still
+                # overlap across a cell face, otherwise the seams leak
+                rows.append((c, max(r, pitch * (2 ** 0.5) / 2)))
+        pts = np.array([c for c, _ in rows])
+        rad = np.array([r for _, r in rows])
+        # EVERY axis, not just the thin one. Checking only the thin axis is the
+        # same one-sided mistake as checking only coverage: the first version of
+        # this fitter passed the thin-axis bound while modelling the gripper base
+        # as four 106 mm balls, which bulged sideways far enough to put the
+        # capture pose in collision with the table.
+        env = (pts + rad[:, None]).max(0) - (pts - rad[:, None]).min(0)
+        return pts, rad, float((env / ext).max())
+
     best = None
-    for _ in range(24):
-        mid = (lo + hi) / 2.0
-        pts = n_at(mid)
-        if 0 < len(pts) <= budget:
-            best = (mid, pts)
-            hi = mid          # try finer (more, smaller spheres) within budget
-        elif len(pts) > budget:
-            lo = mid
-        else:
-            hi = mid
-        if hi - lo < 1e-4:
+    for div in (1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0):
+        pts, rad, infl = fit(thin / div)
+        if len(pts) > budget:
             break
+        best = (pts, rad, infl)
+        if infl <= MAX_THICKNESS_INFLATION:
+            break
+    # (infl below is the worst axis, see fit())
     if best is None:
-        # Budget unreachable at any pitch <= the thickness cap: accept the
-        # coarsest capped pitch and let the caller see the true sphere count.
-        pts = n_at(pitch_cap)
-        if len(pts) == 0:
-            raise RuntimeError("voxelisation produced no occupied cells")
-        best = (pitch_cap, pts)
-    pitch, pts = best
-    radius = pitch * (3 ** 0.5) / 2.0
+        raise RuntimeError(
+            f"even the coarsest fit exceeds the {budget}-sphere budget; "
+            f"raise it in GRIPPER_SPHERE_BUDGET")
+    pts, rad, _ = best
     return [{"center": [round(float(c), 6) for c in pt],
-             "radius": round(float(radius), 6)} for pt in pts]
+             "radius": round(float(r), 6)} for pt, r in zip(pts, rad)]
 
 
 def fit_gripper_spheres(urdf_path: Path) -> dict:
@@ -231,22 +321,36 @@ def fit_gripper_spheres(urdf_path: Path) -> dict:
         if mesh is None:
             continue
         rows = _cover_with_spheres(mesh, budget)
-        radii = [r["radius"] for r in rows]
-        cover = _coverage(np.asarray(mesh.vertices), rows)
-        # How much fatter than the real part does the planner see? Compared
-        # against the part's own thinnest dimension, which is what decides
-        # whether the fingers still fit between two objects.
-        inflation = 2 * radii[0] / float(mesh.extents.min())
+        pts = np.array([r["center"] for r in rows])
+        rad = np.array([r["radius"] for r in rows])
+        samples = _surface_points(mesh)
+        cover = _coverage(samples, rows)
+        # Two-sided, and both sides matter. Coverage alone is satisfied by any
+        # sufficiently fat sphere, which is exactly how 2.7x inflation went
+        # unnoticed; inflation alone is satisfied by no spheres at all.
+        env3 = (pts + rad[:, None]).max(0) - (pts - rad[:, None]).min(0)
+        ratios = env3 / np.asarray(mesh.extents, dtype=float)
+        ax = int(np.argmax(ratios))
+        env = float(env3[ax])
+        inflation = float(ratios[ax])
         out[link_name] = rows
         total += len(rows)
-        print(f"  {link_name:26s} {len(rows):3d} spheres  r={radii[0]:.4f} m  "
+        print(f"  {link_name:26s} {len(rows):3d} spheres  r={rad.min():.4f}-{rad.max():.4f} m  "
               f"coverage {cover * 100:5.1f} %  "
-              f"thickness inflation {inflation:4.2f}x")
+              f"worst axis {'xyz'[ax]} {mesh.extents[ax]*1000:5.1f} -> {env*1000:5.1f} mm  "
+              f"({inflation:4.2f}x)")
         if cover < MIN_COVERAGE:
             raise RuntimeError(
                 f"{link_name}: fitted spheres cover only {cover * 100:.1f} % of "
-                f"the collision mesh vertices (need >= {MIN_COVERAGE * 100:.0f} %). "
+                f"the collision mesh surface (need >= {MIN_COVERAGE * 100:.0f} %). "
                 f"Raise its budget in GRIPPER_SPHERE_BUDGET.")
+        if inflation > MAX_THICKNESS_INFLATION:
+            raise RuntimeError(
+                f"{link_name}: modelled {inflation:.2f}x fatter than the real part on "
+                f"axis {'xyz'[ax]} ({mesh.extents[ax]*1000:.1f} mm -> {env*1000:.1f} mm), over the "
+                f"{MAX_THICKNESS_INFLATION:.2f}x bound. An over-thick gripper makes "
+                f"cuTAMP push grasps off the object. Raise its budget in "
+                f"GRIPPER_SPHERE_BUDGET so a finer pitch fits.")
     print(f"  {'total':26s} {total:3d} spheres")
     return out
 
