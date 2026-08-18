@@ -206,6 +206,34 @@ client itself in its own `finally` (`tiptop_run.py:817`).
 
 ---
 
+## Baseline status
+
+First successful pick on hardware, 2026-08-18 20:24 (`tiptop_outputs/eval/2026-08-18_20-24-39`):
+`grasping the tomato` -> `holding(tomato)`, perception 7.0 s, plan found, executed
+in 17.7 s at `time_dilation_factor` 0.2. Gemini, SAM2, FoundationStereo, M2T2,
+cuTAMP and Bamboo all in the loop.
+
+Check a plan before letting it execute -- `tiptop-run` goes straight from a
+returned plan to `execute_cutamp_plan` with no confirmation
+(`tiptop_run.py:680`):
+
+```bash
+pixi run tiptop-run --no-execute-plan       # then
+$P python -m gwm_hardware.inspect_plan droid/tiptop/tiptop_outputs/eval/<timestamp>
+```
+
+`inspect_plan` reports where the finger **pads** land, not just the TCP. On the
+run before this one the TCP looked reasonable (49 mm from the centre of a 100 mm
+bowl, i.e. on the rim) while the pad over the bowl's opening sat 9 mm above the
+rim and could never enter it; the plan would have pushed the bowl. The tomato
+run scored 4 mm off centre with +16 mm of pad overlap on both sides.
+
+Run it **interactively** from a terminal, not with piped stdin: after a
+`Holding` goal it asks `Open gripper? [y]`, and that prompt is the only thing
+holding the object up.
+
+---
+
 ## Known unresolved issue: ~3° hand-eye rotational residual
 
 Reconstructing the tabletop through FK → `ee_from_cam` → depth gives a plane
