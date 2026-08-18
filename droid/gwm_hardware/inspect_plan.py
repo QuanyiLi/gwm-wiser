@@ -14,10 +14,18 @@ What it reports, all in world coordinates:
     the gripper closes on the object or above it. The TCP alone does not tell
     you this: `grasp_frame` is a convention, the pads are geometry.
 
-Why the pads and not the TCP: on the first tomato/bowl runs the TCP looked
-plausible (49 mm from the centre of a 100 mm bowl, i.e. on the rim) while the
-pad over the bowl's opening sat 9 mm ABOVE the rim and could never enter it.
-The plan would have pushed the bowl across the table.
+Why the pads and not the TCP: `grasp_frame` is a convention, the pads are
+geometry, and a tilt lying in the closing plane turns straight into height
+difference between them.
+
+The pads must be swept through the CLOSE, not read at the open width. The
+2F-140 is a four-bar linkage: closing swings each finger inward along an arc
+that also drops it, measured here at up to **44 mm** of descent from open to
+closed. The first version of this script judged the open state alone -- the one
+configuration where the pads sit highest -- and called a blue cup ungraspable
+because a pad was 12 mm above its rim. Run on the real robot, that grasp
+succeeded: by the time the fingers met, the pad was some 30 mm BELOW the rim.
+A check that blocks good grasps is worse than no check.
 
     cd /home/quanyi/gwm-wiser
     pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.inspect_plan \
@@ -54,26 +62,39 @@ def table_plane(pcd_path: Path):
     return (lambda x, y: (-d - n[0] * x - n[1] * y) / n[2]), tilt
 
 
-def pad_bands(q_grasp):
-    """World z-band and xy centre of each finger pad at this configuration."""
-    from curobo.types.base import TensorDeviceType
-    from cutamp.robots import load_panda_robotiq_container
+DRIVER_CLOSED = 0.70
 
+
+def pad_sweep(q_grasp, steps=15):
+    """Each pad's world z-EXTENT and centre across the whole close.
+
+    The pad's own geometry, not its link origin: the pad is a 30 x 70 mm plate
+    and the grasp is usually tilted, so its lower edge sits tens of millimetres
+    below the origin. Using the origin is what made the first two versions of
+    this check disagree with the robot.
+
+    cuRobo's kinematics model locks the gripper, so the sweep goes through the
+    URDF, whose mimic chain drives the four-bar properly.
+    """
+    from yourdfpy import URDF
+
+    robot = URDF.load(str(ASSETS / "panda_robotiq_2f_140.urdf"),
+                      load_meshes=False, build_scene_graph=True)
     kin = yaml.safe_load(CFG.read_text())["robot_cfg"]["kinematics"]
-    names, spheres = kin["collision_link_names"], kin["collision_spheres"]
-    ta = TensorDeviceType()
-    S = (load_panda_robotiq_container(ta)
-         .kin_model.get_state(ta.to_device(np.asarray(q_grasp)[None]))
-         .link_spheres_tensor[0].cpu().numpy())
-    out, i = {}, 0
-    for n in names:
-        k = len(spheres.get(n, []))
-        if k and "pad" in n:
-            s = S[i:i + k]
-            out[n] = dict(z_lo=float((s[:, 2] - s[:, 3]).min()),
-                          z_hi=float((s[:, 2] + s[:, 3]).max()),
-                          x=float(s[:, 0].mean()), y=float(s[:, 1].mean()))
-        i += k
+    local = {n: np.array([[*sp["center"], sp["radius"]] for sp in kin["collision_spheres"][n]])
+             for n in ("left_inner_finger_pad", "right_inner_finger_pad")}
+    q = np.asarray(q_grasp)
+    out = {}
+    for drv in np.linspace(0.0, DRIVER_CLOSED, steps):
+        robot.update_cfg({**{f"panda_joint{i + 1}": q[i] for i in range(7)},
+                          "finger_joint": float(drv)})
+        for ln, sp in local.items():
+            T = robot.get_transform(ln, "panda_link0")
+            w = (T[:3, :3] @ sp[:, :3].T).T + T[:3, 3]
+            out.setdefault(ln, []).append(dict(
+                drv=float(drv), c=w.mean(0),
+                z_lo=float((w[:, 2] - sp[:, 3]).min()),
+                z_hi=float((w[:, 2] + sp[:, 3]).max())))
     return out
 
 
@@ -118,29 +139,38 @@ def main() -> None:
     print(f"  TCP      ({tcp[0]:+.3f}, {tcp[1]:+.3f}, {tcp[2]:+.4f})   {tilt_grasp:.1f} deg from vertical")
     print(f"  TCP is {np.linalg.norm(tcp[:2]-ctr[:2])*1000:.0f} mm from the object centre in xy")
 
-    bands = pad_bands(q_grasp)
-    if len(bands) == 2:
-        (l, r) = bands.values()
-        dz = abs((l["z_hi"] + l["z_lo"]) / 2 - (r["z_hi"] + r["z_lo"]) / 2)
-        dxy = np.hypot(l["x"] - r["x"], l["y"] - r["y"])
-        close_tilt = np.degrees(np.arctan2(dz, dxy))
-        print(f"  closing axis is {close_tilt:.1f} deg off horizontal  ->  {dz*1000:.0f} mm between the pads")
-        print(f"    this, not the TCP tilt, is what decides whether both pads reach: a tilt")
-        print(f"    lying in the closing plane turns straight into pad height difference,")
-        print(f"    scaled by the 136 mm open span (a 2F-85 would scale it by 85 mm).")
+    sweep = pad_sweep(q_grasp)
+    (ln_l, tl), (ln_r, tr) = sweep.items()
 
-    print(f"\nfinger pads at this configuration (gripper OPEN)")
+    # Contact is where the pads have converged to the object's width along the
+    # closing axis; that, not the open width, is where the grasp is decided.
+    width = float(np.linalg.norm((hi - lo)[:2]) / np.sqrt(2))
+    seps = np.array([np.linalg.norm(a["c"] - b["c"]) for a, b in zip(tl, tr)])
+    kc = int(np.argmin(np.abs(seps - width)))
+
+    print(f"\nfinger pads through the close (the 2F-140 swings them inward AND down)")
+    print(f"  {'driver':>7s}  {'separation':>10s}   {ln_l:>26s}   {ln_r:>26s}")
+    for k in (0, len(tl) // 2, kc, len(tl) - 1):
+        tag = {0: "open", len(tl) - 1: "closed", kc: "<- contact width"}.get(k, "")
+        print(f"  {tl[k]['drv']:7.2f}  {seps[k] * 1000:8.0f} mm   "
+              f"z[{tl[k]['z_lo']:+.4f},{tl[k]['z_hi']:+.4f}]           "
+              f"z[{tr[k]['z_lo']:+.4f},{tr[k]['z_hi']:+.4f}]        {tag}")
+
+    print(f"\nvertical overlap with the object from contact width to closed "
+          f"(contact at {seps[kc] * 1000:.0f} mm, object {width * 1000:.0f} mm)")
     ok = True
-    for n, p in bands.items():
-        r = np.linalg.norm([p["x"] - ctr[0], p["y"] - ctr[1]]) * 1000
-        overlap = min(p["z_hi"], hi[2]) - max(p["z_lo"], lo[2])
-        flag = "" if overlap > 0.005 else "   <-- NO vertical overlap with the object"
-        if overlap <= 0.005:
+    for name, tr_ in ((ln_l, tl), (ln_r, tr)):
+        # best overlap anywhere from the contact width to fully closed -- the
+        # fingers keep descending after first contact
+        best = max(min(st["z_hi"], hi[2]) - max(st["z_lo"], lo[2]) for st in tr_[kc:])
+        drop = (tr_[0]["z_lo"] - tr_[-1]["z_lo"]) * 1000
+        flag = "" if best > 0.002 else "   <-- misses the object through the whole close"
+        if best <= 0.002:
             ok = False
-        print(f"  {n:24s} z[{p['z_lo']:+.4f},{p['z_hi']:+.4f}]  xy({p['x']:+.3f},{p['y']:+.3f})  "
-              f"{r:5.0f} mm from centre  overlap {overlap*1000:+.0f} mm{flag}")
+        print(f"  {name:24s} best overlap {best * 1000:+.0f} mm   "
+              f"(lower edge descends {drop:+.0f} mm from open to closed){flag}")
 
-    print(f"\n{'looks graspable' if ok else 'SUSPECT -- a pad cannot reach the object'}")
+    print(f"\n{'looks graspable' if ok else 'SUSPECT -- a pad misses the object through the whole close'}")
 
 
 if __name__ == "__main__":

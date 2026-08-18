@@ -208,29 +208,48 @@ client itself in its own `finally` (`tiptop_run.py:817`).
 
 ## Baseline status
 
-First successful pick on hardware, 2026-08-18 20:24 (`tiptop_outputs/eval/2026-08-18_20-24-39`):
-`grasping the tomato` -> `holding(tomato)`, perception 7.0 s, plan found, executed
-in 17.7 s at `time_dilation_factor` 0.2. Gemini, SAM2, FoundationStereo, M2T2,
-cuTAMP and Bamboo all in the loop.
+Pick and place both work on hardware (2026-08-18):
 
-Check a plan before letting it execute -- `tiptop-run` goes straight from a
-returned plan to `execute_cutamp_plan` with no confirmation
-(`tiptop_run.py:680`):
+| run | instruction | result |
+|---|---|---|
+| `eval/2026-08-18_20-24-39` | `grasping the tomato` | picked, 17.7 s |
+| `eval/2026-08-18_21-11-40` | `grasping the tomato and place it onto the red box` | picked and placed, 34.1 s, 9 steps |
+| `eval/2026-08-18_21-15-04` | `grasping the blue cup` | picked |
 
-```bash
-pixi run tiptop-run --no-execute-plan       # then
-$P python -m gwm_hardware.inspect_plan droid/tiptop/tiptop_outputs/eval/<timestamp>
-```
+Gemini, SAM2, FoundationStereo, M2T2, cuTAMP and Bamboo all in the loop, at
+`time_dilation_factor` 0.2. **Every grasp executed on this rig has succeeded.**
 
-`inspect_plan` reports where the finger **pads** land, not just the TCP. On the
-run before this one the TCP looked reasonable (49 mm from the centre of a 100 mm
-bowl, i.e. on the rim) while the pad over the bowl's opening sat 9 mm above the
-rim and could never enter it; the plan would have pushed the bowl. The tomato
-run scored 4 mm off centre with +16 mm of pad overlap on both sides.
+Run `tiptop-run` **interactively**, not with piped stdin: after a `Holding`
+goal it asks `Open gripper? [y]`, and that prompt is the only thing holding the
+object up.
 
-Run it **interactively** from a terminal, not with piped stdin: after a
-`Holding` goal it asks `Open gripper? [y]`, and that prompt is the only thing
-holding the object up.
+### `inspect_plan`, and what it got wrong
+
+`tiptop-run` goes straight from a returned plan to `execute_cutamp_plan` with
+no confirmation (`tiptop_run.py:680`), so `--no-execute-plan` plus
+`gwm_hardware.inspect_plan` is the way to see a grasp before the gripper
+commits to it.
+
+Its first two versions **judged the gripper in the open state only**, and were
+wrong because of it. The 2F-140 is a four-bar linkage: closing swings each
+finger inward along an arc that also drops it, measured at up to **44 mm** of
+descent from open to closed. Open is the one configuration where the pads sit
+highest. On that basis the script called a blue cup ungraspable -- a pad 12 mm
+above its rim -- and the same for a bowl, and this document previously recorded
+"tall open containers systematically fail" as a rig limitation.
+
+That was wrong. Run on the real robot, the cup grasp succeeded: by the time the
+fingers met, the pad was ~30 mm *below* the rim. The script now sweeps the
+driver from open to closed, uses the pad's own geometry rather than its link
+origin (the pad is a 30 x 70 mm plate, so on a tilted grasp its lower edge sits
+tens of mm below the origin), and scores the best overlap from contact width
+onward.
+
+**Read its verdict accordingly.** Re-run over all 11 saved plans, it now passes
+every one, so on this rig it has produced no true negative and is not a
+validated predictor of failure -- it is a sanity check that would catch a gross
+error, and a way to see the geometry. Do not let it talk you out of a grasp on
+its own.
 
 ---
 
@@ -271,14 +290,15 @@ at once:
 | old | 334 | 1.73 - 2.73x (thin axis only; lateral unbounded) | 1.88x |
 | new | 273 | 1.42 - 1.78x (all axes) | 1.50x |
 
-Why it is not cosmetic: `build_gripper_spheres` derives cuTAMP's **grasp
-filter** from these spheres, and cuTAMP keeps that envelope clear of the target
-object, so an over-thick gripper pushes every grasp outward. On the first three
-objects tried, the executed grasp landed 8-12 mm above *every* M2T2 proposal --
-survivable on a tomato, fatal on a 77 mm open cup where it puts the pads over
-the rim. Against cuTAMP's own 2F-85 filter the thickness ratio moved 2.00x ->
+Against cuTAMP's own 2F-85 grasp filter the thickness ratio moved 2.00x ->
 1.77x, where y and z already matched the real geometric ratios (1.61 vs 1.60
 for the open span, 1.33 vs 1.65 for the length).
+
+This rebuild was prompted by a grasp that looked like it would fail. That
+diagnosis turned out to be an artefact of judging the gripper open (see
+`inspect_plan` above) -- the grasp was fine and the cup was picked. The sphere
+work stands on its own measurements against the meshes, not on that story, and
+it did not change any grasp: the cup grasp was unaffected by the rebuild.
 
 **Not yet confirmed on hardware.** Whether this actually lowers the chosen
 grasp needs a `tiptop-run --no-execute-plan` on a tall object. Offline replay
