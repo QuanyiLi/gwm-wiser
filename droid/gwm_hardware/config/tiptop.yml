@@ -23,9 +23,15 @@ robot:
   port: 5555
   gripper_port: 5559
 
-  # Start slow. The upstream default at MIT is 0.6 with careful cable
-  # management; this rig has not earned that yet.
-  time_dilation_factor: 0.2
+  # Raised 0.2 -> 0.6 on 2026-08-18 after pick and place both ran clean at 0.2.
+  # 0.6 is upstream's value at MIT. cuRobo post-process retiming, so it stretches
+  # the finished trajectory and leaves the optimizer and cost terms alone.
+  #
+  # Worth knowing at speed: execution is open-loop -- the whole trajectory goes
+  # up in one shot and execute_plan.py only checks that the controller accepted
+  # it, never that anything was grasped. Nothing notices an object knocked over
+  # on a fast approach.
+  time_dilation_factor: 0.6
 
   # Robot configurations
   q_home: [0.0, -0.628, 0.0, -2.513, 0.0, 1.885, 0.0]

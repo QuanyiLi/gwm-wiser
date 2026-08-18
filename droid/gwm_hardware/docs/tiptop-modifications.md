@@ -215,9 +215,14 @@ Pick and place both work on hardware (2026-08-18):
 | `eval/2026-08-18_20-24-39` | `grasping the tomato` | picked, 17.7 s |
 | `eval/2026-08-18_21-11-40` | `grasping the tomato and place it onto the red box` | picked and placed, 34.1 s, 9 steps |
 | `eval/2026-08-18_21-15-04` | `grasping the blue cup` | picked |
+| `eval/2026-08-18_21-23-48` | `pick the blue cup and place it onto the red box` | picked and placed, 16.4 s, at 0.6 |
 
-Gemini, SAM2, FoundationStereo, M2T2, cuTAMP and Bamboo all in the loop, at
-`time_dilation_factor` 0.2. **Every grasp executed on this rig has succeeded.**
+Gemini, SAM2, FoundationStereo, M2T2, cuTAMP and Bamboo all in the loop.
+**Every grasp executed on this rig has succeeded.**
+
+`time_dilation_factor` went 0.2 -> 0.6 after the first four runs were clean.
+Measured on the same 9-step place task: 34.1 s -> 16.4 s, 2.1x rather than 3x,
+because gripper open/close and the per-step overheads do not retime.
 
 ### Launching
 
