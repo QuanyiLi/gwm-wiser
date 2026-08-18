@@ -84,3 +84,4 @@ third_party
 # Pristine copies the gwm_hardware install_* scripts keep before patching the
 # tiptop worktree. Regenerated on demand; the patches themselves are versioned.
 /droid/tiptop/tiptop/**/*.py.orig
+/droid/gwm_hardware/.service-logs/

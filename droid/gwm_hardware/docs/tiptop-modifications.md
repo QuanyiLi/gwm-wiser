@@ -219,6 +219,38 @@ Pick and place both work on hardware (2026-08-18):
 Gemini, SAM2, FoundationStereo, M2T2, cuTAMP and Bamboo all in the loop, at
 `time_dilation_factor` 0.2. **Every grasp executed on this rig has succeeded.**
 
+### Launching
+
+```bash
+./droid/gwm_hardware/services.sh run      # servers + preflight + warm-up + tiptop-run
+./droid/gwm_hardware/services.sh status   # what is up
+./droid/gwm_hardware/services.sh stop
+```
+
+The order in that script is not arbitrary: `rs_preflight` first because the
+RealSenses come up with IR auto-exposure off, and `warm_servers` after the
+servers are healthy because M2T2 and FoundationStereo pin torch 2.4.1 / CUDA
+12.0, whose builds carry no `sm_120` cubins -- Blackwell JITs every kernel on
+the first call, 33 s against tiptop's hard-coded 10 s client timeout.
+
+### Execution speed
+
+`robot.time_dilation_factor` in `gwm_hardware/config/tiptop.yml`, currently
+**0.2** -- a fifth of full speed, which is why this rig looks slower than the
+published demos. Upstream at MIT runs 0.6.
+
+It is cuRobo's post-process retiming (`MotionGenPlanConfig.time_dilation_factor`):
+it stretches the finished trajectory's timing and touches neither the optimizer
+nor the cost terms, which is exactly why cuRobo recommends it over
+`velocity_scale` / `acceleration_scale`, both of which would need the costs
+re-tuned. Must be <= 1.0. One value, read by both `go_to_q` and
+`build_tamp_config`, so it governs every motion.
+
+Raise it deliberately: execution is **open-loop** -- the whole trajectory is
+uploaded once and `execute_plan.py` only checks that the controller accepted
+it, never that anything was grasped -- so speed buys nothing back if a fast
+approach knocks the object over.
+
 Run `tiptop-run` **interactively**, not with piped stdin: after a `Holding`
 goal it asks `Open gripper? [y]`, and that prompt is the only thing holding the
 object up.
