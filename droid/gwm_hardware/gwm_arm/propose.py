@@ -49,9 +49,10 @@ from tiptop.perception.utils import (
 )
 from tiptop.planning import build_tamp_config, save_tiptop_plan, serialize_plan
 
-from gwm_tiptop.perception_geometric import cluster_objects, find_table_plane
 from gwm_tiptop.propose_from_h5 import associate_grasps, load_h5_observation, save_cluster_viz
 from gwm_tiptop.proposals import run_proposals
+from gwm_tiptop.robot_fk import planning_solvers
+from gwm_tiptop.scene_cache import scene
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 _log = logging.getLogger("gwm_arm.propose")
@@ -132,15 +133,26 @@ def main() -> None:
             "capture should read 0.0 (gwm_hardware.gwm_arm.capture writes it)."
         )
 
-    depth = obs["depth"].copy()
-    depth[~np.isfinite(depth)] = np.nan
-    depth[(depth <= 0.05) | (depth > 4.0)] = np.nan
-    _log.info(f"depth: {np.isfinite(depth).mean():.1%} valid")
-    xyz_map = depth_to_xyz(depth, obs["K"])
-    xyz_map = xyz_map @ obs["world_from_cam"][:3, :3].T + obs["world_from_cam"][:3, 3]
-    rgb_map = obs["rgb"].astype(np.float32) / 255.0
+    # The arm's real pose, so the clusterer does not have to guess it from
+    # height (see cluster_objects' robot_spheres note: the height rule silently
+    # deleted a 93 mm upended box on this rig).
+    robot_spheres = None
+    if args.robot_arm_filter:
+        from curobo.types.base import TensorDeviceType
 
-    _t0 = _lap("load+cloud", _t0)
+        from gwm_tiptop.robot_fk import fk_model
+
+        _ta = TensorDeviceType()
+        robot_spheres = (fk_model(_ta).get_state(_ta.to_device(obs["q_init"]))
+                         .get_link_spheres()[0].cpu().numpy().astype(np.float64))
+
+    sc = scene(args.h5_path, use_plane_normal=args.use_plane_normal,
+               robot_spheres=robot_spheres)
+    xyz_map, rgb_map = sc["xyz_map"], sc["rgb_map"]
+    object_trimeshes, object_pcds = sc["meshes"], sc["pcds"]
+    _log.info(f"depth: {sc['valid_frac']:.1%} valid")
+    _t0 = _lap("load+cloud+perception", _t0)
+
     finite = np.isfinite(xyz_map).all(axis=2)
     pcd_ds = get_o3d_pcd(xyz_map[finite], rgb_map[finite], cfg.perception.voxel_downsample_size)
     grasps = generate_grasps(
@@ -149,9 +161,9 @@ def main() -> None:
         scene_rgb=np.asarray(pcd_ds.colors),
         apply_bounds=cfg.perception.m2t2.apply_bounds,
     )
-
     _t0 = _lap("m2t2", _t0)
-    table_trimesh, surface_z = find_table_plane(xyz_map, rgb_map)
+
+    table_trimesh, surface_z = sc["table_box"], sc["surface_z"]
     check_surface_z(surface_z, args.max_surface_drift)
     table_cuboid = convert_trimesh_box_to_curobo_cuboid(table_trimesh, name="table")
     config = build_tamp_config(
@@ -162,23 +174,6 @@ def main() -> None:
         time_dilation_factor=cfg.robot.time_dilation_factor,
         near_placement=False,
     )
-    # Give the clusterer the robot's actual pose instead of letting it guess the
-    # arm from height. See the `robot_spheres` note in cluster_objects: the
-    # height rule silently deleted a 93 mm upended box on this rig.
-    robot_spheres = None
-    if args.robot_arm_filter:
-        from curobo.types.base import TensorDeviceType
-
-        from gwm_tiptop.robot_fk import fk_model
-
-        _ta = TensorDeviceType()
-        robot_spheres = (fk_model(_ta).get_state(_ta.to_device(obs["q_init"]))
-                         .get_link_spheres()[0].cpu().numpy().astype(np.float64))
-    object_trimeshes, object_pcds = cluster_objects(
-        xyz_map, rgb_map, table_trimesh, surface_z + 0.015,
-        use_plane_normal=args.use_plane_normal, robot_spheres=robot_spheres,
-    )
-    _t0 = _lap("perception", _t0)
     save_cluster_viz(obs, object_pcds, args.output_dir / "clusters.png")
 
     object_meshes = {l: convert_trimesh_to_curobo_mesh(m, l) for l, m in object_trimeshes.items()}
@@ -197,7 +192,7 @@ def main() -> None:
         goal_state=frozenset({HandEmpty.ground()}),
     )
     _t0 = _lap("associate", _t0)
-    ik_solver, motion_gen, _ = build_curobo_solvers(
+    ik_solver, motion_gen, _ = planning_solvers(
         config.num_particles, config.coll_n_spheres,
         include_workspace=args.include_workspace,
     )

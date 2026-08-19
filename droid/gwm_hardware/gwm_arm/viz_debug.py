@@ -322,10 +322,8 @@ def main() -> None:
     from curobo.types.base import TensorDeviceType
     from scipy.spatial.transform import Rotation
 
-    from tiptop.perception.utils import depth_to_xyz
 
-    from gwm_tiptop.perception_geometric import cluster_objects, find_table_plane
-    from gwm_tiptop.propose_from_h5 import load_h5_observation
+    from gwm_tiptop.scene_cache import scene
     from gwm_tiptop.robot_fk import fk_model
     from gwm_hardware.gwm_arm.capture import EXTERNAL_CAM
 
@@ -333,13 +331,9 @@ def main() -> None:
     instruction = args.instruction or (ctx["scores"] or {}).get("instruction")
     rows = candidate_table(ctx)
 
-    obs = load_h5_observation(args.h5_path)
-    depth = obs["depth"].copy()
-    depth[~np.isfinite(depth)] = np.nan
-    depth[(depth <= 0.05) | (depth > 4.0)] = np.nan
-    xyz_map = depth_to_xyz(depth, obs["K"])
-    xyz_map = xyz_map @ obs["world_from_cam"][:3, :3].T + obs["world_from_cam"][:3, 3]
-    rgb_map = obs["rgb"].astype(np.float32) / 255.0
+    sc = scene(args.h5_path, use_plane_normal=args.use_plane_normal)
+    obs, xyz_map, rgb_map = sc["obs"], sc["xyz_map"], sc["rgb_map"]
+    object_pcds = sc["pcds"]
 
     tensor_args = TensorDeviceType()
     kin = fk_model(tensor_args)      # FK only; the viewer never plans
@@ -379,10 +373,7 @@ def main() -> None:
                  tail_frac=args.tail_frac)
 
     if args.rerun:
-        table_box, surface_z = find_table_plane(xyz_map, rgb_map)
-        _, object_pcds = cluster_objects(xyz_map, rgb_map, table_box, surface_z + 0.015,
-                                         use_plane_normal=args.use_plane_normal)
-        log_rerun(ctx, rows, paths, obs, xyz_map, rgb_map, object_pcds, table_box,
+        log_rerun(ctx, rows, paths, obs, xyz_map, rgb_map, object_pcds, sc["table_box"],
                   instruction, None if not args.external_h5 else view)
 
 

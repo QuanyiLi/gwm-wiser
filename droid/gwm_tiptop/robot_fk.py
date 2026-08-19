@@ -30,6 +30,10 @@ import logging
 
 _log = logging.getLogger(__name__)
 
+# Per-process, keyed by embodiment. Loading costs 0.45 s and the model is
+# immutable, so a session that FKs in several stages should pay it once.
+_MODELS: dict = {}
+
 
 def fk_model(tensor_args=None):
     """The robot's kinematics model, for FK / collision-sphere queries only.
@@ -45,6 +49,8 @@ def fk_model(tensor_args=None):
 
     tensor_args = tensor_args or TensorDeviceType()
     robot_type = str(tiptop_cfg().robot.type)
+    if robot_type in _MODELS:
+        return _MODELS[robot_type]
 
     try:
         import cutamp.robots as _r
@@ -54,7 +60,8 @@ def fk_model(tensor_args=None):
             "fr3_robotiq": "load_fr3_robotiq_container",
         }.get(robot_type)
         if loader and hasattr(_r, loader):
-            return getattr(_r, loader)(tensor_args).kin_model
+            _MODELS[robot_type] = getattr(_r, loader)(tensor_args).kin_model
+            return _MODELS[robot_type]
     except Exception as e:      # noqa: BLE001 - falling back is always safe
         _log.debug(f"kinematics-only load unavailable ({e}); using the full solver build")
 
@@ -64,4 +71,29 @@ def fk_model(tensor_args=None):
 
     _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
                                             include_workspace=False)
-    return motion_gen.kinematics
+    _MODELS[robot_type] = motion_gen.kinematics
+    return _MODELS[robot_type]
+
+
+_SOLVERS: dict = {}
+
+
+def planning_solvers(num_particles: int, num_spheres: int, include_workspace: bool = True):
+    """`build_curobo_solvers`, built once per (process, configuration).
+
+    Constructing the IK solver + MotionGen and warming them costs 3.6 s and is
+    the single largest fixed cost in the proposer. The result depends only on
+    the arguments and the robot model, neither of which changes between
+    instructions, so a session should pay it at startup and never again.
+
+    Keyed on the arguments rather than assumed constant: a caller that asks for
+    a different particle count gets a correctly-built solver, not a silently
+    wrong cached one.
+    """
+    from tiptop.motion_planning import build_curobo_solvers
+
+    key = (int(num_particles), int(num_spheres), bool(include_workspace))
+    if key not in _SOLVERS:
+        _log.info(f"building cuRobo solvers {key} (once per session)")
+        _SOLVERS[key] = build_curobo_solvers(*key[:2], include_workspace=key[2])
+    return _SOLVERS[key]

@@ -50,10 +50,9 @@ from scipy.spatial.transform import Rotation
 
 from curobo.types.base import TensorDeviceType
 
-from tiptop.perception.utils import depth_to_xyz
 
-from gwm_tiptop.perception_geometric import cluster_objects, find_table_plane
 from gwm_tiptop.robot_fk import fk_model
+from gwm_tiptop.scene_cache import scene
 from gwm_tiptop.propose_from_h5 import load_h5_observation
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -176,36 +175,29 @@ def main() -> None:
                          "tilted (zhiwei: 2.88 deg); a no-op on a level one")
     args = ap.parse_args()
 
-    obs = load_h5_observation(args.h5_path)
-    depth = obs["depth"].copy()
-    depth[~np.isfinite(depth)] = np.nan
-    depth[(depth <= 0.05) | (depth > 4.0)] = np.nan
-    xyz_map = depth_to_xyz(depth, obs["K"])
-    xyz_map = xyz_map @ obs["world_from_cam"][:3, :3].T + obs["world_from_cam"][:3, 3]
-    rgb_map = obs["rgb"].astype(np.float32) / 255.0
-    xyz_flat = xyz_map[np.isfinite(xyz_map).all(axis=2)]
-
     # FK only -- this gate never plans. See gwm_tiptop.robot_fk.
     tensor_args = TensorDeviceType()
     kin = fk_model(tensor_args)
 
-    # The gate re-derives the clusters itself, so it MUST decompose the scene the
-    # same way the proposer did -- otherwise it judges plans against a scene
-    # that does not contain their target. It happened: with the proposer using
-    # the robot-sphere arm filter and the gate still using the height rule, an
-    # upended box survived proposal and vanished at gate time, and all five of
-    # its candidates came back "no raw points", so nothing passed and the gate
-    # silently fell through to the ungated winner.
-    table_trimesh, surface_z = find_table_plane(xyz_map, rgb_map)
+    # The arm's real pose first, because it is part of how the scene decomposes,
+    # and the gate MUST decompose it exactly as the proposer did. When it did
+    # not (2026-08-19) the gate lost the target and every candidate for it came
+    # back "no raw points", so nothing passed and it silently fell through to
+    # the ungated winner. Sharing the keyed cache is what makes that structural.
+    obs = load_h5_observation(args.h5_path)
     robot_spheres = None
     if args.use_robot_arm_filter:
         robot_spheres = (kin.get_state(tensor_args.to_device(obs["q_init"]))
                          .get_link_spheres()[0].cpu().numpy().astype(np.float64))
-    object_trimeshes, _ = cluster_objects(xyz_map, rgb_map, table_trimesh, surface_z + 0.015,
-                                          use_plane_normal=args.use_plane_normal,
-                                          robot_spheres=robot_spheres)
 
-    # Hand-region crop (capture-pose gripper hovers in frame).
+    sc = scene(args.h5_path, use_plane_normal=args.use_plane_normal,
+               robot_spheres=robot_spheres)
+    xyz_map, surface_z = sc["xyz_map"], sc["surface_z"]
+    object_trimeshes = sc["meshes"]
+    xyz_flat = xyz_map[np.isfinite(xyz_map).all(axis=2)]
+
+    # Hand-region crop: the gripper hovers in frame at the capture pose, and its
+    # own points must not masquerade as scene geometry.
     ee0 = ee_frame(kin.get_state(tensor_args.to_device(obs["q_init"]).float()[None]))[1]
     xyz_scene = xyz_flat[np.linalg.norm(xyz_flat - ee0, axis=1) >= HAND_CROP_RADIUS]
 

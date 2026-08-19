@@ -130,6 +130,81 @@ _DROP = re.compile(
 _TAIL = 40
 
 
+# Third-party loggers whose INFO output is per-solve bookkeeping, not a
+# decision. Silenced at the source when we run stages in-process, which is
+# cheaper and more complete than filtering their text afterwards.
+_NOISY = ("curobo", "cutamp", "trimesh", "PIL", "matplotlib", "urllib3", "sapien")
+
+
+def run_module(module: str, argv: list, what: str, verbose: bool = False) -> None:
+    """Run a stage IN THIS PROCESS instead of spawning one.
+
+    The stages were separate processes so CUDA memory came back between them
+    (G-8). That reason is gone: with FoundationStereo's allocator cache
+    released, all four modules sit co-resident at 23.1 GB of 32.6. What the
+    process boundary still cost was real and repeated -- imports, the cuRobo
+    model load, and the scene decomposition, every stage, every turn.
+
+    In-process, the module-level caches finally do their job: `fk_model` loads
+    once per session, `scene_cache` decomposes each capture once instead of
+    three times, and imports are paid at startup rather than four times a turn.
+
+    A stage that raises does not take the session down; the caller reports it
+    and the next instruction starts clean. `sys.argv` is restored either way.
+    """
+    import contextlib
+    import importlib
+    import io
+    import sys
+
+    for name in _NOISY:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    t0 = time.perf_counter()
+    saved = sys.argv
+    sys.argv = [module] + [str(a) for a in argv]
+    buf = io.StringIO()
+    try:
+        mod = importlib.import_module(module)
+        with contextlib.redirect_stdout(sys.stdout if verbose else buf):
+            try:
+                mod.main()
+            except SystemExit as e:      # argparse/SystemExit-based aborts
+                if e.code not in (0, None):
+                    raise RuntimeError(f"{module}: {e}") from e
+    finally:
+        sys.argv = saved
+        if not verbose:
+            for line in buf.getvalue().splitlines():
+                if not _DROP.search(line) and _KEEP.search(line):
+                    print(f"      {line}")
+    print(f"    \u25b8 {what:<16} {time.perf_counter() - t0:6.1f} s")
+
+
+class _StageFilter(logging.Filter):
+    """Let a stage's own log through the same sieve as its stdout."""
+
+    def filter(self, record):
+        msg = record.getMessage()
+        if record.levelno >= logging.WARNING:
+            return True
+        return bool(_KEEP.search(msg) and not _DROP.search(msg))
+
+
+def install_quiet_logging() -> None:
+    """One indented handler for the whole session, filtered like the stdout."""
+    root = logging.getLogger()
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+    h = logging.StreamHandler()
+    h.setFormatter(logging.Formatter("      %(message)s"))
+    h.addFilter(_StageFilter())
+    root.addHandler(h)
+    root.setLevel(logging.INFO)
+    for name in _NOISY:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def run(cmd: list[str], what: str, verbose: bool = False) -> None:
     """Run one stage, showing only what is worth reading.
 

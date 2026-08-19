@@ -65,9 +65,9 @@ from gwm_hardware.common.paths import PKG_ROOT
 from gwm_hardware.gwm_arm.capture import EXTERNAL_CAM
 from gwm_hardware.gwm_arm.run_real import (
     DEPTH_PORT,
-    PIXI,
     ensure_depth_server,
-    run,
+    install_quiet_logging,
+    run_module,
     tag_for,
     _healthy,
 )
@@ -181,6 +181,49 @@ def ensure_scorer(server_url: str) -> None:
     )
 
 
+def warm_up(args) -> None:
+    """Build everything an instruction will need, BEFORE the first prompt.
+
+    A session should pay its construction costs once, at startup, and then do
+    nothing per instruction but the work that instruction actually implies.
+    Measured on this rig, the fixed costs are the cuRobo IK+MotionGen build
+    (3.6 s), the kinematics model (0.45 s), the FoundationStereo weights
+    (~30 s cold) and the scorer's 16 GB of Qwen (~60 s cold). Paying those at
+    the prompt makes the first instruction look four times slower than the
+    rest for no reason anyone can see.
+
+    Everything here is cached module-level, so the stages pick it up without
+    being told: `planning_solvers` and `fk_model` key on the configuration,
+    and `scene_cache` keys on the capture file -- which is why a new capture
+    (every motion) still re-perceives, as it must.
+    """
+    t0 = time.perf_counter()
+    from tiptop.config import tiptop_cfg
+    from tiptop.planning import build_tamp_config
+
+    from gwm_tiptop.robot_fk import fk_model, planning_solvers
+
+    cfg = tiptop_cfg()
+    print("  building the pipeline (once) ...")
+
+    fk_model()
+    print(f"    \u25b8 {'kinematics':<16} {time.perf_counter() - t0:6.1f} s")
+
+    t1 = time.perf_counter()
+    config = build_tamp_config(
+        num_particles=args.k_particles, max_planning_time=60.0, opt_steps=500,
+        robot_type=cfg.robot.type,
+        time_dilation_factor=cfg.robot.time_dilation_factor, near_placement=False)
+    planning_solvers(config.num_particles, config.coll_n_spheres, include_workspace=True)
+    print(f"    \u25b8 {'cuRobo solvers':<16} {time.perf_counter() - t1:6.1f} s")
+
+    t1 = time.perf_counter()
+    ensure_depth_server()
+    print(f"    \u25b8 {'depth server':<16} {time.perf_counter() - t1:6.1f} s")
+
+    print(f"  ready in {time.perf_counter() - t0:.1f} s -- instructions now reuse all of it\n")
+
+
 def one_turn(instruction: str, run_dir: Path, args) -> None:
     from tiptop.utils import get_robot_client
 
@@ -194,48 +237,55 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     proposals = run_dir / "proposals"
 
     # --- capture -------------------------------------------------------
-    ensure_depth_server()
-    cmd = PIXI + ["-m", "gwm_hardware.gwm_arm.capture", "live", "--out-dir", run_dir]
+    argv = ["live", "--out-dir", run_dir]
     if not args.move:
-        cmd.append("--no-move")
+        argv.append("--no-move")
     if held:
         # The held object sits under the gripper, which is exactly where the
         # mask cuts. place_propose measures it from the cloud instead, by
         # excluding the robot's own padded spheres -- a better discriminator
         # than an image mask, and one that needs those pixels present.
-        cmd.append("--no-gripper-mask")
-    run(cmd, "capture")
+        argv.append("--no-gripper-mask")
+    run_module("gwm_hardware.gwm_arm.capture", argv, "capture", args.verbose)
 
     # --- propose -------------------------------------------------------
     if held:
         _log.warning("PLACE proposals on hardware are not yet validated -- the sim "
                      "version assumed a welded block and sim bins (G-25/G-26). Read "
                      "the candidates before executing.")
-        run(PIXI + ["-m", "gwm_tiptop.place_propose", "--h5-path", run_dir / "wrist_obs.h5",
-                    "--output-dir", proposals, "--k-total", args.k_total], "propose(place)", args.verbose)
+        run_module("gwm_tiptop.place_propose",
+                   ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
+                    "--k-total", args.k_total], "propose(place)", args.verbose)
     else:
-        run(PIXI + ["-m", "gwm_hardware.gwm_arm.propose",
-                    "--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
+        run_module("gwm_hardware.gwm_arm.propose",
+                   ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
                     "--k-total", args.k_total], "propose(pick)", args.verbose)
 
     # --- score / gate / viz --------------------------------------------
-    run(PIXI + ["-m", "gwm_tiptop.score_client", "--proposals-dir", proposals,
-                "--external-h5", run_dir / "external_obs.h5", "--instruction", instruction,
-                "--cam", args.cam, "--tag", tag, "--rat-scale", args.rat_scale,
-                "--object-score", args.object_score, "--server-url", args.server_url,
-                "--dump-dir", run_dir / f"rat_{tag}"], "score", args.verbose)
+    run_module("gwm_tiptop.score_client",
+               ["--proposals-dir", proposals, "--external-h5", run_dir / "external_obs.h5",
+                "--instruction", instruction, "--cam", args.cam, "--tag", tag,
+                "--rat-scale", args.rat_scale, "--object-score", args.object_score,
+                "--server-url", args.server_url, "--dump-dir", run_dir / f"rat_{tag}"],
+               "score", args.verbose)
 
-    if not held:
-        gate = PIXI + ["-m", "gwm_tiptop.grasp_gate", "--proposals-dir", proposals,
-                       "--h5-path", run_dir / "wrist_obs.h5", "--use-plane-normal",
-                       "--use-robot-arm-filter", "--apply", tag]
-        run(gate, "gate", args.verbose)
+    if not held and args.gate:
+        run_module("gwm_tiptop.grasp_gate",
+                   ["--proposals-dir", proposals, "--h5-path", run_dir / "wrist_obs.h5",
+                    "--use-plane-normal", "--use-robot-arm-filter", "--apply", tag],
+                   "gate", args.verbose)
+    elif not held:
+        _log.warning("--no-gate: the closing-line grasp gate is OFF. GWM cannot see "
+                     "grasp robustness (its RAT frames are robot-only), and this gate "
+                     "is what took nearbowl from 0/5 to 5/5 in G-27")
 
-    viz = PIXI + ["-m", "gwm_hardware.gwm_arm.viz_debug", "--proposals-dir", proposals,
-                  "--h5-path", run_dir / "wrist_obs.h5", "--tag", tag,
-                  "--instruction", instruction, "--external-h5", run_dir / "external_obs.h5",
-                  "--cam", args.cam]
-    run(viz, "viz", args.verbose)     # Rerun opens here by default
+    if args.debug:
+        argv = ["--proposals-dir", proposals, "--h5-path", run_dir / "wrist_obs.h5",
+                "--tag", tag, "--instruction", instruction,
+                "--external-h5", run_dir / "external_obs.h5", "--cam", args.cam]
+        if not args.rerun:
+            argv.append("--no-rerun")
+        run_module("gwm_hardware.gwm_arm.viz_debug", argv, "viz", args.verbose)
 
     scores = json.loads((proposals / f"scores_{tag}.json").read_text())
     winner = proposals / f"winner_{tag}.json"
@@ -246,7 +296,10 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     if len(rank) > 1:
         print(f"  margin          : {rank[0]['score'] - rank[1]['score']:+.4f}")
     print(f"  winner          : {winner.name}")
-    print("  Rerun viewer and score_overlay png are up -- look before you answer.")
+    if args.debug:
+        print("  Rerun viewer and score_overlay png are up -- look before you answer.")
+    else:
+        print("  (--debug adds the Rerun scene and the scored-candidate overlay)")
 
     if not args.execute:
         print("  dry run: nothing will move. Re-run with --execute.")
@@ -254,13 +307,12 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     if input("\n  execute this plan? type 'go': ").strip().lower() != "go":
         print("  aborted")
         return
-    cmd = PIXI + ["-m", "gwm_hardware.gwm_arm.execute", "--plan", winner,
-                  "--execute", "--go-to-start", "--yes"]
+    argv = ["--plan", winner, "--execute", "--go-to-start", "--yes"]
     if not held:
         # A pick plan assumes it starts with an open gripper. A place plan must
         # NOT be pre-opened -- that drops the object before it goes anywhere.
-        cmd.append("--open-before")
-    run(cmd, "execute", args.verbose)
+        argv.append("--open-before")
+    run_module("gwm_hardware.gwm_arm.execute", argv, "execute", args.verbose)
 
     if held:
         release_then_home(args.lift, execute=True)
@@ -274,6 +326,9 @@ def main() -> None:
     ap.add_argument("--no-move", dest="move", action="store_false",
                     help="capture where the arm stands instead of driving to q_capture")
     ap.add_argument("--k-total", type=int, default=16)
+    ap.add_argument("--k-particles", type=int, default=256,
+                    help="cuTAMP particle count; part of the solver cache key, so "
+                         "warm-up and the proposer must agree on it")
     ap.add_argument("--cam", default=EXTERNAL_CAM)
     ap.add_argument("--rat-scale", default="3.0")
     ap.add_argument("--object-score", default="mean", choices=["mean", "max", "median"])
@@ -282,13 +337,26 @@ def main() -> None:
                     help="metres to lift in z before travelling home")
     ap.add_argument("--width-closed", type=float, default=0.005,
                     help="fallback width threshold if the controller reports no is_grasped")
+    ap.add_argument("--debug", action="store_true",
+                    help="also run the debug viewer: the Rerun scene and the "
+                         "score_overlay png with every candidate coloured by its score. "
+                         "Off by default -- it costs a stage and is for looking, not deciding")
+    ap.add_argument("--no-rerun", dest="rerun", action="store_false",
+                    help="with --debug, write the score overlay but do not spawn the "
+                         "Rerun viewer (headless sessions)")
+    ap.add_argument("--no-gate", dest="gate", action="store_false",
+                    help="skip the closing-line grasp gate. ON by default because it is "
+                         "not a debug tool: GWM scores semantic alignment, not grasp "
+                         "robustness, and this is the filter that catches a fragile winner")
     ap.add_argument("--verbose", action="store_true",
                     help="show every stage's raw output instead of a summary")
     ap.add_argument("--instruction", default=None,
                     help="run one instruction and exit instead of prompting")
     args = ap.parse_args()
 
+    install_quiet_logging()
     ensure_scorer(args.server_url)
+    warm_up(args)
     args.run_root.mkdir(parents=True, exist_ok=True)
     print("\nGWM x TiPToP -- type an instruction, 'exit' to quit."
           f"\n{'EXECUTION ENABLED -- hand on the E-stop' if args.execute else 'dry run (--execute to arm)'}\n")
