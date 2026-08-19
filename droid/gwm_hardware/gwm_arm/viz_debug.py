@@ -37,6 +37,7 @@ Runs in the droid/tiptop pixi env (it needs cuRobo FK), from the repo root:
 """
 
 import argparse
+import itertools
 import json
 import logging
 from pathlib import Path
@@ -233,6 +234,13 @@ def draw_overlay(out: Path, rgb: np.ndarray, K: np.ndarray, world_from_cam: np.n
 # -------------------------------------------------------------------- 3D view
 
 
+# One sequence number per log_rerun call. Module-level because the session
+# imports this module once and calls into it every turn, so the counter is
+# exactly "turns this session"; a standalone CLI run starts a fresh process,
+# a fresh default recording, and a fresh count, which is equally right.
+_TURN_SEQ = itertools.count()
+
+
 def log_rerun(ctx: dict, rows: list[dict], paths: dict[str, np.ndarray],
               obs: dict, xyz_map: np.ndarray, rgb_map: np.ndarray,
               object_pcds: dict, table_box, instruction: str | None,
@@ -240,6 +248,22 @@ def log_rerun(ctx: dict, rows: list[dict], paths: dict[str, np.ndarray],
     import rerun as rr
 
     rr.init("gwm_arm_debug", spawn=True)
+    # The session runs every stage in-process (run_module), and rerun derives
+    # its default recording id from the process -- so every turn of a session
+    # lands in the SAME recording. Fixed paths (rgb, cloud, selection) are
+    # fine: re-logging static data replaces it. The per-turn subtrees are not:
+    # their entity names vary (plan_12.. when the previous turn had 16 and this
+    # one has 9; object_4 when the cluster count drops), and a static entity
+    # nothing overwrites stays in the scene forever -- measured 2026-08-19,
+    # a session's worth of old trajectories all drawn at once. Static data
+    # also cannot be cleared (verified on 0.27: a recursive static Clear
+    # leaves static components in place). So the variable subtrees are logged
+    # on a per-turn sequence timeline, non-static, and cleared recursively at
+    # the start of each turn; scrubbing the `turn` timeline replays the
+    # session, and the latest time shows only the current turn.
+    rr.set_time("turn", sequence=next(_TURN_SEQ))
+    rr.log("world/candidates", rr.Clear(recursive=True))
+    rr.log("world/clusters", rr.Clear(recursive=True))
     rr.log("wrist/rgb", rr.Image(obs["rgb"]), static=True)
     if external is not None:
         rr.log("external/rgb", rr.Image(external[0]), static=True)
@@ -253,7 +277,7 @@ def log_rerun(ctx: dict, rows: list[dict], paths: dict[str, np.ndarray],
         rr.log(f"world/clusters/{label}",
                rr.Points3D(positions=np.asarray(pcd.points),
                            colors=np.tile(palette[i % len(palette)], (len(pcd.points), 1)),
-                           radii=0.0025), static=True)
+                           radii=0.0025))
 
     norm, field, (lo, hi) = colour_values(rows)
     winner = (ctx["scores"] or {}).get("winner_file")
@@ -275,10 +299,10 @@ def log_rerun(ctx: dict, rows: list[dict], paths: dict[str, np.ndarray],
         rr.log(f"world/candidates/{Path(row['file']).stem}",
                rr.LineStrips3D([pts], colors=[col],
                                radii=0.004 if row["file"] == winner else 0.0015,
-                               labels=[label]), static=True)
+                               labels=[label]))
         rr.log(f"world/candidates/{Path(row['file']).stem}/grasp",
                rr.Points3D(positions=pts[-1:], colors=[col],
-                           radii=0.012 if row["file"] == winner else 0.006), static=True)
+                           radii=0.012 if row["file"] == winner else 0.006))
 
     lines = [f"instruction: {instruction or '-'}",
              f"colour: {field} over {lo:+.4f}..{hi:+.4f}"]
