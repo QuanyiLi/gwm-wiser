@@ -67,7 +67,7 @@ from curobo.wrap.reacher.motion_gen import MotionGenPlanConfig
 from scipy.spatial import ConvexHull, Delaunay, KDTree, QhullError
 
 from tiptop.config import tiptop_cfg
-from gwm_tiptop.robot_fk import planning_solvers
+from gwm_tiptop.robot_fk import default_planning_solvers
 from tiptop.perception.utils import (
     convert_trimesh_box_to_curobo_cuboid,
     convert_trimesh_to_curobo_mesh,
@@ -382,8 +382,15 @@ def main() -> None:
     # until FoundationStereo could not get its 1.72 GB and the turn died with
     # a CUDA OOM (2026-08-19). The pick proposer has used the cache since it
     # was written; this was the one caller left out.
-    _, motion_gen, _ = planning_solvers(num_particles=32, num_spheres=64,
-                                        include_workspace=False)
+    #
+    # And it asks for the SAME key as everything else, not its own (32, 64,
+    # no-workspace). A distinct key is a distinct solver stack, so caching two
+    # of them saves nothing -- the session held both, 3.9 GB, and still OOMed.
+    # Sharing is free here: the next line replaces the world outright, so
+    # `include_workspace` cannot reach the plans; `num_spheres` sizes the
+    # ATTACHED-object budget, which a place never uses; and only the IK solver
+    # depends on `num_particles`, which this function never touches.
+    _, motion_gen, _ = default_planning_solvers()
 
     # Robot-side quantities: FK end effector and the robot's own collision
     # spheres at the capture configuration (proprioception, not scene GT).
