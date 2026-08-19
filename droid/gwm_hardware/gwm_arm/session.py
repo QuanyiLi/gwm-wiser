@@ -142,6 +142,60 @@ def retrace_descent(plan: dict, client) -> bool:
     return True
 
 
+# The tallest thing this rig's captures normally see, measured over nine
+# consecutive good captures on 2026-08-19: relief p99 65.8 - 75.1 mm, with
+# 2.7 - 5.7 % of the table cloud above 40 mm. A tenth capture, same camera pose
+# and same objects one minute later, came back at 22.7 mm and 0.48 % -- the cup
+# read 1.2 mm tall and the tomato -1.8 mm. Nothing clustered, and the failure
+# presented as "no graspable object", which is not what went wrong.
+#
+# This is NOT a gate. An empty table legitimately has no relief, so refusing on
+# a low number would block real work; the point is to say what the depth looked
+# like at the moment nothing was found, so a depth fault is not mistaken for a
+# perception or reachability one.
+RELIEF_SUSPECT_MM = 40.0
+
+
+def _report_relief(h5_path, perception: dict) -> None:
+    """Say how much height the depth actually contained, when nothing clustered."""
+    import h5py
+
+    plane = perception.get("table_plane")
+    if plane is None or not Path(h5_path).exists():
+        return
+    try:
+        from tiptop.perception.utils import depth_to_xyz
+
+        with h5py.File(h5_path) as f:
+            depth = np.asarray(f["depth"], dtype=np.float64)
+            K = np.asarray(f["intrinsic_matrix"])
+            pos = np.asarray(f["pos_w"])
+            qw, qx, qy, qz = np.asarray(f["quat_w_ros"])
+        from scipy.spatial.transform import Rotation
+
+        R = Rotation.from_quat([qx, qy, qz, qw]).as_matrix()
+        depth[~np.isfinite(depth) | (depth <= 0)] = np.nan
+        xyz = depth_to_xyz(depth, K) @ R.T + pos
+        pl = np.asarray(plane, dtype=np.float64)
+        n = pl[:3] / np.linalg.norm(pl[:3])
+        h = xyz @ n + pl[3] / np.linalg.norm(pl[:3])
+        h = h[np.isfinite(h)]
+        h = h[(h > -0.05) & (h < 0.25)]          # the table, not the arm overhead
+        if not len(h):
+            return
+        p99 = float(np.percentile(h, 99)) * 1000
+        frac = float((h > 0.040).mean()) * 100
+        note = ("  <- the depth is FLAT; this is a depth fault, not a missing object"
+                if p99 < RELIEF_SUSPECT_MM else "")
+        print(f"      depth relief: p99 {p99:.1f} mm, {frac:.2f}% of the table cloud "
+              f"above 40 mm{note}")
+        if p99 < RELIEF_SUSPECT_MM:
+            print("      (good captures on this rig read 66-75 mm. Just re-issue the "
+                  "instruction -- it has been transient every time.)")
+    except Exception as e:      # noqa: BLE001 - a diagnostic must never mask the real report
+        _log.debug(f"could not measure depth relief: {e}")
+
+
 def return_to_capture(execute: bool, plan: dict | None = None) -> None:
     """Get clear, then travel to q_CAPTURE -- not q_home.
 
@@ -312,6 +366,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                 print(f"      {c}: {why}")
         else:
             print("      the scene decomposed into no clusters at all")
+        _report_relief(run_dir / "wrist_obs.h5", per)
         print("      look at proposals/clusters.png -- if the object is there and was "
               "still refused, it is out of reach or the grasps are unplannable from "
               "this pose, not a scoring problem.")
