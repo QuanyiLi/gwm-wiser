@@ -13,7 +13,7 @@ Checks, in order of how badly each would bite on the real robot:
    collision spheres.
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.validate_2f140
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.validate_2f140
 """
 
 import time
@@ -30,9 +30,9 @@ from curobo.types.state import JointState
 from curobo.util_file import load_yaml
 from curobo.wrap.reacher.motion_gen import MotionGen, MotionGenConfig, MotionGenPlanConfig
 
-from gwm_hardware import robot_2f140
+from gwm_hardware.common import robot_2f140
 
-CUTAMP_ASSETS = Path(__file__).resolve().parents[1] / "tiptop/cutamp/cutamp/robots/assets"
+from gwm_hardware.common.paths import CUTAMP_ASSETS
 TCP_2F85_M = 0.150          # grasp_frame offset in cuTAMP's 2F-85 model
 EXPECTED_TCP_2F140_M = 0.212
 PASS, FAIL = "PASS", "FAIL"

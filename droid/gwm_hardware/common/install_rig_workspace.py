@@ -3,23 +3,25 @@
 `tiptop/workspace.py:workspace_cuboids()` sends `panda_robotiq` to
 `fr3_workspace()` -- MIT LIS's bench geometry, which on this rig is both
 hallucinated and incomplete. There is no config hook for it, so this rewrites
-the one dispatch line; the geometry itself lives in `gwm_hardware/rig_workspace.py`
+the one dispatch line; the geometry itself lives in `gwm_hardware/common/rig_workspace.py`
 so the pristine tiptop worktree carries only a three-line diff.
 
 Idempotent, keeps a `.orig`, and `--restore` reverts.
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_rig_workspace
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_rig_workspace --verify
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_rig_workspace
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_rig_workspace --verify
 """
 
 import argparse
 import shutil
 from pathlib import Path
 
-TARGET = Path(__file__).resolve().parents[1] / "tiptop/tiptop/workspace.py"
+from gwm_hardware.common.paths import TIPTOP_ROOT
+
+TARGET = TIPTOP_ROOT / "tiptop/workspace.py"
 BACKUP = TARGET.with_suffix(".py.orig")
-MARKER = "# --- patched by gwm_hardware.install_rig_workspace ---"
+MARKER = "# --- patched by gwm_hardware.common.install_rig_workspace ---"
 
 OLD = """    elif cfg.robot.type == "panda_robotiq":
         cuboids = fr3_workspace()"""
@@ -27,7 +29,7 @@ NEW = f"""    elif cfg.robot.type == "panda_robotiq":
         {MARKER}
         # This rig is not MIT LIS's bench; fr3_workspace() would invent
         # obstacles that are not here and omit the table edges that are.
-        from gwm_hardware.rig_workspace import zhiwei_workspace
+        from gwm_hardware.common.rig_workspace import zhiwei_workspace
 
         cuboids = zhiwei_workspace()"""
 

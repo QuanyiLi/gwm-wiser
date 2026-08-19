@@ -14,7 +14,7 @@ which way it is oriented can only be seen by looking. Hence the loop.
 Safety, because this commands real motion:
 
 - every candidate is IK-solved and collision-checked against
-  `gwm_hardware.rig_workspace` before anything moves, and the cuRobo plan is
+  `gwm_hardware.common.rig_workspace` before anything moves, and the cuRobo plan is
   checked again as a trajectory;
 - the left wall is 0.20 m from the base and at `q_capture` the arm's outermost
   sphere is already near it, so the wall clearance of each candidate is printed
@@ -22,9 +22,9 @@ Safety, because this commands real motion:
 - `--dry-run` (the default) plans and reports without sending anything.
 
     # look first
-    python -m gwm_hardware.find_capture_pose
+    python -m gwm_hardware.common.find_capture_pose
     # then, with a hand on the e-stop
-    python -m gwm_hardware.find_capture_pose --execute
+    python -m gwm_hardware.common.find_capture_pose --execute
 """
 
 import argparse
@@ -153,7 +153,7 @@ def main() -> None:
     from tiptop.perception.cameras.rs_camera import RealsenseCamera, rs_infer_depth_async
     from tiptop.utils import get_robot_client
     from tiptop.workspace import workspace_cuboids
-    from gwm_hardware import robot_2f140
+    from gwm_hardware.common import robot_2f140
 
     cfg = tiptop_cfg()
     dev = TensorDeviceType().device

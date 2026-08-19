@@ -18,7 +18,7 @@ request per server before handing the rig to tiptop.
 Run after starting the servers, before ``tiptop-run``:
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.warm_servers
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.warm_servers
 """
 
 import argparse

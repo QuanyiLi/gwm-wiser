@@ -157,6 +157,23 @@ def main() -> None:
     ap.add_argument("--h5-path", required=True, type=Path)
     ap.add_argument("--apply", default=None, metavar="TAG",
                     help="rewrite winner_TAG.json to the best-scoring PASSING plan")
+    # The four thresholds are class-D magic numbers (magic_numbers.md #8):
+    # MIN_SLAB_PTS is an absolute point count, so it tracks the rig's cloud
+    # density, and MIN_THICKNESS encodes a solid-body bias. Exposed so a new
+    # rig can be re-calibrated without editing a module droid-sim shares; the
+    # defaults are the scene6_rev2 values every sim result was produced under.
+    ap.add_argument("--min-slab-pts", type=int, default=MIN_SLAB_PTS)
+    ap.add_argument("--min-thickness", type=float, default=MIN_THICKNESS)
+    ap.add_argument("--max-center-off", type=float, default=MAX_CENTER_OFF)
+    ap.add_argument("--max-ortho-off", type=float, default=MAX_ORTHO_OFF)
+    ap.add_argument("--use-robot-arm-filter", action="store_true",
+                    help="identify the arm by the robot's own collision spheres rather "
+                         "than by cluster height. MUST match what the proposer used, or "
+                         "the gate judges plans against a different scene")
+    ap.add_argument("--use-plane-normal", action="store_true",
+                    help="measure height above the FITTED table plane rather than world z "
+                         "when re-clustering. Required on a rig whose perceived table is "
+                         "tilted (zhiwei: 2.88 deg); a no-op on a level one")
     args = ap.parse_args()
 
     obs = load_h5_observation(args.h5_path)
@@ -168,12 +185,25 @@ def main() -> None:
     rgb_map = obs["rgb"].astype(np.float32) / 255.0
     xyz_flat = xyz_map[np.isfinite(xyz_map).all(axis=2)]
 
-    table_trimesh, surface_z = find_table_plane(xyz_map, rgb_map)
-    object_trimeshes, _ = cluster_objects(xyz_map, rgb_map, table_trimesh, surface_z + 0.015)
-
     tensor_args = TensorDeviceType()
     _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64, include_workspace=False)
     kin = motion_gen.kinematics
+
+    # The gate re-derives the clusters itself, so it MUST decompose the scene the
+    # same way the proposer did -- otherwise it judges plans against a scene
+    # that does not contain their target. It happened: with the proposer using
+    # the robot-sphere arm filter and the gate still using the height rule, an
+    # upended box survived proposal and vanished at gate time, and all five of
+    # its candidates came back "no raw points", so nothing passed and the gate
+    # silently fell through to the ungated winner.
+    table_trimesh, surface_z = find_table_plane(xyz_map, rgb_map)
+    robot_spheres = None
+    if args.use_robot_arm_filter:
+        robot_spheres = (kin.get_state(tensor_args.to_device(obs["q_init"]))
+                         .get_link_spheres()[0].cpu().numpy().astype(np.float64))
+    object_trimeshes, _ = cluster_objects(xyz_map, rgb_map, table_trimesh, surface_z + 0.015,
+                                          use_plane_normal=args.use_plane_normal,
+                                          robot_spheres=robot_spheres)
 
     # Hand-region crop (capture-pose gripper hovers in frame).
     ee0 = ee_frame(kin.get_state(tensor_args.to_device(obs["q_init"]).float()[None]))[1]
@@ -211,10 +241,10 @@ def main() -> None:
         pts_ee = (cluster_pts[entry["target"]] - t) @ R
         m = slab_metrics(pts_ee, cal)
         m["pass"] = bool(
-            m["n_slab"] >= MIN_SLAB_PTS
-            and m["thickness"] >= MIN_THICKNESS
-            and m["center_off"] <= MAX_CENTER_OFF
-            and m["ortho_off"] <= MAX_ORTHO_OFF
+            m["n_slab"] >= args.min_slab_pts
+            and m["thickness"] >= args.min_thickness
+            and m["center_off"] <= args.max_center_off
+            and m["ortho_off"] <= args.max_ortho_off
         )
         results[entry["file"]] = m
         _log.info(
@@ -225,8 +255,9 @@ def main() -> None:
 
     (args.proposals_dir / "gate.json").write_text(json.dumps({
         "h5": str(args.h5_path),
-        "thresholds": {"min_slab": MIN_SLAB_PTS, "min_thickness": MIN_THICKNESS,
-                       "max_center_off": MAX_CENTER_OFF, "max_ortho_off": MAX_ORTHO_OFF},
+        "thresholds": {"min_slab": args.min_slab_pts, "min_thickness": args.min_thickness,
+                       "max_center_off": args.max_center_off, "max_ortho_off": args.max_ortho_off},
+        "use_plane_normal": bool(args.use_plane_normal),
         "results": results,
     }, indent=2))
     _log.info(f"gate.json written ({sum(1 for r in results.values() if r.get('pass'))} pass / "

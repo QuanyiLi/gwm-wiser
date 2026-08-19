@@ -15,7 +15,7 @@ G-16 in `gwm_integrate_doc/plan.md`).
 | `gwm_tiptop/` | GWM×TiPToP integration package (ex `tiptop/gwm_tiptop/`); resolves in the tiptop pixi env via `gwm_tiptop.pth`, see below | — (ours) | — |
 | `gwm_integrate_doc/` | GWM×TiPToP plan of record + decision ledger (ex `tiptop/gwm_integrate_doc/`) | — (ours) | — |
 | `droid-sim-evals-ours/` | custom eval tasks layered on droid-sim-evals (grasp-and-hold, G-17) | — (ours) | — |
-| `gwm_hardware/` | hardware-rig code for `zhiwei`: Panda + Robotiq **2F-140** model generation, RealSense pre-flight, perception-server warm-up, bring-up docs. Separate from `gwm_tiptop/` so the droid-sim results stay reproducible from an unchanged tree | — (ours) | — |
+| `gwm_hardware/` | hardware-rig code for `zhiwei`: Panda + Robotiq **2F-140**. Split into `common/` (the rig — model generation, calibration, cameras, workspace, the tiptop-tree installers), `tiptop_arm/` (the baseline A/B control) and `gwm_arm/` (the GWM arm's rig plumbing). Separate from `gwm_tiptop/`, which holds the METHOD and stays shared with droid-sim unforked, so the sim results reproduce from an unchanged tree | — (ours) | — |
 | `FoundationStereo/` | stereo-depth server (`:1234`) — **real-robot only**; droid-sim used GT depth, so this arrived with the hardware bring-up (2026-08-17). RealSense feeds it the IR pair, not the ASIC depth | `b8c58bd` | `https://github.com/williamshen-nz/FoundationStereo.git` (own `.git` kept; gitignored wholesale) |
 
 ## Original `.git` dirs → `/root/code/gwm/upstream-git-backups/`
@@ -99,8 +99,10 @@ symlinks are all gitignored, so every environment was rebuilt from scratch.
 See [`gwm_hardware/docs/hardware-bringup.md`](gwm_hardware/docs/hardware-bringup.md)
 for the full bring-up procedure.
 
-Rig: Franka + Robotiq 2F-85, Bamboo on a separate RT-kernel NUC, two RealSense
-D400s (wrist + external), RTX 5090 32 GB, Ubuntu 22.04.
+Rig: Franka Panda + Robotiq **2F-140**, Bamboo on a separate RT-kernel NUC,
+two RealSense D400s in use (wrist + external) plus a spare, RTX 5090 32 GB,
+Ubuntu 22.04. The GWM arm's own procedure is
+[`gwm_hardware/docs/gwm-arm.md`](gwm_hardware/docs/gwm-arm.md).
 
 ### Environment rebuild — three things that are not in the upstream docs
 
@@ -140,8 +142,8 @@ CUDA-extension build (cuRobo, M2T2's `pointnet2_ops`).
 cd /home/quanyi/gwm-wiser
 export PATH="$HOME/.pixi/bin:$PATH"
 
-# Camera pre-flight — ALWAYS run first, see gwm_hardware/rs_preflight.py
-pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.rs_preflight
+# Camera pre-flight — ALWAYS run first, see gwm_hardware/common/rs_preflight.py
+pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.rs_preflight
 
 # M2T2 grasp server (:8123)
 cd droid/M2T2 && pixi run server

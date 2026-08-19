@@ -10,6 +10,13 @@ in this directory, each with `--restore`.
 This file is the complete list. Reading it plus running the installers should
 reproduce the rig from a fresh clone.
 
+The installers all live in `gwm_hardware/common/` (2026-08-19: the package was
+split into `common/` + `tiptop_arm/` + `gwm_arm/` so the two experiment arms
+stop sharing modules — see the rig README). They are the rig's, not either
+arm's, which is why they sit in `common`: both arms run against the same
+patched tiptop tree, and the deviations below are what make that tree this
+rig's.
+
 ## Rebuild from scratch, in order
 
 ```bash
@@ -26,20 +33,20 @@ ln -sfn $PWD/droid/gwm_tiptop  "$SP/gwm_tiptop"
 ln -sfn $PWD/droid/gwm_hardware "$SP/gwm_hardware"
 
 # 2. the Panda + Robotiq 2F-140 model (cuTAMP ships only a 2F-85)
-$P python -m gwm_hardware.build_2f140
-$P python -m gwm_hardware.build_2f140_cfg
-$P python -m gwm_hardware.validate_2f140          # expect 10/10
+$P python -m gwm_hardware.common.build_2f140
+$P python -m gwm_hardware.common.build_2f140_cfg
+$P python -m gwm_hardware.common.validate_2f140          # expect 10/10
 
 # 3. the five tiptop deviations
-$P python -m gwm_hardware.install_rig_config      # tiptop.yml  -> symlink
-$P python -m gwm_hardware.install_rig_workspace   # workspace.py dispatch
-$P python -m gwm_hardware.install_2f140_cutamp    # cuTAMP robot model
-$P python -m gwm_hardware.install_charuco_params --checker-mm 34.31
-$P python -m gwm_hardware.install_client_lifetime_fix   # go_to_q closes the shared client
+$P python -m gwm_hardware.common.install_rig_config      # tiptop.yml  -> symlink
+$P python -m gwm_hardware.common.install_rig_workspace   # workspace.py dispatch
+$P python -m gwm_hardware.common.install_2f140_cutamp    # cuTAMP robot model
+$P python -m gwm_hardware.common.install_charuco_params --checker-mm 34.31
+$P python -m gwm_hardware.common.install_client_lifetime_fix   # go_to_q closes the shared client
 
 # 4. rig calibration (needs the robot and a human)
 #    pixi run calibrate-wrist-cam        -> config/assets/calibration_info.json
-$P python -m gwm_hardware.build_gripper_mask --install
+$P python -m gwm_hardware.common.build_gripper_mask --install
 ```
 
 ---
@@ -71,7 +78,7 @@ tiptop over the websocket and supplies its own observation and `q_init`.
 LIS's bench: a Vention table, a wall, an iPad, a camera pillar. On this rig
 that geometry is wrong in both directions — it invents obstacles that are not
 here and omits the table edges that are. The dispatch is redirected to
-`gwm_hardware.rig_workspace.zhiwei_workspace`; the geometry itself lives here,
+`gwm_hardware.common.rig_workspace.zhiwei_workspace`; the geometry itself lives here,
 so the diff in the tiptop tree is three lines.
 
 **droid-sim impact: none.** `tiptop_websocket_server` defaults to
@@ -227,9 +234,9 @@ because gripper open/close and the per-step overheads do not retime.
 ### Launching
 
 ```bash
-./droid/gwm_hardware/services.sh run      # servers + preflight + warm-up + tiptop-run
-./droid/gwm_hardware/services.sh status   # what is up
-./droid/gwm_hardware/services.sh stop
+./droid/gwm_hardware/tiptop_arm/services.sh run      # servers + preflight + warm-up + tiptop-run
+./droid/gwm_hardware/tiptop_arm/services.sh status   # what is up
+./droid/gwm_hardware/tiptop_arm/services.sh stop
 ```
 
 The order in that script is not arbitrary: `rs_preflight` first because the
@@ -264,7 +271,7 @@ object up.
 
 `tiptop-run` goes straight from a returned plan to `execute_cutamp_plan` with
 no confirmation (`tiptop_run.py:680`), so `--no-execute-plan` plus
-`gwm_hardware.inspect_plan` is the way to see a grasp before the gripper
+`gwm_hardware.tiptop_arm.inspect_plan` is the way to see a grasp before the gripper
 commits to it.
 
 Its first two versions **judged the gripper in the open state only**, and were
@@ -372,4 +379,4 @@ grasps actually fail, and in a pattern consistent with a systematic height
 error — edge positions scuffing or missing while centre positions succeed.
 That is cheaper to answer by running tiptop than by more metrology.
 
-Diagnostic: `python -m gwm_hardware.check_calibration --execute`.
+Diagnostic: `python -m gwm_hardware.common.check_calibration --execute`.

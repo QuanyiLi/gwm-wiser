@@ -34,8 +34,8 @@ closes the client itself in its own `finally`.
 Idempotent, keeps a `.orig`, and `--restore` reverts.
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_client_lifetime_fix
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_client_lifetime_fix --verify
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_client_lifetime_fix
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_client_lifetime_fix --verify
 """
 
 import argparse
@@ -43,9 +43,11 @@ import inspect
 import shutil
 from pathlib import Path
 
-TARGET = Path(__file__).resolve().parents[1] / "tiptop/tiptop/motion_planning.py"
+from gwm_hardware.common.paths import TIPTOP_ROOT
+
+TARGET = TIPTOP_ROOT / "tiptop/motion_planning.py"
 BACKUP = TARGET.with_suffix(".py.orig")
-MARKER = "# --- patched by gwm_hardware.install_client_lifetime_fix ---"
+MARKER = "# --- patched by gwm_hardware.common.install_client_lifetime_fix ---"
 
 OLD = """    )
     client.close()

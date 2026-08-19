@@ -29,6 +29,26 @@
 9. **`score_client` two-stage selection × the per-object quota** — the object choice is only as stable as the number of candidates each object gets. `se3_fps_indices` samples each object's quota by SE(3) *diversity*, so the candidates are the extremes of that object's grasp family, not its mode; reducing by `max` then compares order statistics of extremes across objects at GWM's ~0.01 within-family spread. Measured on scene6_rev2 (16 candidates / 5 clusters / 10 instructions): `max` 6/10 correct objects, `mean` 9/10 (G-28). The same diversity property is why stage 2 (which grasp) uses M2T2 confidence, not GWM. Rule and quota both need re-checking whenever `--k-total` or the cluster count changes — the aggregate's winning margins are +0.005…+0.076, i.e. still small.
 10. **`score_client --cam` (the scoring viewpoint)** — the single largest lever measured so far: the SAME candidates and the SAME instructions score 9/10 vs 10/10 correct objects from the rig's two external cameras, with margins differing 5–7× on the tasks whose target is small or gripper-shadowed in one view (G-29). Look at both captures before trusting any selection number on a new layout.
 
+## Hardware rig (`zhiwei`) — added 2026-08-19
+
+The registry was written against droid-sim. The `zhiwei` Panda + 2F-140 rig is
+the first *different* rig, so it is the first real test of the class labels.
+Two entries changed status, and one new switch exists because of it.
+
+| Constant | droid-sim | zhiwei | Class | Notes |
+|---|---|---|---|---|
+| **above-table cut geometry** | world z | **table-plane normal** | **A -> mechanism** | New `cluster_objects(use_plane_normal=)`, default off. droid-sim's table is level (fitted tilt 0.079 deg) so the two agree to 164 points in 200 k; the rig's PERCEIVED table is tilted **2.88 deg** (the hand-eye rotational residual, `gwm_hardware/docs/tiptop-modifications.md`), which spreads its own surface over **47.8 mm** of world z across the 0.85 m footprint — 3x the 15 mm clearance the cut relies on. With the horizontal cut the high end of the table becomes a phantom object-sized cluster and one real object loses every candidate (16 -> 10). Measured, not argued: `gwm_hardware/docs/gwm-arm.md` §3 |
+| `MIN_SLAB_PTS = 150` | binding | **inert** | **D** (unchanged) | Real slabs measure **1500-8400** points vs sim's hundreds — FoundationStereo at 1280x720 against a downsampled sim cloud, one to two orders of magnitude denser. The threshold never fires here, i.e. the gate currently rests on the other three metrics alone. Exposed as `--min-slab-pts`; **not** retuned, because there is no execution-failure evidence on this rig yet to tune against |
+| `extrinsics z correction = -0.015` | applied | **0.0** | **F** (behaves as designed) | The clearest vindication of the class-F label: it mirrors droid-sim's websocket client, and on hardware `world_from_cam` is FK x hand-eye and already correct. Now read from the h5 (`extrinsics_z_correction`), defaulting to -0.015 so every sim artefact reproduces bit-exactly |
+
+Also observed on the rig and worth a line, though it is a property of the
+candidate pool rather than a constant: on a flat wide box (a Chocopie carton)
+M2T2 returned a single grasp family, so `se3_fps_indices` filled that object's
+quota of **6** with near-duplicates — identical confidence to 3 decimal places
+and identical gate metrics. Six of a 16-candidate budget spent on one grasp,
+and `--object-score mean` degenerates to a point estimate for that object.
+Shortlist item #9's warning about the FPS policy, seen from the other side.
+
 ## perception_geometric.py
 
 ### `find_table_plane` (signature defaults)

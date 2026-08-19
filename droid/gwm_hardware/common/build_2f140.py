@@ -19,7 +19,7 @@ Sources (all already vendored inside the cuTAMP clone, nothing downloaded):
 - meshes: `robotiq_description/meshes/{visual,collision}/2f_140/*.stl`.
 
 cuTAMP stays unforked (G-4/G-7) and `tiptop/` stays pristine (G-18): this
-writes into our own tree and is consumed by `gwm_hardware.robot_2f140`.
+writes into our own tree and is consumed by `gwm_hardware.common.robot_2f140`.
 
 The cuTAMP clone is gitignored and rebuilt by `install-cutamp.sh`, and the
 emitted URDF carries absolute mesh paths, so the OUTPUT is machine-local (same
@@ -27,7 +27,7 @@ convention as `real_data_train/renderer/assets.py`) and this GENERATOR is the
 versioned artifact. Re-run it after any cuTAMP reinstall:
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.build_2f140
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.build_2f140
 """
 
 import argparse
@@ -38,7 +38,7 @@ from pathlib import Path
 PI = math.pi
 
 # --- Provenance: cuTAMP asset locations -------------------------------------
-CUTAMP_ASSETS = Path(__file__).resolve().parents[1] / "tiptop/cutamp/cutamp/robots/assets"
+from gwm_hardware.common.paths import ASSETS, CUTAMP_ASSETS
 ARM_URDF = CUTAMP_ASSETS / "panda_robotiq_2f_85.urdf"
 ARM_YML = CUTAMP_ASSETS / "panda_robotiq_2f_85.yml"
 MESH_ROOT = CUTAMP_ASSETS / "robotiq_description/meshes"
@@ -380,7 +380,7 @@ def main() -> None:
     ap.add_argument("--tcp-driver-angle", type=float, default=0.0,
                     help="driver angle the TCP is measured at; 0 = fully open")
     ap.add_argument("--out-dir", type=Path,
-                    default=Path(__file__).resolve().parent / "assets")
+                    default=ASSETS)
     args = ap.parse_args()
 
     if not ARM_URDF.exists():

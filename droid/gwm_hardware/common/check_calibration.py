@@ -16,8 +16,8 @@ They separate cleanly: measure the plane's normal **in the base frame** from
 several arm poses. A physical tilt is the same from every pose; a calibration
 error rotates with the wrist.
 
-    python -m gwm_hardware.check_calibration            # look only
-    python -m gwm_hardware.check_calibration --execute  # move and measure
+    python -m gwm_hardware.common.check_calibration            # look only
+    python -m gwm_hardware.common.check_calibration --execute  # move and measure
 """
 
 import argparse
@@ -62,7 +62,7 @@ def main() -> None:
     from tiptop.perception.cameras.rs_camera import RealsenseCamera, rs_infer_depth_async
     from tiptop.utils import get_robot_client, load_gripper_mask
     from tiptop.workspace import workspace_cuboids
-    from gwm_hardware import robot_2f140
+    from gwm_hardware.common import robot_2f140
 
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)

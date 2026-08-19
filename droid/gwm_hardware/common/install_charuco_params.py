@@ -19,8 +19,8 @@ reading error by 11 as well.
 
 Idempotent, keeps a `.orig`, `--restore` reverts.
 
-    python -m gwm_hardware.install_charuco_params --checker-mm 35.0
-    python -m gwm_hardware.install_charuco_params --restore
+    python -m gwm_hardware.common.install_charuco_params --checker-mm 35.0
+    python -m gwm_hardware.common.install_charuco_params --restore
 """
 
 import argparse
@@ -28,9 +28,11 @@ import re
 import shutil
 from pathlib import Path
 
-TARGET = Path(__file__).resolve().parents[1] / "tiptop/tiptop/scripts/calibrate_wrist_cam.py"
+from gwm_hardware.common.paths import TIPTOP_ROOT
+
+TARGET = TIPTOP_ROOT / "tiptop/scripts/calibrate_wrist_cam.py"
 BACKUP = TARGET.with_suffix(".py.orig")
-MARKER = "# --- board params patched by gwm_hardware.install_charuco_params ---"
+MARKER = "# --- board params patched by gwm_hardware.common.install_charuco_params ---"
 
 SQUARES_X, SQUARES_Y = 11, 8
 MARKER_RATIO = 0.7117          # measured off the board photo

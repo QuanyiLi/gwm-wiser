@@ -1,7 +1,7 @@
 # TiPToP configuration for the `zhiwei` hardware rig.
 #
 # This is the AUTHORITATIVE copy. `tiptop/config/tiptop.yml` is a symlink to
-# this file, installed by `gwm_hardware/install_rig_config.py`, so the rig
+# this file, installed by `gwm_hardware/common/install_rig_config.py`, so the rig
 # config is versioned here instead of dirtying the pristine tiptop tree
 # (G-18). `tiptop-config` writes through the symlink, so running it edits this
 # file -- review the diff afterwards rather than letting it drift.
@@ -9,7 +9,7 @@
 # == Robot connection and control ==
 robot:
   # `panda_robotiq` is redirected to our 2F-140 model by
-  # gwm_hardware/install_2f140_cutamp.py -- the rig carries a 2F-140, whose TCP
+  # gwm_hardware/common/install_2f140_cutamp.py -- the rig carries a 2F-140, whose TCP
   # sits 62 mm further out than the stock 2F-85 cuTAMP would otherwise load.
   # Set GWM_TIPTOP_GRIPPER=2f85 to get the stock model back (droid-sim).
   type: panda_robotiq
@@ -35,7 +35,7 @@ robot:
 
   # Robot configurations
   q_home: [0.0, -0.628, 0.0, -2.513, 0.0, 1.885, 0.0]
-  # Chosen empirically 2026-08-18 by `gwm_hardware.find_capture_pose`: TiPToP
+  # Chosen empirically 2026-08-18 by `gwm_hardware.common.find_capture_pose`: TiPToP
   # plans an entire episode from ONE wrist frame taken here, so this pose sets
   # what the system can see at all.
   #
@@ -56,7 +56,7 @@ robot:
 # == Camera configurations ==
 # Both are RealSense D400s; tiptop feeds their IR stereo pair to
 # FoundationStereo rather than using the ASIC depth. Run
-# `python -m gwm_hardware.rs_preflight` before every session -- the rig comes
+# `python -m gwm_hardware.common.rs_preflight` before every session -- the rig comes
 # up with IR auto-exposure off, which saturates the pair and guts the depth.
 cameras:
   # Wrist camera: TiPToP's only perception viewpoint.
@@ -65,13 +65,28 @@ cameras:
     type: realsense
 
   # Third-person camera: recording, viz-scene, and the GWM scorer's viewpoint.
+  # tiptop itself reads only `hand` and `external`.
   external:
     serial: "348522073586"      # D435
     type: realsense
 
-# Spare, currently unused: D435i 134322070906. Kept plugged in as the second
-# external for the two-camera score fusion (G-30) if the single-view scoring
-# proves noisy; needs moving off its backlit window position first.
+  # SECOND third-person camera, read only by gwm_hardware.gwm_arm (tiptop never
+  # looks at this key). It exists because the sim's best-measured configuration
+  # was two-camera score fusion: the two views' per-object score deviations
+  # correlate only r=+0.58, and the between-view spread is as large as the
+  # semantic signal itself, so averaging them beat every single view and every
+  # other fusion rule under score noise (G-30).
+  #
+  # NOTE this camera produces NO depth for the pipeline -- it is an RGB scoring
+  # viewpoint only. `rs_preflight` fails it on IR saturation, and that verdict
+  # is about FoundationStereo's stereo pair, which nothing asks this camera for.
+  # Wrist depth is the only depth the planner uses.
+  # UNPLUGGED as of 2026-08-19: it faced a window, and RGB is the only thing the
+  # scorer gets. Left declared so the intent is recorded; gwm_arm skips any
+  # declared camera that is not connected rather than failing.
+  external_2:
+    serial: "134322070906"      # D435i, faces the robot from the opposite side
+    type: realsense
 
 # == Perception services ==
 perception:

@@ -23,9 +23,9 @@ the camera class.
 Run before every session, from the gwm-wiser repo root:
 
     pixi run --manifest-path droid/tiptop/pixi.toml \
-        python -m gwm_hardware.rs_preflight
+        python -m gwm_hardware.common.rs_preflight
     pixi run --manifest-path droid/tiptop/pixi.toml \
-        python -m gwm_hardware.rs_preflight --check   # report only, change nothing
+        python -m gwm_hardware.common.rs_preflight --check   # report only, change nothing
 """
 
 import argparse

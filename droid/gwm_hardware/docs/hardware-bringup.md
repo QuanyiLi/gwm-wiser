@@ -122,7 +122,7 @@ server 启动后第一次 /infer   33.3 s      <- 驱动 JIT 编译全部 kernel
 ```bash
 cd /home/quanyi/gwm-wiser
 pixi run --manifest-path droid/tiptop/pixi.toml \
-    python -m gwm_hardware.warm_servers --hand-serial <腕相机 s/n>
+    python -m gwm_hardware.common.warm_servers --hand-serial <腕相机 s/n>
 ```
 
 `droid/gwm_tiptop/warm_servers.py` 会查两个服务的 health，各打一发真实请求，报告耗时。预热后实测 M2T2 0.3 s、FoundationStereo 1.1 s。
@@ -134,9 +134,9 @@ pixi run --manifest-path droid/tiptop/pixi.toml \
 cd droid/M2T2 && pixi run server              # :8123
 cd droid/FoundationStereo && pixi run server  # :1234
 # 2) 相机 preflight
-pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.rs_preflight
+pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.rs_preflight
 # 3) 预热服务
-pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.warm_servers --hand-serial <s/n>
+pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.warm_servers --hand-serial <s/n>
 # 4) 这时才能跑 tiptop
 ```
 
@@ -177,12 +177,12 @@ D435   IR 饱和 87.1 % -> 1.8 %,  深度有效率 21.2 % -> 91.3 %
 D435i  IR 饱和 84.6 % -> 1.7 %,  深度有效率 17.8 % -> 88.1 %
 ```
 
-`RealsenseCamera.__init__` 完全不碰曝光，只开流，所以设备残留状态会**静默**带进每次运行。`tiptop/` 保持 pristine（G-18/G-21），因此修复以 pre-flight 形式落在 `droid/gwm_hardware/rs_preflight.py`，两条 arm 共用：
+`RealsenseCamera.__init__` 完全不碰曝光，只开流，所以设备残留状态会**静默**带进每次运行。`tiptop/` 保持 pristine（G-18/G-21），因此修复以 pre-flight 形式落在 `droid/gwm_hardware/common/rs_preflight.py`，两条 arm 共用：
 
 ```bash
 cd /home/quanyi/gwm-wiser
-pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.rs_preflight
-pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.rs_preflight --check  # 只报告不改
+pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.rs_preflight
+pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.rs_preflight --check  # 只报告不改
 ```
 
 检查固件 / USB / 曝光 / IR 饱和度 / 深度有效率 / 内参 / 基线，需要时自动修，给 PASS/FAIL。**每次开工前跑一次**（相机重新插拔会回到默认状态）。

@@ -11,15 +11,15 @@ Idempotent. The displaced upstream default is kept beside ours as
 `tiptop.yml.upstream` the first time, so the stock values stay recoverable.
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_rig_config
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_rig_config --restore
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_rig_config
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_rig_config --restore
 """
 
 import argparse
 import shutil
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+from gwm_hardware.common.paths import PKG_ROOT as HERE
 RIG_CFG = HERE / "config/tiptop.yml"
 UPSTREAM_BACKUP = HERE / "config/tiptop.yml.upstream"
 TIPTOP_CFG = HERE.parent / "tiptop/tiptop/config/tiptop.yml"

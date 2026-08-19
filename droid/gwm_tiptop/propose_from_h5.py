@@ -41,6 +41,17 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 _log = logging.getLogger("gwm_tiptop.propose")
 
 
+# droid-sim's websocket client shifts the camera down by 15 mm before handing
+# tiptop the observation (tiptop_websocket.py:250, magic_numbers.md #F). Every
+# sim capture in gwm_integrate_doc/proposals/ was produced under it, so it stays
+# the default and those results reproduce bit-exactly. It is NOT a property of
+# the pipeline, though: on the real rig `world_from_cam` comes out of
+# `capture_live_observation` as FK x hand-eye, already in the right frame, and
+# applying this would drop the whole cloud 15 mm. Hardware captures therefore
+# write `extrinsics_z_correction = 0.0` into the h5 (gwm_hardware.gwm_arm.capture).
+DEFAULT_EXTRINSICS_Z_CORRECTION = -0.015
+
+
 def load_h5_observation(h5_path: Path) -> dict:
     with h5py.File(h5_path) as f:
         rgb = np.asarray(f["rgb"])
@@ -53,10 +64,12 @@ def load_h5_observation(h5_path: Path) -> dict:
         world_from_cam = np.eye(4)
         world_from_cam[:3, :3] = Rotation.from_quat([x, y, z, w]).as_matrix()
         world_from_cam[:3, 3] = pos
-        # Match the websocket client's grasp-frame correction
-        world_from_cam[:3, 3] -= np.array([0.0, 0.0, 0.015])
+        dz = float(np.asarray(f["extrinsics_z_correction"])) \
+            if "extrinsics_z_correction" in f else DEFAULT_EXTRINSICS_Z_CORRECTION
+        world_from_cam[2, 3] += dz
         q_init = np.asarray(f["q_init"])
-    return {"rgb": rgb, "depth": depth, "K": K, "world_from_cam": world_from_cam, "q_init": q_init}
+    return {"rgb": rgb, "depth": depth, "K": K, "world_from_cam": world_from_cam,
+            "q_init": q_init, "extrinsics_z_correction": dz}
 
 
 def associate_grasps(grasps: dict, object_pcds: dict, object_meshes_curobo: dict, contact_threshold_m: float) -> dict:

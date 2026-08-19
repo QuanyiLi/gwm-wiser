@@ -9,7 +9,17 @@ candidate scoring — train/inference render homology is a hard requirement.
 Kinematics only: qpos is set directly (no physics stepping), and the Robotiq
 2F-85 linkage is reconstructed from its driver values through the mimic map
 (the ManiSkill URDF ships six independent revolute joints).
+
+A URDF that DOES declare `<mimic>` tags is honoured instead: the chain is read
+off the file, so a different gripper needs no constants here. That is how the
+`zhiwei` hardware rig's Robotiq 2F-140 renders
+(`gwm_hardware/assets/panda_robotiq_2f_140.urdf`, one `finger_joint` driver and
+five mimics). The 2F-85 path is untouched by this and stays byte-identical --
+the ManiSkill URDF declares no mimics, so it falls through to MIMIC_MAP exactly
+as before.
 """
+
+import xml.etree.ElementTree as ET
 
 import numpy as np
 
@@ -25,6 +35,38 @@ MIMIC_MAP = {
     "right_inner_finger_joint": ("right", -1.0),
 }
 DRIVER_RANGE_RAD = 0.8   # closed driver angle for gripper_pos = 1.0
+
+
+def parse_mimic_chain(urdf_path):
+    """Read a URDF's single-driver mimic chain.
+
+    Returns ``(driver_joint, closed_angle_rad, [(joint, multiplier), ...])`` or
+    ``None`` when the file declares no mimics (the 2F-85 case). `closed_angle`
+    is the driver's own upper limit, i.e. the angle a fully closed gripper
+    sits at, which is what the [0, 1] gripper command scales onto.
+    """
+    root = ET.parse(str(urdf_path)).getroot()
+    chain, drivers = [], set()
+    for joint in root.findall("joint"):
+        mimic = joint.find("mimic")
+        if mimic is None:
+            continue
+        drivers.add(mimic.get("joint"))
+        chain.append((joint.get("name"), float(mimic.get("multiplier", 1.0))))
+    if not chain:
+        return None
+    if len(drivers) != 1:
+        raise ValueError(f"{urdf_path}: expected one mimic driver, found {sorted(drivers)}")
+    driver = drivers.pop()
+    upper = None
+    for joint in root.findall("joint"):
+        if joint.get("name") == driver:
+            limit = joint.find("limit")
+            if limit is not None:
+                upper = float(limit.get("upper"))
+    if not upper:
+        raise ValueError(f"{urdf_path}: mimic driver {driver!r} has no usable upper limit")
+    return driver, upper, chain
 
 ARM_JOINTS = {
     "panda": [f"panda_joint{i}" for i in range(1, 8)],
@@ -150,6 +192,7 @@ class FrankaRobotRenderer:
         self._qpos_index = {n: i for i, n in enumerate(names)}
         for jn in ARM_JOINTS[arm]:
             assert jn in self._qpos_index, f"missing joint {jn} in {names}"
+        self._mimic = parse_mimic_chain(urdf_path)
         self._camera = None
         self._camera_wh = None
 
@@ -165,6 +208,18 @@ class FrankaRobotRenderer:
         for jn, v in zip(ARM_JOINTS[self.arm], np.asarray(arm_qpos).ravel()):
             q[self._qpos_index[jn]] = v
         g = np.atleast_1d(np.asarray(gripper, dtype=np.float64))
+        if self._mimic is not None:
+            # URDF-declared chain (2F-140): one driver, everything else follows
+            # it. A two-value gripper state has no meaning on a single-driver
+            # linkage, so it is averaged rather than silently taking one side.
+            driver, closed, chain = self._mimic
+            angle = float(g.mean()) * closed
+            if driver in self._qpos_index:
+                q[self._qpos_index[driver]] = angle
+            for jn, mult in chain:
+                if jn in self._qpos_index:
+                    q[self._qpos_index[jn]] = mult * angle
+            return q
         if g.size == 1:
             drivers = {"left": g[0] * DRIVER_RANGE_RAD,
                        "right": g[0] * DRIVER_RANGE_RAD}

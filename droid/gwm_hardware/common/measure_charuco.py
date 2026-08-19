@@ -17,7 +17,7 @@ the RealSense ASIC depth reported alongside as an independent second opinion.
 Hold the board flat and square-on in the wrist camera's view, 30-60 cm away,
 then:
 
-    python -m gwm_hardware.measure_charuco
+    python -m gwm_hardware.common.measure_charuco
 """
 
 import argparse

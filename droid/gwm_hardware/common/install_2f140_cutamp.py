@@ -7,13 +7,13 @@ baseline `tiptop-run` arm plans with a gripper **62 mm too short** unless
 cuTAMP is redirected -- and the baseline has to be correct too, or the A/B is
 comparing against an arm that is quietly unsafe.
 
-Our own drivers can just import `gwm_hardware.robot_2f140`; `tiptop-run`
+Our own drivers can just import `gwm_hardware.common.robot_2f140`; `tiptop-run`
 cannot, hence this. It rewrites three literals in cuTAMP's
 `robots/franka_robotiq.py`:
 
     assets_dir      -> gwm_hardware/assets
     2f_85.yml       -> panda_robotiq_2f_140.yml
-    2F-85 spheres   -> gwm_hardware.robot_2f140.get_gripper_spheres()
+    2F-85 spheres   -> gwm_hardware.common.robot_2f140.get_gripper_spheres()
 
 The cuTAMP clone is gitignored and rebuilt by `install-cutamp.sh`, so this is
 a **replayable install step, not a fork** (G-4 stays intact: the algorithm is
@@ -24,19 +24,19 @@ Only the `panda_robotiq_*` entry points are touched; `fr3_robotiq_*` and the
 UR5 are left alone.
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_2f140_cutamp
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_2f140_cutamp --verify
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.install_2f140_cutamp --restore
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_2f140_cutamp
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_2f140_cutamp --verify
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_2f140_cutamp --restore
 """
 
 import argparse
 import shutil
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+from gwm_hardware.common.paths import PKG_ROOT as HERE
 TARGET = HERE.parent / "tiptop/cutamp/cutamp/robots/franka_robotiq.py"
 BACKUP = TARGET.with_suffix(".py.orig")
-MARKER = "# --- patched by gwm_hardware.install_2f140_cutamp ---"
+MARKER = "# --- patched by gwm_hardware.common.install_2f140_cutamp ---"
 
 PATCHES = [
     # 1. load our config instead of the 2F-85 one
@@ -88,7 +88,7 @@ PATCHES = [
 
     if _os.environ.get("GWM_TIPTOP_GRIPPER") == "2f85":
         return get_robotiq_2f_85_gripper_spheres(tensor_args)
-    from gwm_hardware.robot_2f140 import get_gripper_spheres as _spheres_2f140
+    from gwm_hardware.common.robot_2f140 import get_gripper_spheres as _spheres_2f140
 
     return _spheres_2f140(tensor_args)""",
     ),

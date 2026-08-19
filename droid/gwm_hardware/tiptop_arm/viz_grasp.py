@@ -9,7 +9,7 @@ Shows the object's own points, the M2T2 candidate grasp origins the optimiser
 started from, and the finger pads at the configuration that will be executed.
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.viz_grasp \
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.tiptop_arm.viz_grasp \
         droid/tiptop/tiptop_outputs/eval/<timestamp> --object blue_cup
 """
 
@@ -55,8 +55,10 @@ def main() -> None:
     tcp = st.ee_pose.get_numpy_matrix()[0][:3, 3]
     S = st.link_spheres_tensor[0].cpu().numpy()
 
-    cfgk = yaml.safe_load((Path(__file__).resolve().parent
-                           / "assets/panda_robotiq_2f_140.yml").read_text())["robot_cfg"]["kinematics"]
+    from gwm_hardware.common.paths import ASSETS
+
+    cfgk = yaml.safe_load((ASSETS / "panda_robotiq_2f_140.yml")
+                          .read_text())["robot_cfg"]["kinematics"]
     pads, i = {}, 0
     for n in cfgk["collision_link_names"]:
         m = len(cfgk["collision_spheres"].get(n, []))

@@ -223,7 +223,7 @@ def go_to_q(
     result = client.execute_joint_impedance_path(
         joint_confs=plan.position.cpu().numpy(), joint_vels=plan.velocity.cpu().numpy(), durations=timings
     )
-    # --- patched by gwm_hardware.install_client_lifetime_fix ---
+    # --- patched by gwm_hardware.common.install_client_lifetime_fix ---
     # Do NOT close here. get_robot_client() is @cache'd, so this is the same
     # object tiptop_run holds as container.robot, and close() terminates the
     # ZMQ context outright -- the next open_gripper() raises ZMQError. The

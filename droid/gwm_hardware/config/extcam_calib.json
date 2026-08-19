@@ -1,0 +1,112 @@
+{
+  "cameras": {
+    "external_cam": {
+      "world_from_cam": [
+        [
+          0.9438922801632345,
+          -0.17282338047580245,
+          0.2814239552866193,
+          0.1673874906768023
+        ],
+        [
+          -0.33016140928966237,
+          -0.5139268122058427,
+          0.7917529131691302,
+          -1.2336716871962956
+        ],
+        [
+          0.007797901263358179,
+          -0.8402447922223952,
+          -0.5421511614660902,
+          1.1838171366283774
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "position": [
+        0.1673874906768023,
+        -1.2336716871962956,
+        1.1838171366283774
+      ],
+      "convention": "CV-axis cam2world (x right, y down, z forward), robot base frame"
+    }
+  },
+  "quality": {
+    "external_cam": {
+      "n_placements": 4,
+      "n_corners": 215,
+      "reproj_rms_px": 0.663162329940986,
+      "reproj_p95_px": 1.285072161604299,
+      "pose_spread_m": 0.01890316439654529,
+      "pose_spread_deg": 0.8105292458604179,
+      "verdict": "PASS",
+      "placements": [
+        "shot_00",
+        "shot_01",
+        "shot_03",
+        "shot_04"
+      ]
+    }
+  },
+  "verdict": "PASS",
+  "max_reproj_px": 2.0,
+  "shots_dir": "droid/gwm_hardware/runs/extcal",
+  "per_shot": [
+    {
+      "shot": "shot_00",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.413,
+      "external_corners": 38,
+      "external_rms_px": 0.654,
+      "board_in_base": [
+        0.3628,
+        0.18,
+        0.0648
+      ]
+    },
+    {
+      "shot": "shot_01",
+      "cam": "external_cam",
+      "wrist_corners": 66,
+      "wrist_rms_px": 0.546,
+      "external_corners": 70,
+      "external_rms_px": 0.403,
+      "board_in_base": [
+        0.3282,
+        -0.064,
+        0.0713
+      ]
+    },
+    {
+      "shot": "shot_03",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.387,
+      "external_corners": 51,
+      "external_rms_px": 0.499,
+      "board_in_base": [
+        0.3452,
+        -0.2397,
+        0.0722
+      ]
+    },
+    {
+      "shot": "shot_04",
+      "cam": "external_cam",
+      "wrist_corners": 59,
+      "wrist_rms_px": 0.649,
+      "external_corners": 56,
+      "external_rms_px": 0.451,
+      "board_in_base": [
+        0.5447,
+        -0.4991,
+        0.0757
+      ]
+    }
+  ]
+}

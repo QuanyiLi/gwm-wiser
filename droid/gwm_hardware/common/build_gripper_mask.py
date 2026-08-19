@@ -25,8 +25,8 @@ does not carry the stock fingertips the URDF models. Either way the measurement
 wins over the model, and `--from geometry` is kept only so the two can be
 compared.
 
-    python -m gwm_hardware.build_gripper_mask                 # dry run
-    python -m gwm_hardware.build_gripper_mask --install
+    python -m gwm_hardware.common.build_gripper_mask                 # dry run
+    python -m gwm_hardware.common.build_gripper_mask --install
 """
 
 import argparse
@@ -42,7 +42,7 @@ NEAR_THRESHOLD_M = 0.40
 DILATE_PX = 15          # margin for depth noise at the silhouette edge
 MIN_BLOB_PX = 300
 FRAMES = 7
-HERE = Path(__file__).resolve().parent
+from gwm_hardware.common.paths import PKG_ROOT as HERE
 
 
 def depth_mask(frames_depth):

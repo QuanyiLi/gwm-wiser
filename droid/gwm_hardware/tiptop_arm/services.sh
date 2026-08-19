@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Bring the perception services up, warm, and verified -- then hand you tiptop.
 #
-#   ./droid/gwm_hardware/services.sh start     # servers + preflight + warm-up
-#   ./droid/gwm_hardware/services.sh status
-#   ./droid/gwm_hardware/services.sh stop
-#   ./droid/gwm_hardware/services.sh run       # start (if needed), then tiptop-run
+#   ./droid/gwm_hardware/tiptop_arm/services.sh start     # servers + preflight + warm-up
+#   ./droid/gwm_hardware/tiptop_arm/services.sh status
+#   ./droid/gwm_hardware/tiptop_arm/services.sh stop
+#   ./droid/gwm_hardware/tiptop_arm/services.sh run       # start (if needed), then tiptop-run
 #
 # Order matters and the reasons are rig-specific:
 #   * rs_preflight before anything: the RealSenses come up with IR
@@ -44,9 +44,9 @@ start() {
     up 8123 && up 1234 || { echo "servers did not come up; see $LOGS/"; status; return 1; }
 
     echo "camera pre-flight:"
-    $P python -m gwm_hardware.rs_preflight 2>/dev/null | grep -E "s/n|=>|PASS"
+    $P python -m gwm_hardware.common.rs_preflight 2>/dev/null | grep -E "s/n|=>|PASS"
     echo "warming (absorbs the sm_120 PTX JIT):"
-    $P python -m gwm_hardware.warm_servers --hand-serial 035422072950 2>/dev/null | grep -E "warm|healthy"
+    $P python -m gwm_hardware.common.warm_servers --hand-serial 035422072950 2>/dev/null | grep -E "warm|healthy"
     echo; status
 }
 

@@ -71,10 +71,10 @@ def workspace_cuboids() -> tuple[Cuboid, ...]:
     elif cfg.robot.type == "fr3":
         cuboids = fr3_workspace()
     elif cfg.robot.type == "panda_robotiq":
-        # --- patched by gwm_hardware.install_rig_workspace ---
+        # --- patched by gwm_hardware.common.install_rig_workspace ---
         # This rig is not MIT LIS's bench; fr3_workspace() would invent
         # obstacles that are not here and omit the table edges that are.
-        from gwm_hardware.rig_workspace import zhiwei_workspace
+        from gwm_hardware.common.rig_workspace import zhiwei_workspace
 
         cuboids = zhiwei_workspace()
     elif cfg.robot.type == "ur5":

@@ -23,7 +23,7 @@ from tiptop.perception.cameras.zed_camera import ZedIntrinsics
 from tiptop.utils import get_robot_client, setup_logging
 from tiptop.workspace import workspace_cuboids
 
-# --- board params patched by gwm_hardware.install_charuco_params ---
+# --- board params patched by gwm_hardware.common.install_charuco_params ---
 # This rig's board, not DROID's 14x9 / 20 mm one. Grid and dictionary read off
 # a photo with the aruco detector; checker size measured on the board itself.
 CHARUCOBOARD_ROWCOUNT = SQUARES_Y = 8

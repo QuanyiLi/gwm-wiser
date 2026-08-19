@@ -28,7 +28,7 @@ succeeded: by the time the fingers met, the pad was some 30 mm BELOW the rim.
 A check that blocks good grasps is worse than no check.
 
     cd /home/quanyi/gwm-wiser
-    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.inspect_plan \
+    pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.tiptop_arm.inspect_plan \
         droid/tiptop/tiptop_outputs/eval/<timestamp> --object tomato
 """
 
@@ -40,7 +40,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-ASSETS = Path(__file__).resolve().parent / "assets"
+from gwm_hardware.common.paths import ASSETS
 CFG = ASSETS / "panda_robotiq_2f_140.yml"
 
 

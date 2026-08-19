@@ -4,15 +4,23 @@ Everything specific to running on the real robot lives here, kept apart from
 `gwm_tiptop/` (the droid-sim integration) so the sim results stay reproducible
 from an unchanged tree.
 
-- `build_2f140.py` / `build_2f140_cfg.py` -- generate the Panda + 2F-140 URDF
-  and cuRobo config that this rig needs and cuTAMP does not ship.
-- `robot_2f140.py`  -- load that model with cuTAMP's API shape.
-- `validate_2f140.py` -- kinematics / TCP / IK / motion-planning checks on it.
-- `rs_preflight.py` -- put the RealSense IR pair into a state FoundationStereo
-  can use (the rig ships with IR auto-exposure off).
-- `warm_servers.py` -- absorb the first-call PTX JIT cost that would otherwise
-  blow through tiptop's 10 s perception-server timeout.
-- `docs/` -- the bring-up procedure and the controller-machine handover brief.
+Two experiments run on this one rig, and they are kept apart on purpose:
+
+    common/      the RIG itself -- robot model, calibration, cameras, the
+                 tiptop-tree installers, workspace. Owned by neither arm.
+    tiptop_arm/  baseline TiPToP (Gemini + SAM2 + cuTAMP), the A/B control.
+    gwm_arm/     GWM x TiPToP -- geometric perception + M2T2 + cuTAMP
+                 proposals scored by GWM. The method under test.
+
+`gwm_arm` imports `common`; it never imports `tiptop_arm`, and neither arm
+imports the other. Anything both arms need moves down into `common` rather
+than being reached across.
+
+Shared, rig-level DATA lives at this level rather than inside a subpackage,
+because both arms and the installers consume it:
+
+    assets/   generated, gitignored -- machine-local URDF / cuRobo yml / spheres
+    config/   versioned -- `tiptop.yml` (symlinked into the tiptop tree) etc.
 
 Resolved in the tiptop pixi env through a site-packages symlink, same recipe
 as `gwm_tiptop` and for the same reason (G-21: never a `.pth`, which shadows

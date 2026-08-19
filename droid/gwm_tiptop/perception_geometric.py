@@ -49,7 +49,7 @@ def find_table_plane(
     pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
 
     remaining = pcd
-    best_pcd, best_inliers = None, -1
+    best_pcd, best_inliers, best_plane = None, -1, None
     for i in range(max_planes):
         if len(remaining.points) < 50:
             break
@@ -68,6 +68,15 @@ def find_table_plane(
         if horizontal and in_band and len(idxs) > best_inliers:
             best_inliers = len(idxs)
             best_pcd = inlier_pcd
+            # Keep the fitted plane, oriented +z up and normalised, so callers
+            # can measure height ABOVE THE TABLE rather than above world z.
+            # On a perfectly level table the two are the same and nothing
+            # changes; on the zhiwei rig the perceived plane is tilted 2.88 deg
+            # (the hand-eye rotational residual), which is 48 mm of world-z
+            # spread across an 0.85 m footprint -- three times the clearance
+            # that separates an object from the table. See cluster_objects.
+            s = np.sign(c) or 1.0
+            best_plane = np.array([a, b, c, d], dtype=np.float64) * s / np.linalg.norm([a, b, c])
         remaining = remaining.select_by_index(idxs, invert=True)
 
     if best_pcd is None:
@@ -97,7 +106,14 @@ def find_table_plane(
     table_box.visual.face_colors = np.append(
         (np.asarray(table_pcd.colors).mean(0) * 255).astype(np.uint8), 255
     )
-    _log.info(f"Table surface at z = {surface_z:.3f}, dims = {table_box.extents}")
+    tilt = np.degrees(np.arccos(np.clip(best_plane[2], -1.0, 1.0)))
+    _log.info(f"Table surface at z = {surface_z:.3f}, dims = {table_box.extents}, "
+              f"plane tilt {tilt:.2f} deg")
+    # The fitted plane rides along on the box's metadata rather than in the
+    # return tuple, so every existing two-value caller is untouched.
+    table_box.metadata = {**(table_box.metadata or {}),
+                          "plane": best_plane.tolist(), "surface_z": float(surface_z),
+                          "tilt_deg": float(tilt)}
     # Return the true surface height alongside the box: the box top is
     # deliberately sunk 2 cm below the surface (tiptop collision convention),
     # so it must NOT be used as a segmentation boundary.
@@ -175,6 +191,9 @@ def cluster_objects(
     max_objects: int = 8,
     xy_margin: float = 0.02,
     voxel_size: float = 0.004,
+    use_plane_normal: bool = False,
+    robot_spheres: np.ndarray | None = None,
+    robot_margin: float = 0.02,
 ) -> tuple[dict[str, trimesh.Trimesh], dict[str, o3d.geometry.PointCloud]]:
     """DBSCAN the above-table points into anonymous objects `object_0..N`.
 
@@ -182,14 +201,50 @@ def cluster_objects(
     per-object pcds) so everything downstream — grasp association, cuTAMP env
     construction — is unchanged. Clusters are ordered by size; tiny clusters
     and clusters outside the table's XY footprint are dropped.
+
+    `robot_spheres` ((N,4) xyz+radius, the robot's own collision spheres at the
+    capture configuration) replaces the height heuristic for identifying the
+    ARM. The heuristic deletes any cluster whose lowest point sits more than
+    `resting_tolerance` above the table, which assumes every object rests on
+    the table AND is seen down to within 4 cm of it. A tall object viewed from
+    a top-down wrist camera fails the second half: the camera sees its top face
+    and almost none of its vertical sides, so its lowest VISIBLE point is high.
+    Measured on the zhiwei rig, an upended 93 mm box was deleted as "robot arm"
+    at a lowest visible point of 59 mm, and the instruction that referred to it
+    then had no referent to find. Where the robot actually is, is not something
+    to infer from height -- FK knows it. Off by default so sim reproduces.
+
+    `use_plane_normal` measures "above the table" perpendicular to the plane
+    `find_table_plane` fitted, instead of along world z. Off by default so sim
+    results reproduce exactly (droid-sim's table is level, where the two agree
+    to floating point). Hardware needs it on: the zhiwei rig's perceived table
+    is tilted 2.88 deg, which spreads its own surface over 48 mm of world z
+    across the capture footprint — more than three times the 15 mm clearance
+    that is supposed to separate an object from the table. With a horizontal
+    cut the high end of the table survives as a phantom "object" the size of
+    the tabletop, and merges into whatever real object sits near it.
     """
     valid = ~np.isnan(xyz_world).any(axis=2)
     xyz = xyz_world[valid]
     col = rgb[valid]
 
+    plane = None
+    if use_plane_normal:
+        meta = table_box.metadata or {}
+        if "plane" not in meta:
+            raise ValueError("use_plane_normal needs a table_box from find_table_plane")
+        plane = np.asarray(meta["plane"], dtype=np.float64)
+        clearance = table_top_z - float(meta["surface_z"])
+
+    def _height(pts: np.ndarray) -> np.ndarray:
+        """Height above the table: perpendicular to the fitted plane, or world z."""
+        if plane is None:
+            return pts[:, 2] - table_top_z
+        return pts @ plane[:3] + plane[3] - clearance
+
     (x0, y0), (x1, y1) = table_box.bounds[0, :2], table_box.bounds[1, :2]
     keep = (
-        (xyz[:, 2] > table_top_z)
+        (_height(xyz) > 0)
         & (xyz[:, 0] > x0 + xy_margin) & (xyz[:, 0] < x1 - xy_margin)
         & (xyz[:, 1] > y0 + xy_margin) & (xyz[:, 1] < y1 - xy_margin)
     )
@@ -211,11 +266,38 @@ def cluster_objects(
     # otherwise absorb arm fragments into the object below them.
     pts_all = np.asarray(pcd.points)
     resting_tolerance = 0.04
+    arm_tree = None
+    if robot_spheres is not None:
+        from scipy.spatial import KDTree
+
+        sph = np.asarray(robot_spheres, dtype=np.float64)
+        sph = sph[sph[:, 3] > 0.0]      # cuRobo pads the buffer with negative radii
+        arm_tree = (KDTree(sph[:, :3]), sph[:, 3])
+
     for cl in range(n_clusters):
         sel = labels == cl
-        if sel.any() and pts_all[sel][:, 2].min() > table_top_z + resting_tolerance:
+        if not sel.any():
+            continue
+        pts = pts_all[sel]
+        if arm_tree is not None:
+            tree, radii = arm_tree
+            dist, idx = tree.query(pts)
+            on_arm = float((dist <= radii[idx] + robot_margin).mean())
+            if on_arm > 0.5:
+                _log.info(
+                    f"Skipping cluster {cl} ({int(sel.sum())} pts): {on_arm:.0%} of it "
+                    "lies inside the robot's own collision spheres"
+                )
+                labels[sel] = -1
+            continue
+        # Written as two branches rather than one `_height(...) > tol` so the
+        # default path is the ORIGINAL comparison, floating-point included.
+        lowest = pts[:, 2].min() if plane is None else _height(pts).min()
+        floating = (lowest > table_top_z + resting_tolerance) if plane is None \
+            else (lowest > resting_tolerance)
+        if floating:
             _log.info(
-                f"Skipping floating cluster {cl} (min_z={pts_all[sel][:, 2].min():.3f}, "
+                f"Skipping floating cluster {cl} (lowest point {lowest:.3f}, "
                 f"{int(sel.sum())} pts) — likely robot arm"
             )
             labels[sel] = -1
