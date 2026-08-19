@@ -302,9 +302,13 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
         # workspace-aware, where the previous local build was not -- the
         # capture motion is now collision-checked against the rig's keep-outs
         # like every other motion.
-        from gwm_tiptop.robot_fk import default_planning_solvers
+        from gwm_tiptop.robot_fk import default_planning_solvers, reset_world_to_workspace
 
         _, motion_gen, _ = default_planning_solvers()
+        # The proposers overwrite this shared solver's world with the scene
+        # they perceived. Reset before moving, or the capture motion plans
+        # against LAST turn's objects and without the rig's keep-outs.
+        reset_world_to_workspace(motion_gen)
         go_to_capture(time_dilation_factor=cfg.robot.time_dilation_factor,
                       motion_gen=motion_gen)
         # tiptop opens the gripper here because its flow only ever picks. Doing

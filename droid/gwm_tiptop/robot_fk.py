@@ -118,3 +118,24 @@ def default_planning_solvers(num_particles: int = 256, include_workspace: bool =
         time_dilation_factor=cfg.robot.time_dilation_factor, near_placement=False)
     return planning_solvers(config.num_particles, config.coll_n_spheres,
                             include_workspace=include_workspace)
+
+
+def reset_world_to_workspace(motion_gen) -> None:
+    """Put the rig's static keep-outs back into a shared solver's world.
+
+    Both proposers call `motion_gen.update_world(...)` to plan against the
+    scene they just perceived. Before the solvers were cached that was
+    harmless -- each stage built its own. Shared, it means the world a later
+    motion plans against is whatever the LAST proposal left there: the
+    previous turn's objects, and no rig workspace at all.
+
+    So any motion that is not part of a proposal -- going to the capture pose,
+    going home -- resets the world first. Workspace-only is deliberate and is
+    what tiptop's own `go_to_q` does: at the start of a turn nothing has been
+    perceived yet, so the honest world is the one that does not change.
+    """
+    from curobo.geom.types import WorldConfig
+
+    from tiptop.workspace import workspace_cuboids
+
+    motion_gen.update_world(WorldConfig(cuboid=list(workspace_cuboids())))

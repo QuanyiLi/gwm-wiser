@@ -154,7 +154,7 @@ def return_home(execute: bool, plan: dict | None = None) -> None:
     from tiptop.motion_planning import go_to_q
     from tiptop.utils import get_robot_client
 
-    from gwm_tiptop.robot_fk import default_planning_solvers
+    from gwm_tiptop.robot_fk import default_planning_solvers, reset_world_to_workspace
 
     cfg = tiptop_cfg()
     client = get_robot_client()
@@ -165,6 +165,7 @@ def return_home(execute: bool, plan: dict | None = None) -> None:
         retrace_descent(plan, client)
     _log.info("travelling to q_home")
     _, motion_gen, _ = default_planning_solvers()
+    reset_world_to_workspace(motion_gen)
     go_to_q(q_target=list(cfg.robot.q_home),
             time_dilation_factor=cfg.robot.time_dilation_factor, motion_gen=motion_gen)
 
