@@ -7,11 +7,16 @@ switching viewpoint moved object accuracy 9/10 -> 10/10 (G-29), and the task it
 fixed had failed purely because the target sat small, distant and inside the
 gripper's shadow.
 
-It does NOT have to reproduce DROID's extrinsics. What it has to do:
+It does NOT have to reproduce DROID's extrinsics, and it does NOT have to fit
+the whole arm in frame. An earlier version of this file claimed it did, on the
+reasoning that "a cropped arm cannot be aligned against a render" -- which is
+simply wrong: the render is produced with THIS camera's intrinsics and
+extrinsics, so it is cropped in exactly the same place as the photo. The
+overlay gate passes at 8.04 % robot coverage with the base out of frame
+(2026-08-19). What it has to do:
 
-  1. the WHOLE ARM, from base to fingertips, inside the frame at every pose the
-     robot will reach -- the renders are of the arm, and a cropped arm cannot be
-     aligned against them;
+  1. enough of the arm visible to distinguish one trajectory from another --
+     the gripper end above all, since that is what differs between candidates;
   2. every candidate object visible and not hidden behind the gripper;
   3. no strong backlight -- a window behind the workspace blows out the RGB,
      and the scorer only ever sees RGB;
@@ -63,8 +68,10 @@ def _overlay(img, stats, clipped_edges=()):
 
     There is deliberately no inset "keep everything in here" box. The usable
     area is the whole frame, and an arbitrary margin drawn inside it only makes
-    the camera look worse than it is -- with `--with-robot` the in-frame figure
-    is measured against the real edges, so the target is the real edges.
+    the camera look worse than it is. The in-frame percentage is a read-out,
+    not a target: the arm does not have to be wholly inside (see the module
+    docstring), so a red edge marker means "this edge is cutting the arm", not
+    "this is wrong".
     """
     h, w = img.shape[:2]
     out = img.copy()
