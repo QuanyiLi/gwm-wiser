@@ -153,15 +153,17 @@ def shoot(shots_dir: Path, n: int) -> None:
     import cv2
     from curobo.types.base import TensorDeviceType
 
-    from tiptop.config import load_calibration
+    from tiptop.config import load_calibration, tiptop_cfg
     from tiptop.perception.cameras import get_hand_camera
+
+    from gwm_hardware.common.rs_open import open_with_retry
     from gwm_tiptop.robot_fk import fk_model
     from tiptop.perception.cameras.rs_camera import RealsenseCamera
     from tiptop.utils import get_robot_client
 
     shots_dir.mkdir(parents=True, exist_ok=True)
     client = get_robot_client()
-    hand = get_hand_camera()
+    hand = open_with_retry(get_hand_camera, tiptop_cfg().cameras.hand.serial)
     ee_from_cam = load_calibration(hand.serial)
     kin = fk_model()            # FK only: it never commands motion
     tensor_args = TensorDeviceType()

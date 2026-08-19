@@ -113,7 +113,9 @@ def _robot_anchor():
     tcp = state.ee_pose.position[0].cpu().numpy().astype(np.float64)
     world_from_ee = state.ee_pose.get_numpy_matrix()[0]
 
-    hand = RealsenseCamera(str(cfg.cameras.hand.serial))
+    from gwm_hardware.common.rs_open import open_with_retry
+    hand = open_with_retry(lambda: RealsenseCamera(str(cfg.cameras.hand.serial)),
+                           cfg.cameras.hand.serial)
     try:
         hf, hi = hand.read_camera(), hand.get_intrinsics()
         wb = board_pose(hf.rgb, np.asarray(hi.K_color), np.asarray(hi.distortion_color))
