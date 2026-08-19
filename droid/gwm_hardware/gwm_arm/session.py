@@ -142,8 +142,19 @@ def retrace_descent(plan: dict, client) -> bool:
     return True
 
 
-def return_home(execute: bool, plan: dict | None = None) -> None:
-    """Get clear, then travel to q_home.
+def return_to_capture(execute: bool, plan: dict | None = None) -> None:
+    """Get clear, then travel to q_CAPTURE -- not q_home.
+
+    Every turn begins at `q_capture`: the capture step drives there, the scene
+    photo the scorer sees is taken from there, and every candidate is planned
+    starting from it. Parking at `q_home` between turns therefore bought a
+    motion whose only effect was that the next turn had to undo it. Ending at
+    the capture pose leaves the arm where the next instruction already needs
+    it, and `go_to_capture` becomes a no-op instead of a second traverse.
+
+    `cfg.robot.q_home` is deliberately NOT changed: the baseline TiPToP arm
+    homes there, and the two experiments do not share resting poses just
+    because they share a robot.
 
     "Clear" is the plan's own descent reversed when there is one, and nothing
     otherwise -- `go_to_q` plans against the rig workspace either way, so the
@@ -160,18 +171,18 @@ def return_home(execute: bool, plan: dict | None = None) -> None:
     cfg = tiptop_cfg()
     client = get_robot_client()
     if not execute:
-        _log.info("(dry run: would retrace the descent, then travel to q_home)")
+        _log.info("(dry run: would retrace the descent, then travel to q_capture)")
         return
     if plan is not None:
         retrace_descent(plan, client)
-    _log.info("travelling to q_home")
+    _log.info("travelling to q_capture (where the next turn starts)")
     _, motion_gen, _ = default_planning_solvers()
     reset_world_to_workspace(motion_gen)
-    go_to_q(q_target=list(cfg.robot.q_home),
+    go_to_q(q_target=list(cfg.robot.q_capture),
             time_dilation_factor=cfg.robot.time_dilation_factor, motion_gen=motion_gen)
 
 
-def release_then_home(execute: bool, plan: dict | None = None) -> None:
+def release_then_return(execute: bool, plan: dict | None = None) -> None:
     """What follows a PLACE, once the object is where it was asked to go.
 
     Not scored and not a candidate: having placed something, releasing it and
@@ -182,11 +193,11 @@ def release_then_home(execute: bool, plan: dict | None = None) -> None:
     from tiptop.utils import get_robot_client
 
     if not execute:
-        _log.info("(dry run: would open the gripper, retrace, and return home)")
+        _log.info("(dry run: would open the gripper, retrace, and return to q_capture)")
         return
     _log.info("placed -- opening the gripper")
     get_robot_client().open_gripper(speed=1.0)
-    return_home(execute=True, plan=plan)
+    return_to_capture(execute=True, plan=plan)
 
 
 # ----------------------------------------------------------------- the loop
@@ -291,7 +302,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                # A place plan's scored timeline is not its executed one. It opens
                # with 1.33 s of the arm frozen at the capture pose while the
                # gripper closes, and it ENDS the instant the gripper arrives --
-               # the release is issued afterwards by release_then_home, so it was
+               # the release is issued afterwards by release_then_return, so it was
                # never scored. Renders are robot-only, so without the open frame a
                # place is pixel-identical to a grasp approach.
                + (["--drop-static-prefix", "--append-release"] if held else []),
@@ -348,7 +359,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     run_module("gwm_hardware.gwm_arm.execute", argv, "execute", args.verbose)
 
     if held:
-        release_then_home(execute=True, plan=json.loads(winner.read_text()))
+        release_then_return(execute=True, plan=json.loads(winner.read_text()))
 
 
 def main() -> None:
