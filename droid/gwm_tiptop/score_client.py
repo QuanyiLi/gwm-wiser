@@ -51,9 +51,12 @@ A small round object has a poor, diverse grasp family, `se3_fps_indices`
 samples it for diversity, and the tail drags the mean down: cup +0.7445,
 tomato +0.7436, and the robot went for the cup by 0.0008. `max` (+0.0138) and
 `top2` (+0.0115) both get it right; `median` does not. Across the 25 scored
-hardware runs to date the four rules disagree on 11, so the default has NOT
-been changed on this one case -- but `top2` matched `mean` in sim and wins
-here, so it is the better-supported option of the two.
+hardware runs to date the four rules disagree on 11, so one case does not
+settle the general question -- but `top2` matched `mean`'s 9/10 in sim while
+`max` managed 6/10, and it wins here, so of the two it is the better-supported
+choice. **The HARDWARE session defaults to `top2` from 2026-08-19** (user
+decision). This module's own default stays `mean` so droid-sim scripts that
+call it directly reproduce unchanged.
 
 VIEWPOINT (--cam, default `external_cam_2` since 2026-08-11, G-29): the DROID
 rig carries two third-person cameras and the capture h5 stores both, so the
