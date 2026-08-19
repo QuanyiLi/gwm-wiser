@@ -269,7 +269,8 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
         run_module("gwm_tiptop.place_propose",
                    ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
                     "--k-total", args.k_total, "--use-plane-normal",
-                    "--use-robot-arm-filter"], "propose(place)", args.verbose)
+                    "--use-robot-arm-filter", "--anchor-descent"],
+                   "propose(place)", args.verbose)
     else:
         run_module("gwm_hardware.gwm_arm.propose",
                    ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,

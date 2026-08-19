@@ -56,6 +56,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 import open3d as o3d
 import torch
 from curobo.rollout.cost.pose_cost import PoseCostMetric
@@ -239,6 +240,12 @@ def main() -> None:
     ap.add_argument("--use-robot-arm-filter", action="store_true",
                     help="identify the arm by the robot's own collision spheres rather "
                          "than by cluster height")
+    ap.add_argument("--anchor-descent", action="store_true",
+                    help="build the constrained descent's goal from the pose the approach "
+                         "actually reached, not the one it was asked for. Required wherever "
+                         "the approach lands off its request by more than cuRobo's "
+                         "hold_partial_pose tolerance, which is every descent into a "
+                         "container on the zhiwei rig")
     args = ap.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -340,15 +347,79 @@ def main() -> None:
                 n_fail += 1
                 continue
             js_pre = JointState.from_position(approach.get_interpolated_plan().position[-1:])
+
+            # Anchor the descent goal to where the approach ACTUALLY ended, not
+            # to where it was asked to end. `hold_partial_pose` requires the
+            # HELD dimensions -- x, y and orientation -- to be equal between
+            # start and goal, and the approach lands within a planner tolerance
+            # of its request, not on it. Building the goal from the request
+            # therefore asks cuRobo to hold a dimension that already differs,
+            # and it refuses: every descent into the one correctly-detected
+            # container failed with INVALID_PARTIAL_POSE_COST_METRIC
+            # (2026-08-19), preceded by its own "Partial position between start
+            # and goal is not equal" warning.
+            #
+            # Anchoring is also the honest statement of the intent: a
+            # constrained descent means "straight down from HERE". The landing
+            # xy then moves by the approach tolerance, which is sub-millimetre
+            # against the +/-18 mm offset pattern the candidates already span.
+            if args.anchor_descent:
+                _ach = motion_gen.kinematics.get_state(js_pre.position).ee_pose
+                _q = _ach.quaternion[0].detach().cpu().numpy()
+                _axis = Rotation.from_quat([_q[1], _q[2], _q[3], _q[0]]).as_matrix()[:, 2]
+                _p0 = _ach.position[0].detach().cpu().numpy()
+                # Travel far enough ALONG THE GRIPPER'S OWN AXIS to reach the
+                # landing height. Not along world z: cuRobo evaluates the held
+                # dimensions in the GOAL frame, so a world-vertical descent by a
+                # gripper tilted t degrees registers as lateral motion of
+                # depth*sin(t) and is rejected past 5 mm. Measured here: 2.7 deg
+                # of tilt, harmless over the 45 mm drop onto a solid top
+                # (2.1 mm) and fatal over the 121 mm drop into a container
+                # (5.7 mm) -- which is why only the container ever failed.
+                #
+                # Descending along the approach axis is also the better
+                # motion: it is the direction the fingers point and the
+                # direction the object was carried in, so it cannot scrape a
+                # container wall the way a world-vertical drop from a tilted
+                # gripper can. It costs depth*sin(t) of lateral drift, ~6 mm
+                # here, against the +/-18 mm offsets the candidates span.
+                _target_z = float(place_z + d_bottom)
+                if abs(_axis[2]) < 1e-6:
+                    _log.warning(f"{dest}[{k}]: gripper axis is horizontal; skipping")
+                    n_fail += 1
+                    continue
+                _pos = _p0 + _axis * ((_target_z - _p0[2]) / _axis[2])
+                descend_goal = Pose(position=tensor_args.to_device(_pos).float()[None],
+                                    quaternion=_ach.quaternion.clone())
+            else:
+                descend_goal = ee_pose_for_held(np.array([*target_xy, place_z]))
+
             motion_gen.world_coll_checker.enable_obstacle(enable=False, name=dest)
             try:
-                descend = motion_gen.plan_single(
-                    js_pre, ee_pose_for_held(np.array([*target_xy, place_z])), descend_cfg.clone()
-                )
+                descend = motion_gen.plan_single(js_pre, descend_goal, descend_cfg.clone())
             finally:
                 motion_gen.world_coll_checker.enable_obstacle(enable=True, name=dest)
             if not descend.success.item():
-                _log.warning(f"{dest}[{k}]: descend failed ({descend.status}); skipping")
+                # Turn cuRobo's opaque status into the numbers it actually
+                # tested. INVALID_PARTIAL_POSE_COST_METRIC means the start,
+                # projected into the GOAL frame, violated a held dimension:
+                # angular distance > 0.05 rad, or |x| / |y| > 5 mm
+                # (motion_gen.update_pose_cost_metric). Knowing WHICH, and by
+                # how much, is the difference between a fix and a guess.
+                detail = ""
+                try:
+                    _sp = motion_gen.compute_kinematics(js_pre).ee_pose.clone()
+                    _pp = descend_goal.compute_local_pose(_sp)
+                    _ang = float(_pp.angular_distance(
+                        Pose.from_list([0, 0, 0, 1, 0, 0, 0],
+                                       tensor_args=tensor_args)).max())
+                    _lin = _pp.position[0].detach().cpu().numpy()
+                    detail = (f"  [start in goal frame: angular {_ang:.4f} rad (limit 0.05), "
+                              f"dx {_lin[0]*1000:+.1f} dy {_lin[1]*1000:+.1f} dz {_lin[2]*1000:+.1f} mm "
+                              f"(x,y limit 5 mm)]")
+                except Exception as _e:      # noqa: BLE001 - diagnostics only
+                    detail = f"  [could not evaluate the constraint: {_e}]"
+                _log.warning(f"{dest}[{k}]: descend failed ({descend.status}); skipping{detail}")
                 n_fail += 1
                 continue
 
@@ -362,7 +433,8 @@ def main() -> None:
             save_tiptop_plan(plan, args.output_dir / name)
             index.append({"file": name, "target": dest, "grasp_confidence": 1.0,
                           "offset": [ox, oy], "traj_s": round(dur, 2),
-                          "landing": {"target_xy": np.round(surf["target_xy"], 4).tolist(),
+                          "landing": {"anchored": bool(args.anchor_descent),
+                                      "target_xy": np.round(surf["target_xy"], 4).tolist(),
                                       "land_z": round(surf["land_z"], 4),
                                       "rim_z": round(surf["rim_z"], 4),
                                       "hollow": surf["hollow"]}})
