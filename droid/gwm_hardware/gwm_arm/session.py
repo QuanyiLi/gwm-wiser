@@ -452,6 +452,21 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                         if len(_rank) > 1 else None),
                 object_ranking=[{"target": d["target"], "score": round(d["score"], 4),
                                  "n": d["n"]} for d in _rank])
+    # Which perceived objects were never on the menu. A selection among 2 of the
+    # 4 things on the table reads exactly like a selection among 4 unless this
+    # is said: on 2026-08-19 "go get the food" picked the box by +0.0606 and the
+    # tomato was not a candidate at all -- perceived, 382 points, inside the
+    # M2T2 crop, but no grasp survived, so the margin was between two wrong
+    # answers and the scorer never saw the right one.
+    _per = index.get("perception", {}) or {}
+    _scored = {d["target"] for d in scores.get("object_ranking", [])}
+    _absent = [c for c in _per.get("clusters", []) if c not in _scored]
+    if _absent:
+        _graspless = set(_per.get("graspless_clusters", []))
+        print("\n  NOT on the menu  : " + ", ".join(
+            f"{c} ({'no grasp proposed' if c in _graspless else 'no candidate survived planning'})"
+            for c in _absent))
+        print("                     the choice below is only among the rest")
     print(f"\n  selected object : {scores.get('selected_target')}")
     for d in scores.get("object_ranking", [])[:4]:
         print(f"      {d['score']:+.4f}  {d['target']}  (n={d['n']})")
