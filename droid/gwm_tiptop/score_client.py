@@ -105,13 +105,32 @@ def score_candidates(
     return resp.json()
 
 
-def plan_to_candidate(plan: dict) -> dict:
+def plan_to_candidate(plan: dict, drop_static_prefix: bool = False,
+                      append_release: bool = False) -> dict:
     """serialize_plan dict -> execution timeline for scoring.
 
     Trajectory steps advance time by their own dt per waypoint; gripper steps
     hold the last qpos for GRIPPER_PAUSE_S while the gripper value ramps to
     its target, mirroring how the websocket client executes the plan.
+
+    Two hardware-only corrections, both default OFF so droid-sim is untouched:
+
+    `drop_static_prefix` starts the timeline at the moment the arm first MOVES.
+    A leading gripper step holds q_init -- the capture pose -- for 1.33 s, and
+    the RAT window is laid over the whole timeline, so on a 2.8 s place plan
+    two of the six frames landed on a pose that is identical across every
+    candidate. A third of the evidence, carrying zero information about which
+    candidate it was.
+
+    `append_release` puts the RELEASE into the scored timeline. A hardware
+    place plan ends the moment the gripper arrives above the target: the open
+    is issued afterwards by the session, so it was never scored. Since the
+    renderer draws the robot only and never the carried object, that left a
+    place looking, pixel for pixel, exactly like a grasp approach -- empty
+    gripper descending onto an object and stopping, still closed. The open is
+    the one frame in which the two differ, and it was outside the window.
     """
+    import numpy as np
     positions, times, gripper = [], [], []
     t, g, close_t = 0.0, 0.0, None
     for step in plan["steps"]:
@@ -142,6 +161,24 @@ def plan_to_candidate(plan: dict) -> dict:
                 gripper.append(g + (target - g) * (k + 1) / GRIPPER_PAUSE_SUBSTEPS)
                 t += GRIPPER_PAUSE_S / GRIPPER_PAUSE_SUBSTEPS
             g = target
+
+    if append_release and g != 0.0:
+        last = positions[-1] if positions else list(plan["q_init"])
+        for k in range(GRIPPER_PAUSE_SUBSTEPS):
+            positions.append(last)
+            times.append(t)
+            gripper.append(g * (1.0 - (k + 1) / GRIPPER_PAUSE_SUBSTEPS))
+            t += GRIPPER_PAUSE_S / GRIPPER_PAUSE_SUBSTEPS
+
+    if drop_static_prefix and positions:
+        P = np.asarray(positions, dtype=np.float64)
+        moved = np.abs(P - P[0]).max(axis=1) > 1e-6
+        # Keep the last stationary waypoint, so the window opens on the instant
+        # of departure rather than one step after it.
+        i = max(0, int(np.argmax(moved)) - 1) if moved.any() else 0
+        positions, gripper = positions[i:], gripper[i:]
+        times = [x - times[i] for x in times[i:]]
+
     return {
         "positions": [list(map(float, p)) for p in positions],
         "t": [round(float(x), 4) for x in times],
@@ -169,6 +206,12 @@ def main() -> None:
                     help="how each object's candidates reduce to one object score; "
                          "max = pre-2026-08-11 global per-candidate argmax")
     ap.add_argument("--dump-dir", type=Path)
+    ap.add_argument("--drop-static-prefix", action="store_true",
+                    help="open the RAT window where the arm first MOVES, not where the "
+                         "timeline starts (hardware; see plan_to_candidate)")
+    ap.add_argument("--append-release", action="store_true",
+                    help="score the gripper OPENING at the target too -- the frame that "
+                         "tells a place apart from a grasp (hardware; see plan_to_candidate)")
     args = ap.parse_args()
     rat_scale = None if args.rat_scale.strip().lower() == "none" else float(args.rat_scale)
 
@@ -191,7 +234,9 @@ def main() -> None:
                           np.asarray(f[f"{cam}/intrinsic_matrix"]), c2w))
 
     sampling = {"rat_scale": rat_scale, "task_image": args.task_image}
-    candidates = [plan_to_candidate(plan) for _, plan in plans]
+    timeline = {"drop_static_prefix": args.drop_static_prefix,
+                "append_release": args.append_release}
+    candidates = [plan_to_candidate(plan, **timeline) for _, plan in plans]
     per_view = []
     for cam, rgb, K, c2w in views:
         s = dict(sampling)
@@ -201,6 +246,7 @@ def main() -> None:
                                                args.instruction, candidates, s)))
     if args.dump_dir:
         sampling["dump_dir"] = str(args.dump_dir)
+    sampling.update(timeline)   # so a viewer can rebuild the exact scored timeline
 
     # Multi-view fusion (G-30): plain arithmetic mean of each candidate's score
     # across views, then the unchanged two-stage selection. The views score the

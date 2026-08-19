@@ -286,7 +286,14 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                ["--proposals-dir", proposals, "--external-h5", run_dir / "external_obs.h5",
                 "--instruction", instruction, "--cam", args.cam, "--tag", tag,
                 "--rat-scale", args.rat_scale, "--object-score", args.object_score,
-                "--server-url", args.server_url, "--dump-dir", run_dir / f"rat_{tag}"],
+                "--server-url", args.server_url, "--dump-dir", run_dir / f"rat_{tag}"]
+               # A place plan's scored timeline is not its executed one. It opens
+               # with 1.33 s of the arm frozen at the capture pose while the
+               # gripper closes, and it ENDS the instant the gripper arrives --
+               # the release is issued afterwards by release_then_home, so it was
+               # never scored. Renders are robot-only, so without the open frame a
+               # place is pixel-identical to a grasp approach.
+               + (["--drop-static-prefix", "--append-release"] if held else []),
                "score", args.verbose)
 
     if not held and args.gate:
