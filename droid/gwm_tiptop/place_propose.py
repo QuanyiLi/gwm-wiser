@@ -103,6 +103,9 @@ HOLLOW_MIN_DEPTH = 0.030
 HAND_CROP_RADIUS = 0.20
 FLOAT_TOLERANCE = 0.04
 SELF_SPHERE_PAD = 0.010
+# How far a candidate's first waypoint may sit from the pose the arm is
+# actually in. Anything beyond this is a commanded jump, not a motion.
+START_TOL_RAD = 0.02
 
 
 def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.ndarray,
@@ -238,6 +241,24 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
     return out
 
 
+def snapshot(res) -> dict:
+    """Copy a planner result's interpolated trajectory off the GPU, NOW.
+
+    cuRobo's result objects reference planner-owned buffers, and this loop
+    plans repeatedly with two different configs on one `MotionGen`. Read late,
+    a result no longer describes the motion that was planned: on 2026-08-19
+    every place candidate after the first came back with a 0.06 rad
+    "approach" that began at the PREVIOUS candidate's end instead of at the
+    capture pose -- up to 0.885 rad (51 deg) from where the arm actually was,
+    which the controller refused to execute. Snapshotting between the plan and
+    the next `plan_single` is what makes each candidate independent.
+    """
+    ip = res.get_interpolated_plan()
+    return {"positions": ip.position.cpu().numpy().copy(),
+            "velocities": ip.velocity.cpu().numpy().copy(),
+            "dt": res.interpolation_dt}
+
+
 def emit_plan(q_init: np.ndarray, dest: str, results: list, skip_close: bool = False) -> dict:
     # droid-sim starts with the gripper OPEN around a welded block, so the plan
     # has to close it before transporting. On hardware the gripper is ALREADY
@@ -249,15 +270,8 @@ def emit_plan(q_init: np.ndarray, dest: str, results: list, skip_close: bool = F
     # sat at +0.0001 to +0.0021.
     steps = ([] if skip_close else
              [{"type": "gripper", "label": f"Close(held@{dest})", "action": "close"}])
-    for label, res in results:
-        plan = res.get_interpolated_plan()
-        steps.append({
-            "type": "trajectory",
-            "label": label,
-            "positions": plan.position.cpu().numpy(),
-            "velocities": plan.velocity.cpu().numpy(),
-            "dt": res.interpolation_dt,
-        })
+    for label, snap in results:
+        steps.append({"type": "trajectory", "label": label, **snap})
     return {"version": "1.0.0", "q_init": q_init, "steps": steps}
 
 
@@ -410,7 +424,25 @@ def main() -> None:
         target = np.array([*(bottom_xyz[:2] + d_xy), bottom_xyz[2] + d_bottom])
         return Pose(position=tensor_args.to_device(target).float()[None], quaternion=ee0_quat)
 
-    js_init = JointState.from_position(q_init[None])
+    def start_state() -> JointState:
+        """A FRESH JointState at the capture pose, for every single plan call.
+
+        `JointState.from_position` wraps the tensor it is given rather than
+        copying it, and cuRobo writes back into a start state it has been
+        handed. Hoisting one `js_init` out of the loop -- which is what this
+        did, and what droid-sim gets away with because its scenes never
+        triggered the write -- means candidate k+1 is planned from wherever
+        candidate k left the buffer.
+        
+        Measured on this rig, 2026-08-19: at k=0 the buffer held the capture
+        pose; from k=1 on it held a pose up to 0.885 rad (51 deg) away, so 15
+        of 16 place candidates were trajectories the arm could not begin. The
+        controller refused the winner outright ("Trajectory execution failed",
+        which names nothing) and the arm never moved.
+        """
+        return JointState.from_position(
+            tensor_args.to_device(np.asarray(obs["q_init"], dtype=np.float64)).float()[None])
+
     index, n_fail = [], 0
     for (dest, surf), quota in zip(landings.items(), quotas):
         approach_z = surf["rim_z"] + APPROACH_CLEARANCE
@@ -451,13 +483,16 @@ def main() -> None:
         for k, (ox, oy) in enumerate(XY_OFFSETS[:quota]):
             target_xy = surf["target_xy"] + np.array([ox, oy])
             approach = motion_gen.plan_single(
-                js_init, ee_pose_for_held(np.array([*target_xy, approach_z])), plan_cfg.clone()
+                start_state(), ee_pose_for_held(np.array([*target_xy, approach_z])),
+                plan_cfg.clone()
             )
             if not approach.success.item():
                 _log.warning(f"{dest}[{k}]: approach failed ({approach.status}); skipping")
                 n_fail += 1
                 continue
-            js_pre = JointState.from_position(approach.get_interpolated_plan().position[-1:])
+            approach_snap = snapshot(approach)
+            js_pre = JointState.from_position(
+                tensor_args.to_device(approach_snap["positions"][-1:]).float())
 
             # Anchor the descent goal to where the approach ACTUALLY ended, not
             # to where it was asked to end. `hold_partial_pose` requires the
@@ -534,10 +569,29 @@ def main() -> None:
                 n_fail += 1
                 continue
 
+            descend_snap = snapshot(descend)
+
+            # The arm has to be able to START this plan. A candidate whose
+            # first waypoint is not the capture pose is not a plan for this
+            # robot at this moment, whatever else is right about it.
+            gap = float(np.abs(approach_snap["positions"][0] - obs["q_init"]).max())
+            if gap > START_TOL_RAD:
+                _log.warning(f"{dest}[{k}]: discarded -- its first waypoint is {gap:.4f} rad "
+                             f"({np.degrees(gap):.1f} deg) from the capture pose, so it "
+                             f"commands a jump rather than a motion")
+                n_fail += 1
+                continue
+            gap = float(np.abs(descend_snap["positions"][0] - approach_snap["positions"][-1]).max())
+            if gap > START_TOL_RAD:
+                _log.warning(f"{dest}[{k}]: discarded -- the descent starts {gap:.4f} rad "
+                             f"from where the approach ends")
+                n_fail += 1
+                continue
+
             i = len(index)
             plan = emit_plan(obs["q_init"], dest, [
-                (f"MoveHolding(held, {dest})", approach),
-                (f"Place(held, {dest})", descend),
+                (f"MoveHolding(held, {dest})", approach_snap),
+                (f"Place(held, {dest})", descend_snap),
             ], skip_close=args.skip_leading_close)
             dur = sum(len(st["positions"]) * st["dt"] for st in plan["steps"] if st["type"] == "trajectory")
             name = f"plan_{i:02d}_{dest}.json"

@@ -118,6 +118,9 @@ _KEEP = re.compile(
     # what the proposer and the gate concluded
     r"|Wrote \d+ proposals|gate\.json written|refine \d+ failed"
     r"|Dropping graspless|Skipping cluster|Merging clusters"
+    # which destinations a place is actually choosing between, and why the
+    # others are gone -- the difference between reading a ranking and guessing
+    r"|NOT a placement destination|\d+ destinations, quotas|discarded --"
     # the two safety facts
     r"|gripper mask applied|is holding something|timing: "
 )

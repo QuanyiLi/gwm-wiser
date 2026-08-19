@@ -43,6 +43,44 @@ _log = logging.getLogger("gwm_arm.execute")
 # 0.02 rad is ~1.1 deg; the deterministic go-to-capture repeats far tighter
 # than that, so anything larger means the arm is somewhere else entirely.
 Q_INIT_TOL_RAD = 0.02
+# A trajectory step must START where the arm already is. The controller does
+# not interpolate into a path: it is handed waypoints and follows them, so a
+# first waypoint far from the current configuration is a commanded jump.
+#
+# On 2026-08-19 a place plan was handed one 0.885 rad (51 deg) from the
+# capture pose and the controller aborted with "Trajectory execution failed"
+# -- a message that says nothing about the cause, and the same message a
+# collision or a limit violation produces. The arm did not move (drift
+# 0.0004 rad), so the controller's own guard held; this one exists so the
+# failure is named BEFORE anything is sent, and so a controller with a laxer
+# guard cannot be handed the jump at all.
+MAX_STEP_JUMP_RAD = 0.05
+
+
+def check_continuity(plan: dict, q_now) -> None:
+    """Every trajectory must begin where the previous step left the arm.
+
+    Checked over the whole plan before a single waypoint is sent, because the
+    interesting failure is a plan that executes its first step and faults on
+    its second, leaving the arm somewhere no later step expects.
+    """
+    import numpy as _np
+
+    q = _np.asarray(q_now, dtype=_np.float64)
+    for i, step in enumerate(plan["steps"]):
+        if step["type"] != "trajectory":
+            continue
+        pos = _np.asarray(step["positions"], dtype=_np.float64)
+        gap = float(_np.abs(pos[0] - q).max())
+        if gap > MAX_STEP_JUMP_RAD:
+            j = int(_np.argmax(_np.abs(pos[0] - q)))
+            raise ValueError(
+                f"step {i + 1} ({step.get('label', 'trajectory')}) starts {gap:.4f} rad "
+                f"({_np.degrees(gap):.1f} deg) from where the arm will be, worst on joint "
+                f"{j + 1} ({q[j]:+.4f} -> {pos[0][j]:+.4f}). Limit {MAX_STEP_JUMP_RAD} rad. "
+                f"This plan commands a jump; refusing to send it."
+            )
+        q = pos[-1]
 
 
 def describe(plan: dict) -> str:
@@ -66,6 +104,8 @@ def execute_serialized(plan: dict, client) -> None:
     import time
 
     from tiptop.execute_plan import ExecutionFailure
+
+    check_continuity(plan, client.get_joint_positions())
 
     start = time.perf_counter()
     for i, step in enumerate(plan["steps"]):
