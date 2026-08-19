@@ -62,6 +62,7 @@ from pathlib import Path
 import numpy as np
 
 from gwm_hardware.common.paths import PKG_ROOT
+from gwm_hardware.common.gripper_geometry import closed_tip_overhang
 from gwm_hardware.gwm_arm.capture import EXTERNAL_CAM
 from gwm_hardware.gwm_arm.run_real import (
     DEPTH_PORT,
@@ -270,7 +271,9 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
         run_module("gwm_tiptop.place_propose",
                    ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
                     "--k-total", args.k_total, "--use-plane-normal",
-                    "--use-robot-arm-filter", "--anchor-descent"],
+                    "--use-robot-arm-filter", "--anchor-descent",
+                    "--closed-tip-overhang", f"{closed_tip_overhang():.5f}",
+                    "--release-above-rim", str(args.release_above_rim)],
                    "propose(place)", args.verbose)
     else:
         run_module("gwm_hardware.gwm_arm.propose",
@@ -356,6 +359,10 @@ def main() -> None:
     ap.add_argument("--server-url", default=f"http://localhost:{SCORER_PORT}")
     ap.add_argument("--width-closed", type=float, default=0.005,
                     help="fallback width threshold if the controller reports no is_grasped")
+    ap.add_argument("--release-above-rim", type=float, default=0.03,
+                    help="metres above a container's rim to release from, letting the "
+                         "object drop in rather than carrying it to the floor. 0 carries "
+                         "it down (droid-sim's behaviour)")
     ap.add_argument("--debug", action="store_true",
                     help="also run the debug viewer: the Rerun scene and the "
                          "score_overlay png with every candidate coloured by its score. "

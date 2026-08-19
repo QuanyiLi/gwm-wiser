@@ -240,6 +240,16 @@ def main() -> None:
     ap.add_argument("--use-robot-arm-filter", action="store_true",
                     help="identify the arm by the robot's own collision spheres rather "
                          "than by cluster height")
+    ap.add_argument("--release-above-rim", type=float, default=0.0,
+                    help="metres above a CONTAINER's rim to stop at, so the object is "
+                         "dropped in rather than carried to the floor. 0 reproduces "
+                         "droid-sim (descend to the inner floor); a container is the only "
+                         "case it applies to, solid tops are unaffected")
+    ap.add_argument("--closed-tip-overhang", type=float, default=0.0,
+                    help="metres the CLOSED fingertips reach beyond grasp_frame. The "
+                         "planner locks the gripper open, so this much of any carried "
+                         "clearance is invisible to it. 0 reproduces droid-sim; measure "
+                         "yours with gwm_hardware.common.gripper_geometry")
     ap.add_argument("--anchor-descent", action="store_true",
                     help="build the constrained descent's goal from the pose the approach "
                          "actually reached, not the one it was asked for. Required wherever "
@@ -336,7 +346,40 @@ def main() -> None:
     index, n_fail = [], 0
     for (dest, surf), quota in zip(landings.items(), quotas):
         approach_z = surf["rim_z"] + APPROACH_CLEARANCE
-        place_z = surf["land_z"] + LANDING_CLEARANCE
+        # Clearance is to the LOWEST REAL GEOMETRY, which is not always the
+        # object. `place_z` positions the held object's BOTTOM, but the closed
+        # fingertips reach `--closed-tip-overhang` past `grasp_frame` while the
+        # planner has the gripper locked open and cannot see it. Whichever of
+        # the two hangs lower is what has to clear the landing surface.
+        #
+        # Measured on the first hardware place: overhang 23.7 mm against a
+        # held-object drop of 18.4 mm, so the fingers hung 5.3 mm below the
+        # tomato. The planner believed it had 28.4 mm of clearance and actually
+        # had 4.7 mm, and the descent faulted into the table.
+        finger_drop = float(max(0.0, args.closed_tip_overhang - float(d_bottom)))
+        if surf["hollow"] and args.release_above_rim > 0.0:
+            # Hover over the mouth and let it fall, instead of carrying it down
+            # to the floor. For a CONTAINER this is both safer and no less
+            # accurate:
+            #
+            #  * the gripper never enters, so neither the closed fingers' 23.7 mm
+            #    of invisible reach nor the mouth's width can bite -- the first
+            #    hardware place faulted into the table on exactly that;
+            #  * the descent shortens from ~121 mm to a few tens, and the
+            #    tilt-induced lateral projection shrinks with it;
+            #  * droid-sim already measured the precision. The baseline TiPToP
+            #    arm releases ~65 mm above the mouth and its blocks land 5-12 mm
+            #    from the bin centre -- BETTER than the GWM arm's carried poses
+            #    at 14-35 mm (G-32). Free fall from the rim is not the sloppy
+            #    option.
+            #
+            # Still measured to the lowest real geometry, so the fingers clear
+            # the rim rather than the object merely clearing it.
+            place_z = surf["rim_z"] + args.release_above_rim + finger_drop
+            drop_mode = "over-rim"
+        else:
+            place_z = surf["land_z"] + LANDING_CLEARANCE + finger_drop
+            drop_mode = "to-surface"
         for k, (ox, oy) in enumerate(XY_OFFSETS[:quota]):
             target_xy = surf["target_xy"] + np.array([ox, oy])
             approach = motion_gen.plan_single(
@@ -436,6 +479,8 @@ def main() -> None:
                           "landing": {"anchored": bool(args.anchor_descent),
                                       "target_xy": np.round(surf["target_xy"], 4).tolist(),
                                       "land_z": round(surf["land_z"], 4),
+                                      "finger_drop": round(finger_drop, 4),
+                                      "mode": drop_mode,
                                       "rim_z": round(surf["rim_z"], 4),
                                       "hollow": surf["hollow"]}})
             _log.info(f"{name}: {dur:.1f}s of trajectory (+1.33s close)")
