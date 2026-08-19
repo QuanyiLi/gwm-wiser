@@ -78,6 +78,52 @@ def fk_model(tensor_args=None):
 _SOLVERS: dict = {}
 
 
+def _build_solvers(num_particles: int, num_spheres: int, include_workspace: bool,
+                   use_cuda_graph: bool):
+    """`tiptop.motion_planning.build_curobo_solvers`, with the graph flag exposed.
+
+    Identical otherwise -- same world, same helpers, same order.
+    """
+    from curobo.geom.types import Cuboid, WorldConfig
+
+    from tiptop.motion_planning import get_ik_solver, get_motion_gen
+    from tiptop.workspace import workspace_cuboids
+
+    cuboids = [
+        *(workspace_cuboids() if include_workspace else []),
+        Cuboid(name="table", dims=[0.01, 0.01, 0.01], pose=[99.9, 99.9, 99.9, 1.0, 0.0, 0.0, 0.0]),
+    ]
+    world_cfg = WorldConfig(cuboid=cuboids)
+    ik_solver = get_ik_solver(world_cfg, num_particles)
+    motion_gen = get_motion_gen(world_cfg, collision_activation_distance=0.0,
+                                num_spheres=num_spheres, use_cuda_graph=use_cuda_graph)
+    return ik_solver, motion_gen, world_cfg
+
+
+# CUDA graphs off on the SHARED solver, deliberately.
+#
+# cuRobo records the collision checker into a CUDA graph, and grows its mesh
+# cache whenever a scene brings more obstacles than any scene before it. Its own
+# source says what that costs (geom/sdf/world_mesh.py:96-99): "when using
+# collision checker inside a recorded cuda graph, recreating the cache will
+# break the graph as the reference pointer to the cache will change."
+#
+# While every stage built its own solver, no solver ever saw a second scene and
+# the hazard could not fire. Shared across turns it fires as soon as one turn
+# has more clusters than the turns before it -- observed 2026-08-19 as
+# "after two plannings the third one always fails", landing as
+#
+#     RuntimeError: CUDA error: an illegal memory access was encountered
+#
+# inside the IK solve, i.e. the graph replaying against freed memory. It is not
+# recoverable in-process: the context is poisoned and the session dies.
+#
+# Pre-sizing the cache would keep the graphs, but the size has to be chosen
+# before warm-up records them and there is no honest bound on how many clusters
+# a scene will have. Correctness first.
+SHARED_USE_CUDA_GRAPH = False
+
+
 def planning_solvers(num_particles: int, num_spheres: int, include_workspace: bool = True):
     """`build_curobo_solvers`, built once per (process, configuration).
 
@@ -94,8 +140,10 @@ def planning_solvers(num_particles: int, num_spheres: int, include_workspace: bo
 
     key = (int(num_particles), int(num_spheres), bool(include_workspace))
     if key not in _SOLVERS:
-        _log.info(f"building cuRobo solvers {key} (once per session)")
-        _SOLVERS[key] = build_curobo_solvers(*key[:2], include_workspace=key[2])
+        _log.info(f"building cuRobo solvers {key} (once per session, "
+                  f"cuda_graph={SHARED_USE_CUDA_GRAPH})")
+        _SOLVERS[key] = _build_solvers(*key[:2], include_workspace=key[2],
+                                       use_cuda_graph=SHARED_USE_CUDA_GRAPH)
     return _SOLVERS[key]
 
 
