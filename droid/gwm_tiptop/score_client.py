@@ -40,6 +40,21 @@ under max. `mean` is the default because it is size-normalised (quotas are
 floor+remainder, so families differ by one) and had the best worst-case margin
 (+0.0052 vs median's +0.0015). The 4 place tasks are 4/4 under every rule.
 
+HARDWARE CAVEAT (2026-08-19, user-reported): `mean` assumes an object's
+candidates are comparable samples of how good that object is. They are not
+when the object is hard to grasp. On *"pick up the object between the two
+containers"* GWM ranked the tomato **first and second** overall (+0.7645,
++0.7541) and the blue cup third through seventh -- the grounding was right --
+but the tomato's five candidates spread 0.0396 against the cup's 0.0118,
+because M2T2's confidence in them was 0.16-0.37 against the cup's 0.46-0.78.
+A small round object has a poor, diverse grasp family, `se3_fps_indices`
+samples it for diversity, and the tail drags the mean down: cup +0.7445,
+tomato +0.7436, and the robot went for the cup by 0.0008. `max` (+0.0138) and
+`top2` (+0.0115) both get it right; `median` does not. Across the 25 scored
+hardware runs to date the four rules disagree on 11, so the default has NOT
+been changed on this one case -- but `top2` matched `mean` in sim and wins
+here, so it is the better-supported option of the two.
+
 VIEWPOINT (--cam, default `external_cam_2` since 2026-08-11, G-29): the DROID
 rig carries two third-person cameras and the capture h5 stores both, so the
 scene image the scorer sees is a free choice — and it is a FIRST-ORDER one.
@@ -202,9 +217,14 @@ def main() -> None:
                     help="WISER schedule scale from trajectory start (G-20 default 3.0); "
                          "'none' = uniform 6 frames over the full trajectory")
     ap.add_argument("--task-image", default="current", choices=["current", "none"])
-    ap.add_argument("--object-score", default="mean", choices=["mean", "max", "median"],
+    ap.add_argument("--object-score", default="mean",
+                    choices=["mean", "max", "median", "top2"],
                     help="how each object's candidates reduce to one object score; "
-                         "max = pre-2026-08-11 global per-candidate argmax")
+                         "max = pre-2026-08-11 global per-candidate argmax. `top2` is the "
+                         "mean of an object's two best candidates -- it scored the same "
+                         "9/10 as `mean` in sim (G-28) and, unlike `mean`, is not thrown "
+                         "off by an object whose grasp family is wide because its grasps "
+                         "are poor (see the hardware note below)")
     ap.add_argument("--dump-dir", type=Path)
     ap.add_argument("--drop-static-prefix", action="store_true",
                     help="open the RAT window where the arm first MOVES, not where the "
@@ -287,7 +307,8 @@ def main() -> None:
     for score, sm, entry in ranked:
         print(f"  {score:+.4f} (p={sm:.3f})  {entry['file']}  target={entry['target']}")
 
-    reduce = {"mean": np.mean, "max": np.max, "median": np.median}[args.object_score]
+    reduce = {"mean": np.mean, "max": np.max, "median": np.median,
+              "top2": lambda v: np.mean(sorted(v, reverse=True)[:2])}[args.object_score]
     per_object: dict[str, list[float]] = {}
     for score, _, entry in ranked:
         per_object.setdefault(entry["target"], []).append(score)

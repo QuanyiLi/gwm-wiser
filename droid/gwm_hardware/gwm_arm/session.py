@@ -454,7 +454,11 @@ def main() -> None:
                          "warm-up and the proposer must agree on it")
     ap.add_argument("--cam", default=EXTERNAL_CAM)
     ap.add_argument("--rat-scale", default="3.0")
-    ap.add_argument("--object-score", default="mean", choices=["mean", "max", "median"])
+    ap.add_argument("--object-score", default="mean",
+                    choices=["mean", "max", "median", "top2"],
+                    help="how each object's candidates reduce to one score. `top2` (mean of "
+                         "the two best) is not thrown off by an object whose grasp family "
+                         "is wide because its grasps are poor -- see score_client's docstring")
     ap.add_argument("--server-url", default=f"http://localhost:{SCORER_PORT}")
     ap.add_argument("--width-closed", type=float, default=0.005,
                     help="fallback width threshold if the controller reports no is_grasped")
