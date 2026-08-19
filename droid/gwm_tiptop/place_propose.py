@@ -118,7 +118,7 @@ HELD_MATCH_RADIUS = 0.01
 
 
 def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.ndarray,
-                         table_z: float) -> dict:
+                         table_z: float, robust_bottom: bool = False) -> dict:
     """Measure the in-hand object from the raw world cloud.
 
     Points near the end effector, floating above the table, and outside the
@@ -126,6 +126,20 @@ def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.n
     held object. Returns its xy centroid, a robust bottom height, and the
     point count. Raises if nothing qualifies -- a place proposer without an
     object in hand has nothing to plan.
+
+    `robust_bottom` (hardware only, `--robust-held-bottom`) replaces the p2
+    bottom with a density walk, because on a stereo rig the held object often
+    trails a ray-aligned flying-pixel streak BELOW itself (its silhouette is a
+    depth cliff onto the table) and the streak is connected, so the DBSCAN
+    step above keeps it. Measured over the 8 place captures of 2026-08-19: two
+    carried streaks of 11-12 % of the cloud reaching 100+ mm down, putting p2
+    61 and 116 mm below the true bottom -- and `d_bottom` is EE-minus-bottom,
+    so those two objects were RELEASED that many millimetres too high. Open3d's
+    statistical outlier filter recovers only 20-27 of those mm (the streak is
+    locally dense); walking the 5 mm z-histogram down from its peak until the
+    bin falls under 5 % of peak recovers 61 and 118, and moves the six clean
+    captures by at most 11 mm (median 2.7). Off for droid-sim: GT depth, no
+    streaks, and its p2 numbers are the ones every sim result was produced on.
     """
     d_ee = np.linalg.norm(xyz - ee_pos, axis=1)
     keep = (d_ee < HAND_CROP_RADIUS) & (xyz[:, 2] > table_z + FLOAT_TOLERANCE) \
@@ -146,11 +160,33 @@ def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.n
         raise RuntimeError("In-hand points did not form a cluster")
     sel = labels == np.bincount(labels[labels >= 0]).argmax()
     obj = pts[sel]
+    bottom_z = float(np.percentile(obj[:, 2], 2))
+    if robust_bottom:
+        z = obj[:, 2]
+        nbins = max(4, int(np.ceil((z.max() - z.min()) / 0.005)))
+        hist, edges = np.histogram(z, bins=nbins)
+        pk = int(hist.argmax())
+        j = pk
+        # walk down while the next bin still holds >= 5% of the PEAK bin: a
+        # graded shoulder (a bowl's sloping side) stays above that and is
+        # followed; the streak below the real bottom is 1-2% of peak per bin
+        # and is not
+        while j > 0 and hist[j - 1] >= 0.05 * hist[pk]:
+            j -= 1
+        walked = float(edges[j])
+        if walked > bottom_z + 0.02:
+            _log.warning(
+                f"held-object bottom: p2 reads {bottom_z:.4f} but the density mass "
+                f"starts at {walked:.4f} -- using {walked:.4f}. The "
+                f"{(walked - bottom_z) * 1000:.0f} mm below it is a flying-pixel streak, "
+                "and releasing from that belief would drop the object from that height"
+            )
+        bottom_z = max(bottom_z, walked)
     held = {
         "points": obj,
         "xy": obj[:, :2].mean(axis=0),
         "r90": float(np.percentile(np.linalg.norm(obj[:, :2] - obj[:, :2].mean(axis=0), axis=1), 90)),
-        "bottom_z": float(np.percentile(obj[:, 2], 2)),
+        "bottom_z": bottom_z,
         "top_z": float(np.percentile(obj[:, 2], 98)),
         "npts": int(sel.sum()),
     }
@@ -341,6 +377,11 @@ def main() -> None:
                          "it does not drift when the payload changes size (0 = off, droid-sim "
                          "default; 0.18 on this rig separates container floors at 0.076-0.120 "
                          "from ball tops at 0.294-0.347)")
+    ap.add_argument("--robust-held-bottom", action="store_true",
+                    help="measure the held object's bottom by density instead of p2. OFF "
+                         "reproduces droid-sim; ON is required on a stereo rig, where the "
+                         "object's own silhouette trails a flying-pixel streak below it "
+                         "and a p2 bottom then releases the object from mid-air")
     ap.add_argument("--clamp-rim-to-cluster", action="store_true",
                     help="bound a destination's rim height by its own outlier-filtered "
                          "cluster top. OFF reproduces droid-sim, whose GT depth has no "
@@ -434,7 +475,8 @@ def main() -> None:
     ee0_quat = state.ee_pose.quaternion  # (1, 4) on-device; targets reuse home orientation
     self_spheres = state.get_link_spheres()[0].cpu().numpy()  # (n, 4) xyzr
 
-    held = estimate_held_object(xyz_flat, ee0_pos, self_spheres, surface_z)
+    held = estimate_held_object(xyz_flat, ee0_pos, self_spheres, surface_z,
+                                robust_bottom=args.robust_held_bottom)
     d_xy = ee0_pos[:2] - held["xy"]        # EE offset from held-object centre
     d_bottom = ee0_pos[2] - held["bottom_z"]  # EE height above held-object bottom
 

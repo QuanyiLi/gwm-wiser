@@ -375,7 +375,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                     "--closed-tip-overhang", f"{closed_tip_overhang():.5f}",
                     "--release-above-rim", str(args.release_above_rim),
                     "--max-support-slope", str(args.max_support_slope),
-                    "--clamp-rim-to-cluster",
+                    "--clamp-rim-to-cluster", "--robust-held-bottom",
                     "--skip-leading-close"],
                    "propose(place)", args.verbose)
     else:
