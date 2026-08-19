@@ -67,7 +67,7 @@ from curobo.wrap.reacher.motion_gen import MotionGenPlanConfig
 from scipy.spatial import ConvexHull, Delaunay, KDTree, QhullError
 
 from tiptop.config import tiptop_cfg
-from tiptop.motion_planning import build_curobo_solvers
+from gwm_tiptop.robot_fk import planning_solvers
 from tiptop.perception.utils import (
     convert_trimesh_box_to_curobo_cuboid,
     convert_trimesh_to_curobo_mesh,
@@ -373,7 +373,17 @@ def main() -> None:
 
     from curobo.geom.types import WorldConfig
 
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64, include_workspace=False)
+    # Cached, not built fresh. `build_curobo_solvers` constructs an IK solver
+    # AND a MotionGen and warms both; called directly it allocates ~1 GB of GPU
+    # state that nothing ever frees. As a one-shot script that is invisible --
+    # the process exits. Run IN-PROCESS by the hardware session, which is how
+    # every stage runs since the pipeline was made to build once, it means a
+    # fresh solver stack stranded on every PLACE turn, and the session grew
+    # until FoundationStereo could not get its 1.72 GB and the turn died with
+    # a CUDA OOM (2026-08-19). The pick proposer has used the cache since it
+    # was written; this was the one caller left out.
+    _, motion_gen, _ = planning_solvers(num_particles=32, num_spheres=64,
+                                        include_workspace=False)
 
     # Robot-side quantities: FK end effector and the robot's own collision
     # spheres at the capture configuration (proprioception, not scene GT).
