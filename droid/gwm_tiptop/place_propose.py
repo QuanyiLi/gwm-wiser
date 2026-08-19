@@ -74,7 +74,7 @@ from tiptop.perception.utils import (
 )
 from tiptop.planning import save_tiptop_plan
 
-from gwm_tiptop.perception_geometric import cluster_objects, find_table_plane
+from gwm_tiptop.scene_cache import scene
 from gwm_tiptop.propose_from_h5 import load_h5_observation, save_cluster_viz
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -232,6 +232,13 @@ def main() -> None:
     ap.add_argument("--h5-path", required=True, type=Path)
     ap.add_argument("--output-dir", required=True, type=Path)
     ap.add_argument("--k-total", type=int, default=16)
+    ap.add_argument("--use-plane-normal", action="store_true",
+                    help="measure height above the FITTED table plane rather than world z. "
+                         "Required on a rig whose perceived table is tilted; a no-op on a "
+                         "level one. MUST match what the pick side used")
+    ap.add_argument("--use-robot-arm-filter", action="store_true",
+                    help="identify the arm by the robot's own collision spheres rather "
+                         "than by cluster height")
     args = ap.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -240,17 +247,29 @@ def main() -> None:
     obs = load_h5_observation(args.h5_path)
 
     # Perceived world: table plane + clusters from the home wrist RGB-D.
-    depth = obs["depth"].copy()
-    depth[~np.isfinite(depth)] = np.nan
-    depth[(depth <= 0.05) | (depth > 4.0)] = np.nan
-    xyz_map = depth_to_xyz(depth, obs["K"])
-    xyz_map = xyz_map @ obs["world_from_cam"][:3, :3].T + obs["world_from_cam"][:3, 3]
-    rgb_map = obs["rgb"].astype(np.float32) / 255.0
-    xyz_flat = xyz_map[np.isfinite(xyz_map).all(axis=2)]
+    #
+    # The DESTINATIONS are these clusters, so a mis-segmented scene does not
+    # degrade the placement -- it aims at the wrong thing entirely. On the
+    # zhiwei rig with droid-sim's defaults it did exactly that: the perceived
+    # table is tilted 2.88 deg, the world-z cut then loses real containers and
+    # invents slivers, and a "place into the yellow box" landed on bare table
+    # beside it because the box was never a cluster (2026-08-19). These are the
+    # same two options the pick proposer and the grasp gate already take, and
+    # for the same reason; both default OFF so droid-sim is unchanged.
+    robot_spheres = None
+    if args.use_robot_arm_filter:
+        from gwm_tiptop.robot_fk import fk_model
 
-    table_trimesh, surface_z = find_table_plane(xyz_map, rgb_map)
+        robot_spheres = (fk_model(tensor_args).get_state(tensor_args.to_device(obs["q_init"]))
+                         .get_link_spheres()[0].cpu().numpy().astype(np.float64))
+
+    sc = scene(args.h5_path, use_plane_normal=args.use_plane_normal,
+               robot_spheres=robot_spheres)
+    xyz_map, rgb_map = sc["xyz_map"], sc["rgb_map"]
+    xyz_flat = xyz_map[np.isfinite(xyz_map).all(axis=2)]
+    table_trimesh, surface_z = sc["table_box"], sc["surface_z"]
+    object_trimeshes, object_pcds = sc["meshes"], sc["pcds"]
     table_cuboid = convert_trimesh_box_to_curobo_cuboid(table_trimesh, name="table")
-    object_trimeshes, object_pcds = cluster_objects(xyz_map, rgb_map, table_trimesh, surface_z + 0.015)
     save_cluster_viz(obs, object_pcds, args.output_dir / "clusters.png")
 
     obstacles = {l: convert_trimesh_to_curobo_mesh(m, l) for l, m in object_trimeshes.items()}

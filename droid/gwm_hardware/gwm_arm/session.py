@@ -79,7 +79,6 @@ SCORER_PORT = 8901
 
 # How far up to lift before travelling home, and how far the arm may already be
 # from a plan's start before we insist on planning a motion to it.
-HOME_LIFT_M = 0.12
 
 
 def gripper_state(client) -> dict:
@@ -105,53 +104,72 @@ def holding(state: dict, width_closed_m: float) -> bool:
 # ------------------------------------------------------------------ go home
 
 
-def return_home(lift_m: float, execute: bool) -> None:
-    """Lift along z, then travel to q_home. Both segments planned and checked."""
-    from curobo.types.base import TensorDeviceType
+def retrace_descent(plan: dict, client) -> bool:
+    """Back out along the exact path the plan came down. True if it moved.
 
+    The lift after a release wants to be straight up and collision-free. The
+    obvious way is IK on a raised pose, and it does not work here: cuRobo
+    compiles a CUDA graph specialised to the first solve_state an IKSolver
+    sees, and every call shape we can make from outside raises either
+    "changing goal type, cuda graph reset not available" or an AttributeError
+    on a buffer the warm-up never allocated.
+
+    Retracing needs no solver at all, and is strictly better than a fresh
+    Cartesian lift: the last trajectory segment of a place plan IS the
+    constrained straight descent into the destination, so reversing it leaves
+    by the route it arrived on. That path was collision-checked when it was
+    planned and was physically traversed seconds ago.
+
+    Velocities are negated as well as reversed, which is what time-reversing a
+    trajectory means; leaving them positive would command the controller to
+    move away from where the positions go.
+    """
+    steps = [st for st in plan.get("steps", []) if st["type"] == "trajectory"]
+    if not steps:
+        return False
+    last = steps[-1]
+    pos = np.asarray(last["positions"], dtype=np.float64)[::-1].copy()
+    vel = -np.asarray(last["velocities"], dtype=np.float64)[::-1].copy()
+    if len(pos) < 2:
+        return False
+    _log.info(f"retracing the descent ({len(pos)} waypoints) to lift clear")
+    r = client.execute_joint_impedance_path(joint_confs=pos, joint_vels=vel,
+                                            durations=[last["dt"]] * len(pos))
+    if r is None or not r.get("success"):
+        _log.warning(f"retrace refused by the controller: {r}; going home directly")
+        return False
+    return True
+
+
+def return_home(execute: bool, plan: dict | None = None) -> None:
+    """Get clear, then travel to q_home.
+
+    "Clear" is the plan's own descent reversed when there is one, and nothing
+    otherwise -- `go_to_q` plans against the rig workspace either way, so the
+    travel itself is collision-checked. What retracing buys is that the FIRST
+    motion after a release is vertical, instead of a planner free to sweep the
+    held-object-shaped hole sideways through whatever it was placed into.
+    """
     from tiptop.config import tiptop_cfg
-    from tiptop.motion_planning import build_curobo_solvers, go_to_q
+    from tiptop.motion_planning import go_to_q
     from tiptop.utils import get_robot_client
+
+    from gwm_tiptop.robot_fk import default_planning_solvers
 
     cfg = tiptop_cfg()
     client = get_robot_client()
-    tensor_args = TensorDeviceType()
-    ik_solver, motion_gen, _ = build_curobo_solvers(num_particles=64, num_spheres=64,
-                                                    include_workspace=True)
-    q_now = np.asarray(client.get_joint_positions(), dtype=np.float64)
-    state = motion_gen.kinematics.get_state(tensor_args.to_device(q_now))
-    pose = state.ee_pose.get_numpy_matrix()[0]
-
-    # Segment 1: same orientation, same xy, +z. Solved by IK so the lift is a
-    # real configuration the planner then travels to, rather than a jog.
-    target = pose.copy()
-    target[2, 3] += lift_m
-    from curobo.types.math import Pose
-
-    goal = Pose(
-        position=tensor_args.to_device(target[:3, 3][None].astype(np.float32)),
-        quaternion=state.ee_pose.quaternion,
-    )
-    ik = ik_solver.solve_single(goal, retract_config=tensor_args.to_device(q_now).float()[None])
-    if bool(ik.success[0]):
-        q_lift = ik.solution[0][0].cpu().numpy().astype(np.float64)
-        _log.info(f"lift {lift_m * 1000:.0f} mm in z, then home")
-        if execute:
-            go_to_q(q_target=q_lift, time_dilation_factor=cfg.robot.time_dilation_factor,
-                    motion_gen=motion_gen)
-    else:
-        _log.warning("no IK for the straight lift; going home directly. Anything held "
-                     "will travel at its current height -- watch it")
-
+    if not execute:
+        _log.info("(dry run: would retrace the descent, then travel to q_home)")
+        return
+    if plan is not None:
+        retrace_descent(plan, client)
     _log.info("travelling to q_home")
-    if execute:
-        go_to_q(q_target=list(cfg.robot.q_home),
-                time_dilation_factor=cfg.robot.time_dilation_factor, motion_gen=motion_gen)
-    else:
-        _log.info("(dry run: nothing sent)")
+    _, motion_gen, _ = default_planning_solvers()
+    go_to_q(q_target=list(cfg.robot.q_home),
+            time_dilation_factor=cfg.robot.time_dilation_factor, motion_gen=motion_gen)
 
 
-def release_then_home(lift_m: float, execute: bool) -> None:
+def release_then_home(execute: bool, plan: dict | None = None) -> None:
     """What follows a PLACE, once the object is where it was asked to go.
 
     Not scored and not a candidate: having placed something, releasing it and
@@ -162,11 +180,11 @@ def release_then_home(lift_m: float, execute: bool) -> None:
     from tiptop.utils import get_robot_client
 
     if not execute:
-        _log.info("(dry run: would open the gripper and return home)")
+        _log.info("(dry run: would open the gripper, retrace, and return home)")
         return
     _log.info("placed -- opening the gripper")
     get_robot_client().open_gripper(speed=1.0)
-    return_home(lift_m, execute=True)
+    return_home(execute=True, plan=plan)
 
 
 # ----------------------------------------------------------------- the loop
@@ -250,7 +268,8 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                      "the candidates before executing.")
         run_module("gwm_tiptop.place_propose",
                    ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
-                    "--k-total", args.k_total], "propose(place)", args.verbose)
+                    "--k-total", args.k_total, "--use-plane-normal",
+                    "--use-robot-arm-filter"], "propose(place)", args.verbose)
     else:
         run_module("gwm_hardware.gwm_arm.propose",
                    ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
@@ -315,7 +334,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     run_module("gwm_hardware.gwm_arm.execute", argv, "execute", args.verbose)
 
     if held:
-        release_then_home(args.lift, execute=True)
+        release_then_home(execute=True, plan=json.loads(winner.read_text()))
 
 
 def main() -> None:
@@ -333,8 +352,6 @@ def main() -> None:
     ap.add_argument("--rat-scale", default="3.0")
     ap.add_argument("--object-score", default="mean", choices=["mean", "max", "median"])
     ap.add_argument("--server-url", default=f"http://localhost:{SCORER_PORT}")
-    ap.add_argument("--lift", type=float, default=HOME_LIFT_M,
-                    help="metres to lift in z before travelling home")
     ap.add_argument("--width-closed", type=float, default=0.005,
                     help="fallback width threshold if the controller reports no is_grasped")
     ap.add_argument("--debug", action="store_true",
