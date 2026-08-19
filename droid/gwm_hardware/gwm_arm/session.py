@@ -56,6 +56,7 @@ import json
 import logging
 import re
 import subprocess
+import traceback
 import time
 from pathlib import Path
 
@@ -304,6 +305,26 @@ def warm_up(args) -> None:
     print(f"  ready in {time.perf_counter() - t0:.1f} s -- instructions now reuse all of it\n")
 
 
+def record_turn(run_dir: Path, **fields) -> None:
+    """Merge `fields` into the run's turn.json.
+
+    The instruction used to survive in exactly one place -- inside
+    `proposals/scores_<tag>.json` -- which means a turn that died before
+    scoring left no record of what was asked. That is backwards: the runs
+    worth reading later are the ones that failed. Written first, before the
+    arm moves, and updated as the turn resolves, so an interrupted or crashed
+    turn still says what it was trying to do.
+    """
+    path = run_dir / "turn.json"
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        cur = json.loads(path.read_text()) if path.exists() else {}
+        cur.update(fields)
+        path.write_text(json.dumps(cur, indent=2, default=str))
+    except Exception as e:      # noqa: BLE001 - a log must never break the run
+        _log.debug(f"could not write turn.json: {e}")
+
+
 def one_turn(instruction: str, run_dir: Path, args) -> None:
     from tiptop.utils import get_robot_client
 
@@ -315,6 +336,20 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
 
     tag = tag_for(instruction)
     proposals = run_dir / "proposals"
+    record_turn(run_dir,
+                instruction=instruction,
+                tag=tag,
+                started=time.strftime("%Y-%m-%d %H:%M:%S"),
+                mode="place" if held else "pick",
+                gripper={"width_mm": round(st["width"] * 1000, 1),
+                         "is_grasped": st.get("is_grasped")},
+                options={"cam": args.cam, "object_score": args.object_score,
+                         "rat_scale": args.rat_scale, "k_total": args.k_total,
+                         "execute": bool(args.execute), "gate": bool(args.gate),
+                         "max_support_slope": args.max_support_slope,
+                         "release_above_rim": args.release_above_rim,
+                         "record": bool(args.record)},
+                outcome="started")
 
     # --- capture -------------------------------------------------------
     argv = ["live", "--out-dir", run_dir]
@@ -370,6 +405,8 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
         print("      look at proposals/clusters.png -- if the object is there and was "
               "still refused, it is out of reach or the grasps are unplannable from "
               "this pose, not a scoring problem.")
+        record_turn(run_dir, outcome="no candidates -- nothing to score",
+                    perception=per)
         return
 
     # --- score / gate / viz --------------------------------------------
@@ -407,6 +444,14 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
 
     scores = json.loads((proposals / f"scores_{tag}.json").read_text())
     winner = proposals / f"winner_{tag}.json"
+    _rank = scores.get("object_ranking", [])
+    record_turn(run_dir, outcome="scored",
+                selected_target=scores.get("selected_target"),
+                winner_file=winner.name,
+                margin=(round(_rank[0]["score"] - _rank[1]["score"], 4)
+                        if len(_rank) > 1 else None),
+                object_ranking=[{"target": d["target"], "score": round(d["score"], 4),
+                                 "n": d["n"]} for d in _rank])
     print(f"\n  selected object : {scores.get('selected_target')}")
     for d in scores.get("object_ranking", [])[:4]:
         print(f"      {d['score']:+.4f}  {d['target']}  (n={d['n']})")
@@ -421,6 +466,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
 
     if not args.execute:
         print("  dry run: nothing will move. Re-run with --execute.")
+        record_turn(run_dir, outcome="scored (dry run, nothing moved)")
         return
     # --execute is the arming gate for the whole session; a second per-turn
     # confirmation only earns its keystroke when there is something new to look
@@ -429,6 +475,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     # always "go".
     if args.debug and input("\n  execute this plan? type 'go': ").strip().lower() != "go":
         print("  aborted")
+        record_turn(run_dir, outcome="aborted at the confirmation prompt")
         return
     argv = ["--plan", winner, "--execute", "--go-to-start", "--yes"]
     if not held:
@@ -454,6 +501,9 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
             release_then_return(execute=True, plan=json.loads(winner.read_text()))
     if rec.summary():
         print(rec.summary())
+    record_turn(run_dir, outcome="executed",
+                recording=str(rec_path) if rec.frames else None,
+                recorded_frames=rec.frames or None)
 
 
 def main() -> None:
@@ -538,12 +588,20 @@ def main() -> None:
             break
         n += 1
         run_dir = args.run_root / f"{time.strftime('%Y%m%d_%H%M%S')}_{n:02d}"
+        # Before anything can fail: one_turn writes the full record, but it has
+        # to read the gripper and capture first, and either can throw.
+        record_turn(run_dir, instruction=instruction,
+                    started=time.strftime("%Y-%m-%d %H:%M:%S"), outcome="started")
         try:
             one_turn(instruction, run_dir, args)
         except SystemExit as e:
             _log.error(str(e))
-        except Exception:
+            record_turn(run_dir, outcome="refused", error=str(e))
+        except Exception as e:
             _log.exception("turn failed")
+            record_turn(run_dir, outcome="failed",
+                        error=f"{type(e).__name__}: {e}",
+                        traceback=traceback.format_exc())
         if single:
             break
 
