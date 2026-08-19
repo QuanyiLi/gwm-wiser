@@ -96,6 +96,7 @@ LANDING_CLEARANCE = 0.010
 # A cluster whose central region dips at least this far below its rim is an
 # open container (land inside); shallower ones are solid (land on top).
 HOLLOW_MIN_DEPTH = 0.030
+RIM_CLAMP_TOL = 0.005    # slack over the cluster's own top when --clamp-rim-to-cluster is on
 # In-hand detection: crop radius around the FK end effector, minimum height
 # above the table (shared with perception_geometric's floating filter), and
 # padding added to the robot's own collision spheres before rejecting a point
@@ -163,7 +164,7 @@ def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.n
 
 
 def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: float,
-                    r_need: float | None = None) -> dict:
+                    r_need: float | None = None, cluster_top: float | None = None) -> dict:
     """Read a destination's landing surface off the raw cloud.
 
     Raw points inside the cluster's xy footprint (between table and rim) are
@@ -178,6 +179,20 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
     The caller must pass a cloud with the robot hand region already removed:
     the held object hovers at the capture pose and its footprint can overlap
     a destination's, which would otherwise fake a rim at gripper height.
+
+    `cluster_top` (hardware only, `--clamp-rim-to-cluster`) bounds `rim_z` by
+    the destination's own outlier-filtered top. `rim_z` is a p98, so it only
+    survives a high tail thinner than 2 % of the footprint, and a real stereo
+    rig blows through that: measured 2026-08-19, ~390 occlusion-edge flying
+    pixels smeared over z 0.24-0.39 along a cardboard box's lower silhouette
+    were 6.2 % of that footprint's above-table points, and put the box's rim at
+    0.307 against a true top of 0.122. Everything downstream then followed: the
+    enclosure check saw only those flying pixels (coverage 0.12 against the 0.80
+    it needs), so a plainly hollow box was called SOLID and its six candidates
+    released 185 mm above it in mid-air. A z cap does not fix this -- the smear
+    is graded, and cutting at 200 mm still left rim_z at 0.169 -- but the
+    cluster top does, because `cluster_objects` already ran statistical outlier
+    removal on those points. Off for droid-sim, whose GT depth has no such tail.
     """
     try:
         hull = Delaunay(hull_xy)
@@ -196,6 +211,19 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
     if len(above) < 40:
         return None  # nothing meaningfully above the table in this footprint
     rim_z = float(np.percentile(above[:, 2], 98))
+    if cluster_top is not None:
+        # p98 tolerates a 2 % high tail; stereo occlusion edges routinely exceed
+        # that. The cluster's own points went through `remove_statistical_outlier`
+        # and its top is therefore the clean upper bound this footprint can have.
+        # See the flying-pixel note in this function's docstring.
+        clamped = min(rim_z, cluster_top + RIM_CLAMP_TOL)
+        if clamped < rim_z - 1e-9:
+            _log.warning(
+                f"{label}: rim read at {rim_z:.4f} but the cluster itself tops out at "
+                f"{cluster_top:.4f} -- clamping to {clamped:.4f}. The footprint's high "
+                "tail is stereo flying pixels, not surface"
+            )
+        rim_z = clamped
     boundary = ConvexHull(hull_xy)
     poly = hull_xy[boundary.vertices]
     segs = []
@@ -313,6 +341,12 @@ def main() -> None:
                          "it does not drift when the payload changes size (0 = off, droid-sim "
                          "default; 0.18 on this rig separates container floors at 0.076-0.120 "
                          "from ball tops at 0.294-0.347)")
+    ap.add_argument("--clamp-rim-to-cluster", action="store_true",
+                    help="bound a destination's rim height by its own outlier-filtered "
+                         "cluster top. OFF reproduces droid-sim, whose GT depth has no "
+                         "flying pixels; ON is required on a stereo rig, where occlusion "
+                         "edges put more than 2%% of a footprint's points above the real "
+                         "surface and the p98 rim then reads metres of empty air as rim")
     ap.add_argument("--skip-leading-close", action="store_true",
                     help="omit the plan's opening gripper-close. Correct wherever the "
                          "gripper is ALREADY holding the object, which is every hardware "
@@ -458,10 +492,17 @@ def main() -> None:
     # held object) hovers over the table at the capture pose and may overlap a
     # destination's footprint in xy, so cut it out of the cloud first.
     xyz_scene = xyz_flat[np.linalg.norm(xyz_flat - ee0_pos, axis=1) >= HAND_CROP_RADIUS]
+    # Read off the CLUSTER pcds, which `cluster_objects` already passed through
+    # statistical outlier removal -- the raw footprint cloud has not been.
+    cluster_tops = {}
+    if args.clamp_rim_to_cluster:
+        cluster_tops = {l: float(np.percentile(np.asarray(pcd.points)[:, 2], 98))
+                        for l, pcd in object_pcds.items()}
     landings, rejected = {}, []
     for label, mesh in object_trimeshes.items():
         surf = landing_surface(label, np.asarray(mesh.vertices)[:, :2], xyz_scene, surface_z,
-                               r_need=held["r90"] if args.max_support_slope > 0 else None)
+                               r_need=held["r90"] if args.max_support_slope > 0 else None,
+                               cluster_top=cluster_tops.get(label))
         if surf is None:
             continue
         # A hollow destination's floor was already validated by the 360-degree
@@ -485,7 +526,8 @@ def main() -> None:
                      "Either nothing in this scene can hold the object, or a real "
                      "container was read as solid (its interior unseen from this view).")
         for label, mesh in object_trimeshes.items():
-            surf = landing_surface(label, np.asarray(mesh.vertices)[:, :2], xyz_scene, surface_z)
+            surf = landing_surface(label, np.asarray(mesh.vertices)[:, :2], xyz_scene, surface_z,
+                                   cluster_top=cluster_tops.get(label))
             if surf is not None:
                 landings[label] = surf
     if not landings:
