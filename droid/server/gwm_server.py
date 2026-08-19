@@ -50,6 +50,11 @@ _log = logging.getLogger("gwm_server")
 
 NUM_RAT_FRAMES = 6  # [current full RGB, 5 robot-only renders]
 
+# Task embeddings are keyed by (instruction, mode, frame). A turn uses two --
+# the instruction and the empty-instruction prior -- so this holds a handful of
+# recent scenes, which is all the reuse there is to have.
+TASK_CACHE_MAX = 16
+
 # Retrieval planner's embedding-side instruction (gwm_wiser/planner/retrieval.py)
 TEXT_INSTRUCTION = (
     "Retrieve the video which can best finish the manipulation task specified by the user, "
@@ -188,13 +193,30 @@ class GwmBackend:
     def _task_embedding(self, instruction: str, rgb: np.ndarray, mode: str):
         from PIL import Image
 
-        key = (instruction, mode)
+        # The FRAME is part of the key, not just the text. With
+        # task_image="current" this embedding is computed from the instruction
+        # AND the scene photo, so keying on (instruction, mode) alone returns a
+        # embedding built from a DIFFERENT scene the second time an instruction
+        # is repeated. This server outlives many scenes -- it is started once
+        # and answers every turn of a session -- and instructions repeat
+        # constantly ("pick up the tomato" ran six times on 2026-08-19), so
+        # every repeat after the first was scored against the first scene's
+        # photo. Silent, and it only ever makes a repeat look more like its
+        # predecessor.
+        #
+        # Hashing 2.7 MB costs ~2 ms against a ~150 ms embed, and the cache
+        # still does its job: within one scene, all 16 candidates and the
+        # empty-instruction prior share one embedding.
+        key = (instruction, mode, hashlib.sha1(np.ascontiguousarray(rgb)).hexdigest()
+               if mode == "current" else "")
         if key in self._task_cache:
             return self._task_cache[key]
         images = [Image.fromarray(rgb)] if mode == "current" else None
         emb = self.embedder.process([
             {"text": instruction, "image": images, "instruction": TEXT_INSTRUCTION}
         ])[0]
+        if len(self._task_cache) >= TASK_CACHE_MAX:
+            self._task_cache.pop(next(iter(self._task_cache)))
         self._task_cache[key] = emb
         return emb
 
@@ -207,7 +229,16 @@ class GwmBackend:
         c2w = np.asarray(req.world_from_cam, dtype=np.float64)
         task_emb = self._task_embedding(req.instruction, rgb, req.task_image)
 
-        scores, per_cand = [], []
+        # The instruction-independent part of every candidate's score, measured
+        # against the SAME video embedding. Free: one extra task embedding per
+        # request (`_task_cache` keys on the frame, so it is shared by every
+        # candidate of this scene), then one cosine each. Returned always,
+        # used only if the
+        # caller asks -- it is the number that separates "the model grounded
+        # this" from "this candidate scores high whatever you ask for".
+        prior_emb = self._task_embedding("", rgb, req.task_image)
+
+        scores, priors, per_cand = [], [], []
         dump_dir = Path(req.dump_dir) if req.dump_dir else None
         if dump_dir:
             dump_dir.mkdir(parents=True, exist_ok=True)
@@ -235,12 +266,15 @@ class GwmBackend:
                 f1, f2, f3, latent = pred.chunk(4, dim=0)
                 outputs = self.embedder.embed_video_latent(latent, [f1, f2, f3], **proc)
                 vemb = self.embedder.pooling_video_latent(outputs)[0]
+                _v = vemb.float().unsqueeze(0)
                 score = torch.nn.functional.cosine_similarity(
-                    task_emb.float().unsqueeze(0), vemb.float().unsqueeze(0)
-                ).item()
+                    task_emb.float().unsqueeze(0), _v).item()
+                prior = torch.nn.functional.cosine_similarity(
+                    prior_emb.float().unsqueeze(0), _v).item()
             embed_ms = (time.perf_counter() - t1) * 1000
 
             scores.append(score)
+            priors.append(prior)
             per_cand.append({
                 "times": [round(float(t[i]), 2) for i in idxs],
                 "close_t": cand.grasp_close_t,
@@ -259,6 +293,7 @@ class GwmBackend:
 
         stats = {
             "backend": "gwm",
+            "priors": priors,
             "rat_scale": req.rat_scale,
             "task_image": req.task_image,
             "per_candidate": per_cand,

@@ -229,6 +229,13 @@ def main() -> None:
                          "off by an object whose grasp family is wide because its grasps "
                          "are poor (see the hardware note below)")
     ap.add_argument("--dump-dir", type=Path)
+    ap.add_argument("--debias-prior", action="store_true",
+                    help="rank on score MINUS the candidate's instruction-independent "
+                         "prior (its score against an EMPTY instruction) instead of the "
+                         "raw score. Ranking is already invariant to anything that shifts "
+                         "all candidates equally; what it is NOT invariant to is a "
+                         "per-candidate constant, and that is what the prior measures. "
+                         "Free -- the server computes it against the same video embedding")
     ap.add_argument("--drop-static-prefix", action="store_true",
                     help="open the RAT window where the arm first MOVES, not where the "
                          "timeline starts (hardware; see plan_to_candidate)")
@@ -301,12 +308,28 @@ def main() -> None:
                             "per_view_scores": {c: r["scores"] for c, r in per_view}},
                   "elapsed_s": sum(r["elapsed_s"] for _, r in per_view)}
 
+    # Priors come back with the scores, at no extra forward pass. Recorded
+    # whether or not they are used, because "did language move this, or was
+    # this candidate always going to score high" is the first question asked of
+    # every surprising selection.
+    priors = (result.get("stats") or {}).get("priors")
+    if len(per_view) > 1 and priors is not None:
+        priors = np.mean([(r.get("stats") or {}).get("priors", priors)
+                          for _, r in per_view], axis=0).tolist()
+    if args.debias_prior:
+        if not priors:
+            raise SystemExit("--debias-prior: this server returned no priors (old build?)")
+        effective = [s - p for s, p in zip(result["scores"], priors)]
+    else:
+        effective = list(result["scores"])
+
     ranked = sorted(
-        zip(result["scores"], result["softmax"], (e for e, _ in plans)),
+        zip(effective, result["softmax"], (e for e, _ in plans)),
         key=lambda t: -t[0],
     )
     print(f"\ninstruction: {args.instruction!r}  backend={result['stats']['backend']} "
-          f"cams={cams} rat_scale={rat_scale} task_image={args.task_image}")
+          f"cams={cams} rat_scale={rat_scale} task_image={args.task_image}"
+          + ("  [ranking on score MINUS prior]" if args.debias_prior else ""))
     for score, sm, entry in ranked:
         print(f"  {score:+.4f} (p={sm:.3f})  {entry['file']}  target={entry['target']}")
 
@@ -345,8 +368,13 @@ def main() -> None:
         "argmax_file": plans[result["argmax"]][0]["file"],  # per-candidate argmax, provenance only
         "elapsed_s": result["elapsed_s"],
         "object_ranking": object_ranking,
+        "debias_prior": bool(args.debias_prior),
         "ranking": [{"file": e["file"], "target": e["target"], "score": s, "softmax": p}
                     for s, p, e in ranked],
+        "raw": ([{"file": e["file"], "target": e["target"], "score": sc, "prior": pr,
+                  "language": sc - pr}
+                 for (e, _), sc, pr in zip(plans, result["scores"], priors)]
+                if priors else None),
     }, indent=2))
     print(f"\nwinner: {win_entry['file']} (target {selected}) -> "
           f"{args.proposals_dir / f'winner_{args.tag}.json'}")

@@ -3,6 +3,12 @@
 #
 #   ./droid/gwm_hardware/gwm_arm/run.sh              # dry run -- proposes and scores, never moves
 #   ./droid/gwm_hardware/gwm_arm/run.sh --execute    # arms the robot; every motion still confirmed
+#   ./droid/gwm_hardware/gwm_arm/run.sh --execute --record --debias-prior
+#
+# Every flag is forwarded to gwm_arm.session; --help lists them. The two worth
+# knowing: --record keeps a video of what the plan actually did, and
+# --debias-prior ranks on score MINUS each candidate's instruction-independent
+# prior. The prior is recorded and printed either way.
 #
 # Starts M2T2, FoundationStereo, the camera pre-flight, the sm_120 warm-up and
 # gwm-server, then hands you a prompt. All four fit on this card at once

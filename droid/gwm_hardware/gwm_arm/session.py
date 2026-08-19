@@ -421,7 +421,8 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                # the release is issued afterwards by release_then_return, so it was
                # never scored. Renders are robot-only, so without the open frame a
                # place is pixel-identical to a grasp approach.
-               + (["--drop-static-prefix", "--append-release"] if held else []),
+               + (["--drop-static-prefix", "--append-release"] if held else [])
+               + (["--debias-prior"] if args.debias_prior else []),
                "score", args.verbose)
 
     if not held and args.gate:
@@ -467,7 +468,20 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
             f"{c} ({'no grasp proposed' if c in _graspless else 'no candidate survived planning'})"
             for c in _absent))
         print("                     the choice below is only among the rest")
-    print(f"\n  selected object : {scores.get('selected_target')}")
+    print(f"\n  selected object : {scores.get('selected_target')}"
+          + ("   [ranked on score - prior]" if scores.get("debias_prior") else ""))
+    _raw = scores.get("raw")
+    if _raw:
+        # score = prior + language. Printing the split turns "why did it pick
+        # that" into a glance: a big prior with a small language term means the
+        # scene decided it, not the instruction.
+        _by = {}
+        for r in _raw:
+            _by.setdefault(r["target"], []).append(r)
+        print("      object     best score    prior   language")
+        for t, rs in sorted(_by.items(), key=lambda kv: -max(r["score"] for r in kv[1])):
+            b = max(rs, key=lambda r: r["score"])
+            print(f"      {t:10s} {b['score']:+.4f}   {b['prior']:+.4f}   {b['language']:+.4f}")
     for d in scores.get("object_ranking", [])[:4]:
         print(f"      {d['score']:+.4f}  {d['target']}  (n={d['n']})")
     rank = scores.get("object_ranking", [])
@@ -542,6 +556,12 @@ def main() -> None:
                          "the object is hard to grasp -- a poor, diverse grasp family drags "
                          "its mean down while a well-grasped distractor stays tight. See "
                          "score_client's docstring for the measurement")
+    ap.add_argument("--debias-prior", action="store_true",
+                    help="rank objects on score MINUS their instruction-independent prior "
+                         "(the score against an EMPTY instruction). Removes the "
+                         "per-candidate constant that ranking is NOT invariant to. Off by "
+                         "default: it is measured but not yet validated -- it rescued one "
+                         "case and did not rescue another. The prior is recorded either way")
     ap.add_argument("--record", action="store_true",
                     help="record video while the robot moves, to "
                          "runs/session/<run>/exec_<tag>.mp4. The only record of what a "
