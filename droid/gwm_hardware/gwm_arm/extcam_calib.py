@@ -213,6 +213,9 @@ def shoot(shots_dir: Path, n: int) -> None:
             elif seen == 0:
                 print("    -> no third-person camera saw it; move the board and re-take")
     finally:
+        # Same rule as gwm_arm.capture: a RealSense admits one process at a
+        # time, so every camera opened here is released here.
+        hand.close()
         for c in externals.values():
             c.close()
     print(f"\n{n} shots in {shots_dir}. Now: extcam_calib solve --shots-dir {shots_dir}")

@@ -352,19 +352,29 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
         _log.info("--external-only: skipping the wrist capture (the arm was not moved)")
         return
 
+    # Closed in a finally, and that matters more than it looks: a RealSense
+    # admits ONE process at a time, and since the stages moved in-process the
+    # session outlives the turn. A handle left open here made the NEXT
+    # instruction fail with "Device or resource busy" -- the pick worked, the
+    # place could not even capture. Every camera in this module is opened and
+    # released within the call that needs it.
     cam = get_hand_camera()
-    ee_from_cam = load_calibration(cam.serial)
-    world_from_ee = kin.get_state(tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
-    world_from_cam = world_from_ee @ ee_from_cam
+    try:
+        ee_from_cam = load_calibration(cam.serial)
+        world_from_ee = kin.get_state(tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
+        world_from_cam = world_from_ee @ ee_from_cam
+        hand_serial = cam.serial
 
-    frame = cam.read_camera()
-    estimator = get_depth_estimator(cam)
+        frame = cam.read_camera()
+        estimator = get_depth_estimator(cam)
 
-    async def _depth():
-        async with aiohttp.ClientSession() as session:
-            return await estimator(session, frame)
+        async def _depth():
+            async with aiohttp.ClientSession() as session:
+                return await estimator(session, frame)
 
-    depth = asyncio.run(_depth())
+        depth = asyncio.run(_depth())
+    finally:
+        cam.close()
 
     # The gripper is in the wrist frame and its own surface is not scene
     # geometry. tiptop's live path zeroes the cloud wherever the mask is True
@@ -396,7 +406,7 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
         "mode": "live",
         "moved_to_capture": bool(move),
         "q_init": q.tolist(),
-        "hand_serial": cam.serial,
+        "hand_serial": hand_serial,
         "external_serials": ext_serials,
         "valid_depth_fraction": float(np.isfinite(depth).mean()),
         "gripper_mask_fraction": masked_frac,

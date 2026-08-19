@@ -37,7 +37,9 @@ start() {
     up 8123 || { echo "starting M2T2..."
         (cd "$ROOT/droid/M2T2" && nohup pixi run server >"$LOGS/m2t2.log" 2>&1 &) ; }
     up 1234 || { echo "starting FoundationStereo..."
-        (cd "$ROOT/droid/FoundationStereo" && nohup pixi run server >"$LOGS/fs.log" 2>&1 &) ; }
+        (cd "$ROOT/droid/FoundationStereo" && \
+            PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+            nohup pixi run server >"$LOGS/fs.log" 2>&1 &) ; }
 
     echo "waiting for health (weights load takes ~30 s cold)..."
     for _ in $(seq 1 90); do up 8123 && up 1234 && break; sleep 2; done

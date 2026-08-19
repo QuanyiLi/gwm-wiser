@@ -71,8 +71,10 @@ def ensure_depth_server() -> None:
     if _healthy(DEPTH_PORT):
         return
     _log.info("FoundationStereo is down; starting it (weights take ~30 s)")
+    # expandable_segments is what FoundationStereo's own OOM message asks for:
+    # it had 1.71 GiB "reserved but unallocated" while failing to find 1.72.
     subprocess.Popen(
-        "nohup pixi run server > "
+        "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True nohup pixi run server > "
         f"{REPO_ROOT}/droid/gwm_hardware/.service-logs/fs.log 2>&1",
         shell=True, cwd=REPO_ROOT / "droid/FoundationStereo",
         start_new_session=True)
@@ -174,6 +176,20 @@ def run_module(module: str, argv: list, what: str, verbose: bool = False) -> Non
                     raise RuntimeError(f"{module}: {e}") from e
     finally:
         sys.argv = saved
+        # Hand back this process's transient CUDA blocks between stages.
+        # Running the stages in-process is what made this necessary: a
+        # subprocess used to return everything by exiting, whereas the session
+        # accumulates cuRobo's working set and keeps it. That 2.2 GB was
+        # precisely the headroom FoundationStereo needed for its next forward,
+        # and turn 2 of a session OOM'd on it. The MODELS stay resident (that
+        # is the point of the caches); only the allocator's free blocks go.
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:       # noqa: BLE001 - never fail a stage over cleanup
+            pass
         if not verbose:
             for line in buf.getvalue().splitlines():
                 if not _DROP.search(line) and _KEEP.search(line):

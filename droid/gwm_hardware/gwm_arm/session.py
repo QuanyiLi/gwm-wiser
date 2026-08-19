@@ -299,7 +299,12 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     if not args.execute:
         print("  dry run: nothing will move. Re-run with --execute.")
         return
-    if input("\n  execute this plan? type 'go': ").strip().lower() != "go":
+    # --execute is the arming gate for the whole session; a second per-turn
+    # confirmation only earns its keystroke when there is something new to look
+    # at, which is exactly --debug (the Rerun scene and the scored overlay).
+    # Without it, the numbers above are already on screen and the answer was
+    # always "go".
+    if args.debug and input("\n  execute this plan? type 'go': ").strip().lower() != "go":
         print("  aborted")
         return
     argv = ["--plan", winner, "--execute", "--go-to-start", "--yes"]
@@ -354,7 +359,8 @@ def main() -> None:
     warm_up(args)
     args.run_root.mkdir(parents=True, exist_ok=True)
     print("\nGWM x TiPToP -- type an instruction, 'exit' to quit."
-          f"\n{'EXECUTION ENABLED -- hand on the E-stop' if args.execute else 'dry run (--execute to arm)'}\n")
+          f"\n{'EXECUTION ENABLED -- hand on the E-stop' if args.execute else 'dry run (--execute to arm)'}"
+          + ("  (--debug confirms each plan before it runs)\n" if not args.debug else "\n"))
 
     single = args.instruction
     n = 0
