@@ -435,10 +435,25 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
         # A pick plan assumes it starts with an open gripper. A place plan must
         # NOT be pre-opened -- that drops the object before it goes anywhere.
         argv.append("--open-before")
-    run_module("gwm_hardware.gwm_arm.execute", argv, "execute", args.verbose)
 
-    if held:
-        release_then_return(execute=True, plan=json.loads(winner.read_text()))
+    # The recording spans the WHOLE physical motion, release and return
+    # included -- a place that puts the object down correctly and then knocks
+    # it over on the way home is still a failed place, and the plan alone does
+    # not show that.
+    from gwm_hardware.gwm_arm.record import Recorder, camera_serial
+
+    rec_path = run_dir / f"exec_{tag}.mp4"
+    try:
+        serial = camera_serial(args.record_cam) if args.record else ""
+    except KeyError as e:
+        _log.warning(f"--record-cam {args.record_cam}: {e}; not recording")
+        serial = ""
+    with Recorder(rec_path, serial, enabled=bool(serial)) as rec:
+        run_module("gwm_hardware.gwm_arm.execute", argv, "execute", args.verbose)
+        if held:
+            release_then_return(execute=True, plan=json.loads(winner.read_text()))
+    if rec.summary():
+        print(rec.summary())
 
 
 def main() -> None:
@@ -462,6 +477,16 @@ def main() -> None:
                          "the object is hard to grasp -- a poor, diverse grasp family drags "
                          "its mean down while a well-grasped distractor stays tight. See "
                          "score_client's docstring for the measurement")
+    ap.add_argument("--record", action="store_true",
+                    help="record video while the robot moves, to "
+                         "runs/session/<run>/exec_<tag>.mp4. The only record of what a "
+                         "plan actually did; the capture is from before anything moved")
+    ap.add_argument("--record-cam", default="wrist",
+                    choices=["wrist", "external", "external_2"],
+                    help="which camera to record. `wrist` (default) shows the object "
+                         "arriving in or leaving the gripper and is free at execution "
+                         "time; `external` shows the whole arm, better for judging a "
+                         "collision or a reach")
     ap.add_argument("--server-url", default=f"http://localhost:{SCORER_PORT}")
     ap.add_argument("--width-closed", type=float, default=0.005,
                     help="fallback width threshold if the controller reports no is_grasped")
