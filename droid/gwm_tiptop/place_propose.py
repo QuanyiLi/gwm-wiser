@@ -471,8 +471,23 @@ def main() -> None:
         raise SystemExit("no destination clusters with a readable landing surface")
     n_dest = len(landings)
     quotas = [args.k_total // n_dest + (1 if i < args.k_total % n_dest else 0) for i in range(n_dest)]
+    # The budget splits over destinations, so FEWER destinations means a bigger
+    # share each -- and each share is drawn from a fixed table of deterministic
+    # xy offsets. Once the scene narrows to one or two real containers (which
+    # is what the carried-object and support-slope filters are for) the share
+    # can exceed the table and there is simply nothing more to offer.
+    #
+    # That used to abort the turn. It should not: a scene with one valid
+    # destination is a perfectly good scene to place in -- the choice is just
+    # trivial. Cap and say what was lost, rather than refusing to act.
     if max(quotas) > len(XY_OFFSETS):
-        raise SystemExit(f"quota {max(quotas)} exceeds the {len(XY_OFFSETS)} deterministic offsets")
+        capped = [min(q, len(XY_OFFSETS)) for q in quotas]
+        _log.warning(
+            f"budget {args.k_total} over {n_dest} destination(s) wants up to {max(quotas)} "
+            f"candidates each, but only {len(XY_OFFSETS)} deterministic offsets exist -- "
+            f"emitting {sum(capped)} instead of {args.k_total}"
+            + ("; with one destination the selection is trivial anyway" if n_dest == 1 else ""))
+        quotas = capped
     _log.info(f"{n_dest} destinations, quotas {quotas} (budget {args.k_total})")
 
     plan_cfg = MotionGenPlanConfig(
