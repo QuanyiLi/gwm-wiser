@@ -110,6 +110,10 @@ START_TOL_RAD = 0.02
 # destination is not a surface anything would stay on. Dimensionless so it does
 # not move with the payload; see the measurement table in `landing_surface`.
 DEFAULT_MAX_SUPPORT_SLOPE = 0.18
+# How near a cluster's hull has to sit to the measured in-hand points before
+# that cluster IS the held object. Generous, because the two point sets come
+# from the same depth frame and differ only by hull augmentation.
+HELD_MATCH_RADIUS = 0.01
 
 
 def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.ndarray,
@@ -142,6 +146,7 @@ def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.n
     sel = labels == np.bincount(labels[labels >= 0]).argmax()
     obj = pts[sel]
     held = {
+        "points": obj,
         "xy": obj[:, :2].mean(axis=0),
         "r90": float(np.percentile(np.linalg.norm(obj[:, :2] - obj[:, :2].mean(axis=0), axis=1), 90)),
         "bottom_z": float(np.percentile(obj[:, 2], 2)),
@@ -358,16 +363,17 @@ def main() -> None:
     xyz_map, rgb_map = sc["xyz_map"], sc["rgb_map"]
     xyz_flat = xyz_map[np.isfinite(xyz_map).all(axis=2)]
     table_trimesh, surface_z = sc["table_box"], sc["surface_z"]
-    object_trimeshes, object_pcds = sc["meshes"], sc["pcds"]
+    # Copies: `scene()` caches these dicts and the grasp gate and debug viewer
+    # read the same entry. Dropping the carried object below must not reach
+    # them -- a proposer that quietly edits a shared decomposition is exactly
+    # the class of bug the cache was keyed carefully to avoid.
+    object_trimeshes, object_pcds = dict(sc["meshes"]), dict(sc["pcds"])
     table_cuboid = convert_trimesh_box_to_curobo_cuboid(table_trimesh, name="table")
     save_cluster_viz(obs, object_pcds, args.output_dir / "clusters.png")
-
-    obstacles = {l: convert_trimesh_to_curobo_mesh(m, l) for l, m in object_trimeshes.items()}
 
     from curobo.geom.types import WorldConfig
 
     _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64, include_workspace=False)
-    motion_gen.update_world(WorldConfig(cuboid=[table_cuboid], mesh=list(obstacles.values())))
 
     # Robot-side quantities: FK end effector and the robot's own collision
     # spheres at the capture configuration (proprioception, not scene GT).
@@ -380,6 +386,51 @@ def main() -> None:
     held = estimate_held_object(xyz_flat, ee0_pos, self_spheres, surface_z)
     d_xy = ee0_pos[:2] - held["xy"]        # EE offset from held-object centre
     d_bottom = ee0_pos[2] - held["bottom_z"]  # EE height above held-object bottom
+
+    # The object in the gripper is a cluster like any other, and until this it
+    # was treated like any other: added to cuRobo's world as a STATIC mesh at
+    # the capture pose, and offered as a destination.
+    #
+    # Both are wrong, and the first is the one that bites. The carried object
+    # travels WITH the arm, so a fixed mesh where it currently sits is a phantom
+    # the gripper starts inside and then has to plan around for the rest of the
+    # motion -- an obstacle that exists only because the robot is holding it.
+    # The second is worse in intent than in effect: it invites the proposer to
+    # place the object on top of itself.
+    #
+    # `cluster_objects` already drops the ARM by collision-sphere membership,
+    # but it cannot drop the held object that way: being OUTSIDE the robot's own
+    # spheres is precisely how `estimate_held_object` recognises it.
+    #
+    # An image-space gripper mask is not the tool here either -- the place
+    # branch captures with `--no-gripper-mask` on purpose, because those are the
+    # pixels `estimate_held_object` measures `d_bottom` and `r90` from. Masking
+    # them would delete the measurement this whole step depends on.
+    #
+    # Identified by OVERLAP with the points `estimate_held_object` already
+    # isolated, not by distance to the end effector. Distance looked clean here
+    # -- carried cluster 0.029 m from the EE against 0.457 m for the nearest
+    # table cluster -- but it is a property of THIS capture pose, which sits
+    # 0.43 m above the table. droid-sim's capture pose is at z 0.273, and its
+    # nearest bin is 0.246 m from the end effector: a 0.20 m radius would have
+    # cleared it by 46 mm, and a slightly different layout not at all. Overlap
+    # has no such dependence.
+    held_tree = KDTree(held["points"])
+    carried = {}
+    for label, mesh in object_trimeshes.items():
+        v = np.asarray(mesh.vertices)
+        frac = float((held_tree.query(v)[0] <= HELD_MATCH_RADIUS).mean())
+        if frac >= 0.5:
+            carried[label] = frac
+    for label, frac in carried.items():
+        _log.info(f"{label}: this is the CARRIED object ({frac*100:.0f}% of its hull within "
+                  f"{HELD_MATCH_RADIUS*1000:.0f} mm of the measured in-hand points) -- "
+                  f"not an obstacle, not a destination")
+        object_trimeshes.pop(label)
+        object_pcds.pop(label, None)
+
+    obstacles = {l: convert_trimesh_to_curobo_mesh(m, l) for l, m in object_trimeshes.items()}
+    motion_gen.update_world(WorldConfig(cuboid=[table_cuboid], mesh=list(obstacles.values())))
 
     # Landing surfaces for every cluster; budget split floor+remainder in
     # cluster order (largest first, deterministic). The hand region (gripper +
