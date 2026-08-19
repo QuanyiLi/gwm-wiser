@@ -194,6 +194,7 @@ def cluster_objects(
     use_plane_normal: bool = False,
     robot_spheres: np.ndarray | None = None,
     robot_margin: float = 0.02,
+    max_float_height: float = 0.25,
 ) -> tuple[dict[str, trimesh.Trimesh], dict[str, o3d.geometry.PointCloud]]:
     """DBSCAN the above-table points into anonymous objects `object_0..N`.
 
@@ -213,6 +214,20 @@ def cluster_objects(
     at a lowest visible point of 59 mm, and the instruction that referred to it
     then had no referent to find. Where the robot actually is, is not something
     to infer from height -- FK knows it. Off by default so sim reproduces.
+
+    The height rule was doing two jobs, though, and only one of them was the
+    arm. It also deleted anything hanging in mid-air, and when the sphere test
+    took over, that half went unowned: the branch returned early and the
+    floating test became unreachable. On 2026-08-19 a 57-point stereo flying-
+    pixel blob 394 mm above a tomato survived it, was welded onto the tomato by
+    the XY merge below (4.6 mm apart in XY, which Rule 2 does not bound
+    vertically), and turned that tomato's collision mesh into a 73x75x457 mm
+    pillar. cuTAMP then found 0/256 satisfying particles for it -- the object
+    the instruction named was simply not on the menu, with no error anywhere.
+    So the branch now runs its own floating test with `max_float_height`, which
+    is deliberately NOT `resting_tolerance`: 40 mm is the number that deleted
+    the upended box, and reusing it here would undo the fix above. 250 mm sits
+    far above anything that rests on this table and far below flying pixels.
 
     `use_plane_normal` measures "above the table" perpendicular to the plane
     `find_table_plane` fitted, instead of along world z. Off by default so sim
@@ -287,6 +302,20 @@ def cluster_objects(
                 _log.info(
                     f"Skipping cluster {cl} ({int(sel.sum())} pts): {on_arm:.0%} of it "
                     "lies inside the robot's own collision spheres"
+                )
+                labels[sel] = -1
+                continue
+            # Not the arm -- but still test for junk floating in mid-air (G-43).
+            # `resting_tolerance` cannot be reused here: 40 mm is what deleted
+            # the 93 mm upended box this branch exists to save. `max_float_height`
+            # is a separate, far looser bound aimed only at stereo flying pixels.
+            lowest = pts[:, 2].min() if plane is None else _height(pts).min()
+            if lowest > max_float_height:
+                _log.warning(
+                    f"Skipping floating cluster {cl} ({int(sel.sum())} pts): its "
+                    f"LOWEST point is {lowest * 1000:.0f} mm above the table "
+                    f"(> {max_float_height * 1000:.0f} mm) and it is not on the arm "
+                    "— stereo flying pixels, not an object"
                 )
                 labels[sel] = -1
             continue
