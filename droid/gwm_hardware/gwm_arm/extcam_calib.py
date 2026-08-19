@@ -154,8 +154,8 @@ def shoot(shots_dir: Path, n: int) -> None:
     from curobo.types.base import TensorDeviceType
 
     from tiptop.config import load_calibration
-    from tiptop.motion_planning import build_curobo_solvers
     from tiptop.perception.cameras import get_hand_camera
+    from gwm_tiptop.robot_fk import fk_model
     from tiptop.perception.cameras.rs_camera import RealsenseCamera
     from tiptop.utils import get_robot_client
 
@@ -163,8 +163,7 @@ def shoot(shots_dir: Path, n: int) -> None:
     client = get_robot_client()
     hand = get_hand_camera()
     ee_from_cam = load_calibration(hand.serial)
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
-                                            include_workspace=False)
+    kin = fk_model()            # FK only: it never commands motion
     tensor_args = TensorDeviceType()
 
     specs = external_camera_specs()
@@ -179,7 +178,7 @@ def shoot(shots_dir: Path, n: int) -> None:
             input(f"  shot {i + 1}/{n}: place the board where the wrist camera AND as many "
                   "third-person cameras as possible see it, then press Enter ")
             q = np.asarray(client.get_joint_positions(), dtype=np.float64)
-            world_from_ee = motion_gen.kinematics.get_state(
+            world_from_ee = kin.get_state(
                 tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
             hf = hand.read_camera()
             ef = {name: c.read_camera() for name, c in externals.items()}

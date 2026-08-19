@@ -97,7 +97,6 @@ def _robot_anchor():
     from curobo.types.base import TensorDeviceType
 
     from tiptop.config import load_calibration, tiptop_cfg
-    from tiptop.motion_planning import build_curobo_solvers
     from tiptop.perception.cameras.rs_camera import RealsenseCamera
     from tiptop.utils import get_robot_client
 
@@ -105,10 +104,10 @@ def _robot_anchor():
 
     cfg = tiptop_cfg()
     tensor_args = TensorDeviceType()
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
-                                            include_workspace=False)
+    from gwm_tiptop.robot_fk import fk_model
+
     q = np.asarray(get_robot_client().get_joint_positions(), dtype=np.float64)
-    state = motion_gen.kinematics.get_state(tensor_args.to_device(q))
+    state = fk_model(tensor_args).get_state(tensor_args.to_device(q))
     spheres = state.get_link_spheres()[0].cpu().numpy().astype(np.float64)
     spheres = spheres[spheres[:, 3] > 0.0]
     tcp = state.ee_pose.position[0].cpu().numpy().astype(np.float64)

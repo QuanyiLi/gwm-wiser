@@ -322,11 +322,11 @@ def main() -> None:
     from curobo.types.base import TensorDeviceType
     from scipy.spatial.transform import Rotation
 
-    from tiptop.motion_planning import build_curobo_solvers
     from tiptop.perception.utils import depth_to_xyz
 
     from gwm_tiptop.perception_geometric import cluster_objects, find_table_plane
     from gwm_tiptop.propose_from_h5 import load_h5_observation
+    from gwm_tiptop.robot_fk import fk_model
     from gwm_hardware.gwm_arm.capture import EXTERNAL_CAM
 
     ctx = load_context(args.proposals_dir, args.tag)
@@ -342,8 +342,7 @@ def main() -> None:
     rgb_map = obs["rgb"].astype(np.float32) / 255.0
 
     tensor_args = TensorDeviceType()
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
-                                            include_workspace=False)
+    kin = fk_model(tensor_args)      # FK only; the viewer never plans
     # (tcp path, index of the gripper close). The close index matters: a
     # tiptop pick plan is MoveFree -> Pick, and Pick RETRACTS afterwards, so
     # the last waypoint of every candidate is the same retract pose. Marking
@@ -355,7 +354,7 @@ def main() -> None:
         plan = json.loads((args.proposals_dir / row["file"]).read_text())
         q, close_at = plan_waypoints(plan)
         if len(q):
-            paths[row["file"]] = (tcp_path(motion_gen.kinematics, tensor_args, q), close_at)
+            paths[row["file"]] = (tcp_path(kin, tensor_args, q), close_at)
 
     # Which image to draw on. The scoring view is the honest one -- it is what
     # GWM actually saw -- but it needs the external extrinsics, so the wrist

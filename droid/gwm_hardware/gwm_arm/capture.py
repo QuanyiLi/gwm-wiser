@@ -283,7 +283,8 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
     from curobo.types.base import TensorDeviceType
 
     from tiptop.config import load_calibration, tiptop_cfg
-    from tiptop.motion_planning import build_curobo_solvers, go_to_capture
+    from tiptop.motion_planning import go_to_capture
+    from gwm_tiptop.robot_fk import fk_model
     from tiptop.perception.cameras import get_depth_estimator, get_hand_camera
     from tiptop.perception.cameras.rs_camera import RealsenseCamera
     from tiptop.utils import get_robot_client, load_gripper_mask
@@ -292,12 +293,21 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
     out_dir.mkdir(parents=True, exist_ok=True)
 
     client = get_robot_client()
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
-                                            include_workspace=False)
+    kin = fk_model()            # FK only: where the wrist camera is
     if move and not external_only:
         _log.info("moving to q_capture -- hand on the E-stop")
         go_to_capture(time_dilation_factor=cfg.robot.time_dilation_factor, motion_gen=motion_gen)
-        client.open_gripper()
+        # tiptop opens the gripper here because its flow only ever picks. Doing
+        # that unconditionally DROPS a held object at the capture pose, before
+        # the place it was asked to do -- observed 2026-08-19. This is an
+        # invariant rather than a caller flag on purpose: a flag is something a
+        # future caller forgets, and the cost of forgetting is on the floor.
+        st = client.get_gripper_state().get("state", {})
+        if st.get("is_grasped"):
+            _log.info(f"gripper is holding something (width {st.get('width', 0) * 1000:.1f} mm) "
+                      "-- NOT opening it")
+        else:
+            client.open_gripper()
     elif not external_only:
         _log.warning("--no-move: capturing wherever the arm currently stands. "
                      "The cloud is still correct (FK gives the true camera pose), "
@@ -334,8 +344,7 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
 
     cam = get_hand_camera()
     ee_from_cam = load_calibration(cam.serial)
-    world_from_ee = motion_gen.kinematics.get_state(
-        tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
+    world_from_ee = kin.get_state(tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
     world_from_cam = world_from_ee @ ee_from_cam
 
     frame = cam.read_camera()

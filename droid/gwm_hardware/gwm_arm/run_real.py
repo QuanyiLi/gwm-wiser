@@ -101,13 +101,61 @@ def tag_for(instruction: str) -> str:
     return f"{t[:40] or 'gwm'}_{digest}"
 
 
-def run(cmd: list[str], what: str) -> None:
-    _log.info(f"[{what}] {' '.join(str(c) for c in cmd)}")
+# Lines worth a human's attention out of a stage's output. Everything else --
+# cuRobo's per-solve "Updating optimizer params", cuTAMP's skeleton dumps, the
+# pixi manifest deprecation banner, torch/warp deprecation warnings -- is noise
+# that buries the three numbers anyone actually reads. Filtering here, at the
+# driver, rather than chasing each producer: some of them print() rather than
+# log, so no logger level would have caught them, and a subprocess boundary is
+# the one place that catches all of it at once.
+_KEEP = re.compile(
+    # things that stop the run, or change what you would do next
+    r"REFUSING|Traceback|CUDA error|out of memory|WARNING gwm_|ERROR gwm_"
+    # the three perception numbers worth a glance before trusting a selection
+    r"|depth: .*valid|table fit |pts, centroid"
+    # what the proposer and the gate concluded
+    r"|Wrote \d+ proposals|gate\.json written|refine \d+ failed"
+    r"|Dropping graspless|Skipping cluster|Merging clusters"
+    # the two safety facts
+    r"|gripper mask applied|is holding something|timing: "
+)
+_DROP = re.compile(
+    r"curobo:|cutamp\.|Deprecated|DeprecationWarning|warnings\.warn"
+    r"|^\s*$|^\s*[│╭╰├·]|WARN the lock|system-requirements"
+    # superseded by the one-line "table fit" verdict
+    r"|Table plane selected|Table surface at|Cluster viz saved"
+    # planner bookkeeping, not a decision
+    r"|skeleton =|grasps associated|world movables|Proposing for \d+ objects"
+)
+_TAIL = 40
+
+
+def run(cmd: list[str], what: str, verbose: bool = False) -> None:
+    """Run one stage, showing only what is worth reading.
+
+    On failure the last few dozen raw lines are dumped, because that is exactly
+    when the noise becomes the evidence.
+    """
     t0 = time.perf_counter()
-    r = subprocess.run([str(c) for c in cmd], cwd=REPO_ROOT)
-    if r.returncode != 0:
-        raise SystemExit(f"[{what}] failed with exit code {r.returncode}")
-    _log.info(f"[{what}] done in {time.perf_counter() - t0:.1f} s")
+    proc = subprocess.Popen([str(c) for c in cmd], cwd=REPO_ROOT, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            bufsize=1)
+    tail: list[str] = []
+    for line in proc.stdout:
+        line = line.rstrip()
+        tail.append(line)
+        if len(tail) > _TAIL:
+            tail.pop(0)
+        if verbose:
+            print(line)
+        elif not _DROP.search(line) and _KEEP.search(line):
+            print(f"      {line.split(': ', 1)[-1] if ': ' in line else line}")
+    proc.wait()
+    dt = time.perf_counter() - t0
+    if proc.returncode != 0:
+        print("\n".join(f"      | {t}" for t in tail))
+        raise SystemExit(f"[{what}] failed with exit code {proc.returncode} after {dt:.1f} s")
+    print(f"    \u25b8 {what:<16} {dt:6.1f} s")
 
 
 def main() -> None:

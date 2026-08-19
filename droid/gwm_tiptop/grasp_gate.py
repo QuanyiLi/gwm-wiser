@@ -50,10 +50,10 @@ from scipy.spatial.transform import Rotation
 
 from curobo.types.base import TensorDeviceType
 
-from tiptop.motion_planning import build_curobo_solvers
 from tiptop.perception.utils import depth_to_xyz
 
 from gwm_tiptop.perception_geometric import cluster_objects, find_table_plane
+from gwm_tiptop.robot_fk import fk_model
 from gwm_tiptop.propose_from_h5 import load_h5_observation
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -185,9 +185,9 @@ def main() -> None:
     rgb_map = obs["rgb"].astype(np.float32) / 255.0
     xyz_flat = xyz_map[np.isfinite(xyz_map).all(axis=2)]
 
+    # FK only -- this gate never plans. See gwm_tiptop.robot_fk.
     tensor_args = TensorDeviceType()
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64, include_workspace=False)
-    kin = motion_gen.kinematics
+    kin = fk_model(tensor_args)
 
     # The gate re-derives the clusters itself, so it MUST decompose the scene the
     # same way the proposer did -- otherwise it judges plans against a scene

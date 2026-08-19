@@ -59,19 +59,17 @@ def provisional_extrinsic(cam_name: str, serial: str):
     from curobo.types.base import TensorDeviceType
 
     from tiptop.config import load_calibration, tiptop_cfg
-    from tiptop.motion_planning import build_curobo_solvers
     from tiptop.perception.cameras.rs_camera import RealsenseCamera
+    from gwm_tiptop.robot_fk import fk_model
     from tiptop.utils import get_robot_client
 
     from gwm_hardware.gwm_arm.extcam_calib import board_pose
 
     cfg = tiptop_cfg()
     tensor_args = TensorDeviceType()
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
-                                            include_workspace=False)
+    kin = fk_model(tensor_args)
     q = np.asarray(get_robot_client().get_joint_positions(), dtype=np.float64)
-    world_from_ee = motion_gen.kinematics.get_state(
-        tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
+    world_from_ee = kin.get_state(tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
 
     hand = RealsenseCamera(str(cfg.cameras.hand.serial))
     try:
@@ -110,12 +108,10 @@ def robot_pixels(q: np.ndarray, K: np.ndarray, world_from_cam: np.ndarray,
     """Project the robot's collision spheres -> (uv (N,2), radius in px)."""
     from curobo.types.base import TensorDeviceType
 
-    from tiptop.motion_planning import build_curobo_solvers
+    from gwm_tiptop.robot_fk import fk_model
 
     tensor_args = TensorDeviceType()
-    _, motion_gen, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
-                                            include_workspace=False)
-    state = motion_gen.kinematics.get_state(tensor_args.to_device(q))
+    state = fk_model(tensor_args).get_state(tensor_args.to_device(q))
     sph = state.get_link_spheres()[0].cpu().numpy().astype(np.float64)
     sph = sph[sph[:, 3] > 0.0]        # cuRobo pads the buffer with negative radii
 

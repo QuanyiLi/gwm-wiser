@@ -212,30 +212,30 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                      "version assumed a welded block and sim bins (G-25/G-26). Read "
                      "the candidates before executing.")
         run(PIXI + ["-m", "gwm_tiptop.place_propose", "--h5-path", run_dir / "wrist_obs.h5",
-                    "--output-dir", proposals, "--k-total", args.k_total], "propose(place)")
+                    "--output-dir", proposals, "--k-total", args.k_total], "propose(place)", args.verbose)
     else:
         run(PIXI + ["-m", "gwm_hardware.gwm_arm.propose",
                     "--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
-                    "--k-total", args.k_total], "propose(pick)")
+                    "--k-total", args.k_total], "propose(pick)", args.verbose)
 
     # --- score / gate / viz --------------------------------------------
     run(PIXI + ["-m", "gwm_tiptop.score_client", "--proposals-dir", proposals,
                 "--external-h5", run_dir / "external_obs.h5", "--instruction", instruction,
                 "--cam", args.cam, "--tag", tag, "--rat-scale", args.rat_scale,
                 "--object-score", args.object_score, "--server-url", args.server_url,
-                "--dump-dir", run_dir / f"rat_{tag}"], "score")
+                "--dump-dir", run_dir / f"rat_{tag}"], "score", args.verbose)
 
     if not held:
         gate = PIXI + ["-m", "gwm_tiptop.grasp_gate", "--proposals-dir", proposals,
                        "--h5-path", run_dir / "wrist_obs.h5", "--use-plane-normal",
                        "--use-robot-arm-filter", "--apply", tag]
-        run(gate, "gate")
+        run(gate, "gate", args.verbose)
 
     viz = PIXI + ["-m", "gwm_hardware.gwm_arm.viz_debug", "--proposals-dir", proposals,
                   "--h5-path", run_dir / "wrist_obs.h5", "--tag", tag,
                   "--instruction", instruction, "--external-h5", run_dir / "external_obs.h5",
                   "--cam", args.cam]
-    run(viz, "viz")     # Rerun opens here by default
+    run(viz, "viz", args.verbose)     # Rerun opens here by default
 
     scores = json.loads((proposals / f"scores_{tag}.json").read_text())
     winner = proposals / f"winner_{tag}.json"
@@ -260,7 +260,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
         # A pick plan assumes it starts with an open gripper. A place plan must
         # NOT be pre-opened -- that drops the object before it goes anywhere.
         cmd.append("--open-before")
-    run(cmd, "execute")
+    run(cmd, "execute", args.verbose)
 
     if held:
         release_then_home(args.lift, execute=True)
@@ -282,6 +282,8 @@ def main() -> None:
                     help="metres to lift in z before travelling home")
     ap.add_argument("--width-closed", type=float, default=0.005,
                     help="fallback width threshold if the controller reports no is_grasped")
+    ap.add_argument("--verbose", action="store_true",
+                    help="show every stage's raw output instead of a summary")
     ap.add_argument("--instruction", default=None,
                     help="run one instruction and exit instead of prompting")
     args = ap.parse_args()

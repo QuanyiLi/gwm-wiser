@@ -31,6 +31,7 @@ the A/B arm must too, and a proposal that clips the bench is not a proposal.
 import argparse
 import json
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
@@ -115,6 +116,14 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = tiptop_cfg()
+    _t = {}
+    _mark = time.perf_counter
+
+    def _lap(name, t0):
+        _t[name] = time.perf_counter() - t0
+        return time.perf_counter()
+
+    _t0 = _mark()
     obs = load_h5_observation(args.h5_path)
     if obs["extrinsics_z_correction"] != 0.0:
         _log.warning(
@@ -131,6 +140,7 @@ def main() -> None:
     xyz_map = xyz_map @ obs["world_from_cam"][:3, :3].T + obs["world_from_cam"][:3, 3]
     rgb_map = obs["rgb"].astype(np.float32) / 255.0
 
+    _t0 = _lap("load+cloud", _t0)
     finite = np.isfinite(xyz_map).all(axis=2)
     pcd_ds = get_o3d_pcd(xyz_map[finite], rgb_map[finite], cfg.perception.voxel_downsample_size)
     grasps = generate_grasps(
@@ -140,6 +150,7 @@ def main() -> None:
         apply_bounds=cfg.perception.m2t2.apply_bounds,
     )
 
+    _t0 = _lap("m2t2", _t0)
     table_trimesh, surface_z = find_table_plane(xyz_map, rgb_map)
     check_surface_z(surface_z, args.max_surface_drift)
     table_cuboid = convert_trimesh_box_to_curobo_cuboid(table_trimesh, name="table")
@@ -158,15 +169,16 @@ def main() -> None:
     if args.robot_arm_filter:
         from curobo.types.base import TensorDeviceType
 
+        from gwm_tiptop.robot_fk import fk_model
+
         _ta = TensorDeviceType()
-        _, _mg, _ = build_curobo_solvers(num_particles=32, num_spheres=64,
-                                         include_workspace=False)
-        robot_spheres = (_mg.kinematics.get_state(_ta.to_device(obs["q_init"]))
+        robot_spheres = (fk_model(_ta).get_state(_ta.to_device(obs["q_init"]))
                          .get_link_spheres()[0].cpu().numpy().astype(np.float64))
     object_trimeshes, object_pcds = cluster_objects(
         xyz_map, rgb_map, table_trimesh, surface_z + 0.015,
         use_plane_normal=args.use_plane_normal, robot_spheres=robot_spheres,
     )
+    _t0 = _lap("perception", _t0)
     save_cluster_viz(obs, object_pcds, args.output_dir / "clusters.png")
 
     object_meshes = {l: convert_trimesh_to_curobo_mesh(m, l) for l, m in object_trimeshes.items()}
@@ -184,15 +196,18 @@ def main() -> None:
         type_to_objects={"Movable": movables, "Surface": [table_cuboid]},
         goal_state=frozenset({HandEmpty.ground()}),
     )
+    _t0 = _lap("associate", _t0)
     ik_solver, motion_gen, _ = build_curobo_solvers(
         config.num_particles, config.coll_n_spheres,
         include_workspace=args.include_workspace,
     )
+    _t0 = _lap("build_solvers", _t0)
     proposals = run_proposals(
         env, config, obs["q_init"], ik_solver, filtered_grasps, motion_gen,
         all_surfaces=[table_cuboid], k_total=args.k_total,
     )
 
+    _t0 = _lap("run_proposals", _t0)
     index = []
     for i, prop in enumerate(proposals):
         serialized = serialize_plan(prop["steps"], obs["q_init"])
@@ -223,6 +238,8 @@ def main() -> None:
     for e in index:
         per_object[e["target"]] = per_object.get(e["target"], 0) + 1
     _log.info(f"Wrote {len(index)} proposals to {args.output_dir}  {per_object}")
+    _log.info("timing: " + "  ".join(f"{k} {v:.1f}s" for k, v in _t.items())
+              + f"  TOTAL {sum(_t.values()):.1f}s")
     if len(index) < args.k_total:
         _log.warning(
             f"{len(index)} candidates, asked for {args.k_total} -- some clusters "
