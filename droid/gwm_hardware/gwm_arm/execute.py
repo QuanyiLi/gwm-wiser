@@ -56,6 +56,49 @@ Q_INIT_TOL_RAD = 0.02
 # guard cannot be handed the jump at all.
 MAX_STEP_JUMP_RAD = 0.05
 
+# The control node refuses a trajectory it judges too aggressive, and says
+# nothing about why: the reply carries `success: False` and no error string,
+# which surfaces as the generic "Trajectory execution failed".
+#
+# Bisected on the robot, 2026-08-19, carrying a tomato:
+#
+#     pick plan, peak |a| 2.37 rad/s^2   accepted (executed 2026-08-19, empty)
+#     place plan, peak |a| 5.55          REFUSED, arm did not move
+#     same waypoints at dt x2 (|a| 1.39) accepted, moved 0.36 rad
+#     remainder at dt x2   (|a| 1.54)    accepted, moved 0.50 rad
+#
+# so the ceiling sits between 2.4 and 5.5, well under the Panda's own
+# 15 rad/s^2. The cap here is below every accepted case rather than just under
+# the refused one, because the accepted cases were all measured WITH a payload
+# and one datapoint does not locate a limit.
+#
+# Place plans are the ones that hit it: their approach covers ~0.82 rad in
+# 1.26 s while a pick's covers 0.8 rad in 2.82 s. Retiming is uniform -- the
+# path is untouched, only its clock -- so nothing about which waypoints the
+# arm visits changes, and a plan already inside the limits is not altered.
+MAX_EXEC_VEL = 1.6      # rad/s
+MAX_EXEC_ACCEL = 1.5    # rad/s^2
+
+
+def retime(step: dict) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """(positions, velocities, dt, stretch) slowed until the limits hold."""
+    pos = np.asarray(step["positions"], dtype=np.float64)
+    vel = np.asarray(step["velocities"], dtype=np.float64)
+    dt = float(step["dt"])
+    if len(pos) < 3:
+        return pos, vel, dt, 1.0
+    # From the planner's OWN velocity field, not a second difference of the
+    # positions: at dt = 0.02 the position-derived acceleration is dominated by
+    # interpolation noise (9.3 rad/s^2 on the pick that executed fine, against
+    # 2.4 from the velocities), and retiming against noise would slow a proven
+    # path for nothing.
+    a = np.diff(vel, axis=0) / dt
+    # Speed scales as 1/stretch and acceleration as 1/stretch^2.
+    s = max(1.0,
+            float(np.abs(vel).max()) / MAX_EXEC_VEL,
+            float(np.sqrt(np.abs(a).max() / MAX_EXEC_ACCEL)))
+    return pos, vel / s, dt * s, s
+
 
 def check_continuity(plan: dict, q_now) -> None:
     """Every trajectory must begin where the previous step left the arm.
@@ -115,12 +158,12 @@ def execute_serialized(plan: dict, client) -> None:
             result = (client.open_gripper(speed=1.0) if step["action"] == "open"
                       else client.close_gripper(speed=1.0))
         elif step["type"] == "trajectory":
-            pos = np.asarray(step["positions"], dtype=np.float64)
-            vel = np.asarray(step["velocities"], dtype=np.float64)
+            pos, vel, dt, stretch = retime(step)
+            note = "" if stretch <= 1.0 else f", slowed {stretch:.2f}x to stay inside the limits"
             _log.info(f"step {i + 1}/{len(plan['steps'])}: trajectory, "
-                      f"{len(pos)} waypoints ({label})")
+                      f"{len(pos)} waypoints, {len(pos) * dt:.2f} s ({label}){note}")
             result = client.execute_joint_impedance_path(
-                joint_confs=pos, joint_vels=vel, durations=[step["dt"]] * len(pos))
+                joint_confs=pos, joint_vels=vel, durations=[dt] * len(pos))
         else:
             raise ValueError(f"unknown step type {step['type']!r}")
         if result is None:
