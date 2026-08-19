@@ -255,8 +255,18 @@ class FrankaRobotRenderer:
         width: int,
         height: int,
         base_pose: np.ndarray = None,   # (T, 7) xyz + wxyz quat, world frame
+        return_alpha: bool = False,
     ) -> np.ndarray:
-        """Render robot-only RGB for T frames -> uint8 (T, H, W, 3)."""
+        """Render robot-only RGB for T frames -> uint8 (T, H, W, 3).
+
+        `return_alpha` additionally returns the (T, H, W) float32 coverage mask,
+        for compositing the robot onto a real photograph. The scorer never asks
+        for it -- the model is fed the over-black composite below and nothing
+        else -- but a human checking WHERE the arm goes needs the arm drawn in
+        the scene, and thresholding the composite would silently drop every
+        dark part of the gripper. Off by default, so the scoring path is
+        byte-identical.
+        """
         import sapien
 
         arm_qpos = np.asarray(arm_qpos)
@@ -271,6 +281,7 @@ class FrankaRobotRenderer:
 
         cam = self._get_camera(width, height)
         out = np.empty((n, height, width, 3), dtype=np.uint8)
+        alpha = np.empty((n, height, width), dtype=np.float32) if return_alpha else None
         for t in range(n):
             if base_pose is not None:
                 self.robot.set_root_pose(
@@ -289,4 +300,6 @@ class FrankaRobotRenderer:
             # background is only identifiable by alpha == 0.
             rgb = rgba[..., :3] * rgba[..., 3:4]
             out[t] = np.clip(rgb * 255.0, 0, 255).astype(np.uint8)
-        return out
+            if alpha is not None:
+                alpha[t] = rgba[..., 3].astype(np.float32)
+        return (out, alpha) if return_alpha else out
