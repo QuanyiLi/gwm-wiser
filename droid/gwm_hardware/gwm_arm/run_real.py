@@ -121,6 +121,7 @@ _KEEP = re.compile(
     # which destinations a place is actually choosing between, and why the
     # others are gone -- the difference between reading a ranking and guessing
     r"|NOT a placement destination|\d+ destinations, quotas|discarded --"
+    r"|this is the CARRIED object|approach failed \(|descend failed \("
     # the two safety facts
     r"|gripper mask applied|is holding something|timing: "
 )

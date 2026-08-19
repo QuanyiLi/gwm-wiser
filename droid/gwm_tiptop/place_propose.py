@@ -67,7 +67,7 @@ from curobo.wrap.reacher.motion_gen import MotionGenPlanConfig
 from scipy.spatial import ConvexHull, Delaunay, KDTree, QhullError
 
 from tiptop.config import tiptop_cfg
-from gwm_tiptop.robot_fk import default_planning_solvers
+from gwm_tiptop.robot_fk import default_planning_solvers, release_shared_solver
 from tiptop.perception.utils import (
     convert_trimesh_box_to_curobo_cuboid,
     convert_trimesh_to_curobo_mesh,
@@ -447,6 +447,10 @@ def main() -> None:
         object_pcds.pop(label, None)
 
     obstacles = {l: convert_trimesh_to_curobo_mesh(m, l) for l, m in object_trimeshes.items()}
+    # The solver is shared with the pick stage, which welds the grasped object
+    # to the gripper while planning. Left attached, every approach here starts
+    # from a pose cuRobo believes is in collision.
+    release_shared_solver(motion_gen)
     motion_gen.update_world(WorldConfig(cuboid=[table_cuboid], mesh=list(obstacles.values())))
 
     # Landing surfaces for every cluster; budget split floor+remainder in
@@ -542,7 +546,7 @@ def main() -> None:
         return JointState.from_position(
             tensor_args.to_device(np.asarray(obs["q_init"], dtype=np.float64)).float()[None])
 
-    index, n_fail = [], 0
+    index, n_fail, statuses = [], 0, []
     for (dest, surf), quota in zip(landings.items(), quotas):
         approach_z = surf["rim_z"] + APPROACH_CLEARANCE
         # Clearance is to the LOWEST REAL GEOMETRY, which is not always the
@@ -587,6 +591,7 @@ def main() -> None:
             )
             if not approach.success.item():
                 _log.warning(f"{dest}[{k}]: approach failed ({approach.status}); skipping")
+                statuses.append(approach.status)
                 n_fail += 1
                 continue
             approach_snap = snapshot(approach)
@@ -715,7 +720,18 @@ def main() -> None:
         }, f, indent=2)
     _log.info(f"Wrote {len(index)} proposals ({n_fail} failures) to {args.output_dir}")
     if not index:
-        raise SystemExit("no proposals produced")
+        # One failure mode deserves naming: every approach refused because the
+        # START state collides. The start state is the pose the arm is
+        # physically sitting in, so the scene is not what is wrong -- either
+        # something is still attached to the robot in the shared solver, or the
+        # perceived cloud has put an obstacle where the gripper already is.
+        why = ""
+        if statuses and all("INVALID_START_STATE" in str(st) for st in statuses):
+            why = (" -- every one refused the CAPTURE POSE as in collision, which is a "
+                   "pose the arm is physically in. Suspect a phantom still attached to "
+                   "the robot in the shared solver, or a perceived obstacle sitting where "
+                   "the gripper already is; not the destinations.")
+        raise SystemExit(f"no proposals produced{why}")
 
 
 if __name__ == "__main__":

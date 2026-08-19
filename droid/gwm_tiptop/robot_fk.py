@@ -120,6 +120,30 @@ def default_planning_solvers(num_particles: int = 256, include_workspace: bool =
                             include_workspace=include_workspace)
 
 
+def release_shared_solver(motion_gen) -> None:
+    """Undo what a previous stage welded to the robot.
+
+    cuTAMP's motion solver calls `attach_objects_to_robot` while planning a
+    pick (`cutamp/motion_solver.py:226`) and detaches afterwards -- fine when
+    every stage builds its own MotionGen, and not fine once they share one.
+    Any path that leaves the attachment in place hands the next stage a robot
+    with a phantom object welded to its gripper.
+
+    Measured on 2026-08-19, the first place after a pick on a shared solver:
+    all 16 approach plans failed with INVALID_START_STATE_WORLD_COLLISION --
+    the CAPTURE pose, which the arm was physically sitting in, reported as
+    colliding with the world. Nothing was wrong with the pose; the phantom was
+    what collided.
+
+    Idempotent -- cuTAMP itself calls this unconditionally at the top of its
+    own solve, for the same reason.
+    """
+    try:
+        motion_gen.detach_object_from_robot("attached_object")
+    except Exception as e:      # noqa: BLE001 - nothing attached is the normal case
+        _log.debug(f"nothing to detach from the shared solver ({e})")
+
+
 def reset_world_to_workspace(motion_gen) -> None:
     """Put the rig's static keep-outs back into a shared solver's world.
 
@@ -138,4 +162,5 @@ def reset_world_to_workspace(motion_gen) -> None:
 
     from tiptop.workspace import workspace_cuboids
 
+    release_shared_solver(motion_gen)
     motion_gen.update_world(WorldConfig(cuboid=list(workspace_cuboids())))
