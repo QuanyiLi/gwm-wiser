@@ -63,6 +63,7 @@ print(ensure_render_urdf())" || return 1
         ( cd "$ROOT" && PYTHONPATH="$ROOT:$ROOT/droid" nohup ./.venv/bin/python \
             -m droid.server.gwm_server --backend "$backend" --arm panda \
             --urdf "$URDF" ${CKPT:+--ckpt "$CKPT"} --port "$PORT" \
+            --head-dtype "${GWM_HEAD_DTYPE:-bf16}" \
             >"$LOGS/gwm_server.log" 2>&1 & )
         echo "waiting for gwm-server (the Qwen weights take a few minutes cold)..."
         for _ in $(seq 1 240); do up "$PORT" && break; sleep 5; done

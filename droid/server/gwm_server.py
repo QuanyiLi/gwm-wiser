@@ -134,7 +134,8 @@ class DummyBackend:
 class GwmBackend:
     """Qwen3-VL-Embedding + trained GWM scoring over rendered RAT candidates."""
 
-    def __init__(self, urdf_path: str, arm: str, ckpt_path: str, embedder_path: str):
+    def __init__(self, urdf_path: str, arm: str, ckpt_path: str, embedder_path: str,
+                 head_dtype: str = "fp32"):
         import torch
         from PIL import Image  # noqa: F401  (fail early if missing)
 
@@ -153,7 +154,13 @@ class GwmBackend:
         self.embedder = Qwen3VLEmbedder(embedder_path, torch_dtype=torch.bfloat16)
         _log.info(f"Loading GWM checkpoint {ckpt_path} ...")
         model, ckpt = load_canonical_like_planner(ckpt_path)
-        self.gwm = model.float().eval().to(self.embedder.model.device)
+        # The GWM head is the only weight on this server that is NOT already
+        # bf16 -- the Qwen embedder is loaded bf16 above and is ~16 GB of the
+        # ~20 GB total. fp32 is the numeric path every droid-sim result was
+        # produced on, so it stays the default; bf16 halves the head's ~1.4 GB.
+        self.head_dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[head_dtype]
+        self.gwm = model.to(self.head_dtype).eval().to(self.embedder.model.device)
+        _log.info(f"GWM head in {head_dtype}")
         _log.info(f"GWM ready: step={ckpt.get('step')} params on {self.embedder.model.device}")
         self._task_cache: dict = {}
 
@@ -224,7 +231,7 @@ class GwmBackend:
                         f"visual token count {tuple(encoded.shape)} != canonical "
                         f"{tuple(self.gwm.positions.shape)} (grid {grid}) — pixel budget broke"
                     )
-                pred = self.gwm(encoded[None].float())[0].to(torch.bfloat16)
+                pred = self.gwm(encoded[None].to(self.head_dtype))[0].to(torch.bfloat16)
                 f1, f2, f3, latent = pred.chunk(4, dim=0)
                 outputs = self.embedder.embed_video_latent(latent, [f1, f2, f3], **proc)
                 vemb = self.embedder.pooling_video_latent(outputs)[0]
@@ -299,6 +306,11 @@ def main() -> None:
     ap.add_argument("--arm", default="panda")
     ap.add_argument("--ckpt", help="GWM canonical checkpoint (gwm backend)")
     ap.add_argument("--embedder", default="Qwen/Qwen3-VL-Embedding-8B")
+    ap.add_argument("--head-dtype", default="fp32", choices=["fp32", "bf16"],
+                    help="dtype for the GWM head. fp32 (default) is the numeric path "
+                         "every droid-sim result was produced on; bf16 saves ~0.7 GB of "
+                         "the server's ~20 GB, almost all of which is the bf16 Qwen "
+                         "embedder and not reachable this way")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8901)
     args = ap.parse_args()
@@ -308,7 +320,8 @@ def main() -> None:
     else:
         if not args.ckpt:
             ap.error("--backend gwm requires --ckpt")
-        backend = GwmBackend(args.urdf, args.arm, args.ckpt, args.embedder)
+        backend = GwmBackend(args.urdf, args.arm, args.ckpt, args.embedder,
+                             head_dtype=args.head_dtype)
     uvicorn.run(build_app(backend), host=args.host, port=args.port, log_level="warning")
 
 
