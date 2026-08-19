@@ -273,7 +273,8 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                     "--k-total", args.k_total, "--use-plane-normal",
                     "--use-robot-arm-filter", "--anchor-descent",
                     "--closed-tip-overhang", f"{closed_tip_overhang():.5f}",
-                    "--release-above-rim", str(args.release_above_rim)],
+                    "--release-above-rim", str(args.release_above_rim),
+                    "--skip-leading-close"],
                    "propose(place)", args.verbose)
     else:
         run_module("gwm_hardware.gwm_arm.propose",

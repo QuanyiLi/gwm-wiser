@@ -214,8 +214,17 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
     return out
 
 
-def emit_plan(q_init: np.ndarray, dest: str, results: list) -> dict:
-    steps = [{"type": "gripper", "label": f"Close(held@{dest})", "action": "close"}]
+def emit_plan(q_init: np.ndarray, dest: str, results: list, skip_close: bool = False) -> dict:
+    # droid-sim starts with the gripper OPEN around a welded block, so the plan
+    # has to close it before transporting. On hardware the gripper is ALREADY
+    # holding the object -- the controller says so (is_grasped) -- and the
+    # leading close costs twice over: it re-squeezes a real object for no
+    # reason, and it prepends 1.33 s of stationary timeline that lands 2 of the
+    # 6 RAT frames on a pose identical across every candidate, so a third of
+    # the scoring evidence carries no signal at all. Place margins on this rig
+    # sat at +0.0001 to +0.0021.
+    steps = ([] if skip_close else
+             [{"type": "gripper", "label": f"Close(held@{dest})", "action": "close"}])
     for label, res in results:
         plan = res.get_interpolated_plan()
         steps.append({
@@ -240,6 +249,11 @@ def main() -> None:
     ap.add_argument("--use-robot-arm-filter", action="store_true",
                     help="identify the arm by the robot's own collision spheres rather "
                          "than by cluster height")
+    ap.add_argument("--skip-leading-close", action="store_true",
+                    help="omit the plan's opening gripper-close. Correct wherever the "
+                         "gripper is ALREADY holding the object, which is every hardware "
+                         "place; droid-sim needs it because its block is welded into an "
+                         "open gripper")
     ap.add_argument("--release-above-rim", type=float, default=0.0,
                     help="metres above a CONTAINER's rim to stop at, so the object is "
                          "dropped in rather than carried to the floor. 0 reproduces "
@@ -470,7 +484,7 @@ def main() -> None:
             plan = emit_plan(obs["q_init"], dest, [
                 (f"MoveHolding(held, {dest})", approach),
                 (f"Place(held, {dest})", descend),
-            ])
+            ], skip_close=args.skip_leading_close)
             dur = sum(len(st["positions"]) * st["dt"] for st in plan["steps"] if st["type"] == "trajectory")
             name = f"plan_{i:02d}_{dest}.json"
             save_tiptop_plan(plan, args.output_dir / name)
