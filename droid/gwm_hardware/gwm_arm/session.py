@@ -274,6 +274,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                     "--use-robot-arm-filter", "--anchor-descent",
                     "--closed-tip-overhang", f"{closed_tip_overhang():.5f}",
                     "--release-above-rim", str(args.release_above_rim),
+                    "--min-flatness", str(args.min_flatness),
                     "--skip-leading-close"],
                    "propose(place)", args.verbose)
     else:
@@ -367,6 +368,11 @@ def main() -> None:
     ap.add_argument("--server-url", default=f"http://localhost:{SCORER_PORT}")
     ap.add_argument("--width-closed", type=float, default=0.005,
                     help="fallback width threshold if the controller reports no is_grasped")
+    ap.add_argument("--min-flatness", type=float, default=0.005,
+                    help="metres of peak-to-valley a solid destination's top may vary across "
+                         "the held object's footprint before it stops being a placement "
+                         "target. Every cluster is a destination, so without this the "
+                         "proposer plans onto a ball apex as readily as into a tray. 0 = off")
     ap.add_argument("--release-above-rim", type=float, default=0.03,
                     help="metres above a container's rim to release from, letting the "
                          "object drop in rather than carrying it to the floor. 0 carries "

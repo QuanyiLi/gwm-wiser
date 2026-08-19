@@ -136,19 +136,22 @@ def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.n
     obj = pts[sel]
     held = {
         "xy": obj[:, :2].mean(axis=0),
+        "r90": float(np.percentile(np.linalg.norm(obj[:, :2] - obj[:, :2].mean(axis=0), axis=1), 90)),
         "bottom_z": float(np.percentile(obj[:, 2], 2)),
         "top_z": float(np.percentile(obj[:, 2], 98)),
         "npts": int(sel.sum()),
     }
     _log.info(
-        f"held object: {held['npts']} pts, xy {np.round(held['xy'], 4).tolist()}, "
+        f"held object: {held['npts']} pts, r90 {held['r90']*1000:.0f} mm, "
+        f"xy {np.round(held['xy'], 4).tolist()}, "
         f"z [{held['bottom_z']:.4f}, {held['top_z']:.4f}] "
         f"(EE at {np.round(ee_pos, 4).tolist()})"
     )
     return held
 
 
-def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: float) -> dict:
+def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: float,
+                    r_need: float | None = None) -> dict:
     """Read a destination's landing surface off the raw cloud.
 
     Raw points inside the cluster's xy footprint (between table and rim) are
@@ -205,11 +208,32 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
             hollow, land_z, surf = True, float(np.percentile(low[:, 2], 10)), low
     band = surf[np.abs(surf[:, 2] - land_z) < 0.012]
     target_xy = band[:, :2].mean(axis=0) if len(band) >= 20 else pts[:, :2].mean(axis=0)
+    # Is the patch the held object would rest on actually FLAT? Every cluster
+    # becomes a destination, so a 60 mm ball's apex was a placement target as
+    # readily as a tray: it passes on area (its cap is 24 cm2, the held tomato
+    # needs 14) and on plane tilt (a cap is symmetric, so the fit is level).
+    # What it fails is peak-to-valley over the footprint the object needs.
+    # Measured across three captures on this rig:
+    #
+    #     real containers (floor)   p2v 1.6 - 3.6 mm   rms 0.1 - 0.2 mm
+    #     ball apex                 p2v 6.7 - 7.3 mm   rms 1.9 - 2.0 mm
+    #     table-edge clutter        p2v  26 -  29 mm   rms 1.5 - 1.7 mm
+    #
+    # -- a clean 2x separation on p2v and 6x on rms, so the threshold is not
+    # sitting on top of the data.
+    p2v = None
+    if r_need is not None:
+        disc = pts[(np.linalg.norm(pts[:, :2] - target_xy, axis=1) <= r_need)
+                   & (np.abs(pts[:, 2] - land_z) < 0.030)]
+        if len(disc) >= 20:
+            p2v = float(np.percentile(disc[:, 2], 98) - np.percentile(disc[:, 2], 2))
+
     out = {"target_xy": target_xy, "land_z": land_z, "rim_z": rim_z, "hollow": bool(hollow),
-           "rim_coverage": round(coverage, 2)}
+           "rim_coverage": round(coverage, 2), "p2v": p2v}
     _log.info(
         f"{label}: {'hollow' if hollow else 'solid'}, rim_z {rim_z:.3f}, land_z {land_z:.3f}, "
         f"rim_coverage {coverage:.2f}, target_xy {np.round(target_xy, 3).tolist()}"
+        + ("" if p2v is None else f", landing p2v {p2v*1000:.1f} mm")
     )
     return out
 
@@ -249,6 +273,11 @@ def main() -> None:
     ap.add_argument("--use-robot-arm-filter", action="store_true",
                     help="identify the arm by the robot's own collision spheres rather "
                          "than by cluster height")
+    ap.add_argument("--min-flatness", type=float, default=0.0,
+                    help="metres of peak-to-valley a SOLID destination's landing patch may "
+                         "vary across the held object's footprint before it stops counting "
+                         "as a placement surface (0 = off, droid-sim default; 0.005 on this "
+                         "rig separates containers from ball tops by 2x)")
     ap.add_argument("--skip-leading-close", action="store_true",
                     help="omit the plan's opening gripper-close. Correct wherever the "
                          "gripper is ALREADY holding the object, which is every hardware "
@@ -327,11 +356,36 @@ def main() -> None:
     # held object) hovers over the table at the capture pose and may overlap a
     # destination's footprint in xy, so cut it out of the cloud first.
     xyz_scene = xyz_flat[np.linalg.norm(xyz_flat - ee0_pos, axis=1) >= HAND_CROP_RADIUS]
-    landings = {}
+    landings, rejected = {}, []
     for label, mesh in object_trimeshes.items():
-        surf = landing_surface(label, np.asarray(mesh.vertices)[:, :2], xyz_scene, surface_z)
-        if surf is not None:
-            landings[label] = surf
+        surf = landing_surface(label, np.asarray(mesh.vertices)[:, :2], xyz_scene, surface_z,
+                               r_need=held["r90"] if args.min_flatness > 0 else None)
+        if surf is None:
+            continue
+        # A hollow destination's floor was already validated by the 360-degree
+        # enclosure check, and its interior is the support by construction.
+        # A SOLID one has to earn it: landing "on top of" something is only a
+        # placement if the top can hold the object.
+        if (not surf["hollow"] and args.min_flatness > 0 and surf["p2v"] is not None
+                and surf["p2v"] > args.min_flatness):
+            rejected.append((label, surf["p2v"]))
+            continue
+        landings[label] = surf
+    for label, p2v in rejected:
+        _log.info(f"{label}: NOT a placement destination -- its top varies {p2v*1000:.1f} mm "
+                  f"across the {held['r90']*1000:.0f} mm the held object needs "
+                  f"(limit {args.min_flatness*1000:.0f} mm); nothing would rest there")
+    if not landings and rejected:
+        # Refusing every destination is worse than planning a doubtful one: the
+        # caller gets no candidates at all and no way to see why. Keep them and
+        # say so, rather than turning a perception limit into a dead end.
+        _log.warning("every destination failed the flatness check -- keeping them all. "
+                     "Either nothing in this scene can hold the object, or a real "
+                     "container was read as solid (its interior unseen from this view).")
+        for label, mesh in object_trimeshes.items():
+            surf = landing_surface(label, np.asarray(mesh.vertices)[:, :2], xyz_scene, surface_z)
+            if surf is not None:
+                landings[label] = surf
     if not landings:
         raise SystemExit("no destination clusters with a readable landing surface")
     n_dest = len(landings)
