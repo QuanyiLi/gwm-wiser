@@ -126,7 +126,16 @@ def plan_to_candidate(plan: dict) -> dict:
             target = 1.0 if step["action"] == "close" else 0.0
             if step["action"] == "close" and close_t is None:
                 close_t = t
-            last = positions[-1] if positions else [0.0] * 7
+            # A gripper step holds the arm where it already is. When the step
+            # is FIRST -- which every place plan's leading close is -- there is
+            # no previous waypoint, and falling back to zeros renders the arm
+            # bolt upright in a configuration it never occupies. Those frames
+            # then land inside the RAT window: measured on a hardware place,
+            # 2 of the 6 sampled frames were the all-zero pose, identical
+            # across every candidate, i.e. a third of the evidence was shared
+            # noise. Place margins sat at ~0.0004 while picks, which have no
+            # leading gripper step, scored ~0.03.
+            last = positions[-1] if positions else list(plan["q_init"])
             for k in range(GRIPPER_PAUSE_SUBSTEPS):
                 positions.append(last)
                 times.append(t)
