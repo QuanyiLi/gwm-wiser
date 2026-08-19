@@ -286,6 +286,8 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
     from tiptop.motion_planning import go_to_capture
     from gwm_tiptop.robot_fk import fk_model
     from tiptop.perception.cameras import get_depth_estimator, get_hand_camera
+
+    from gwm_hardware.common.rs_open import open_with_retry
     from tiptop.perception.cameras.rs_camera import RealsenseCamera
     from tiptop.utils import get_robot_client, load_gripper_mask
 
@@ -362,7 +364,7 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
     # instruction fail with "Device or resource busy" -- the pick worked, the
     # place could not even capture. Every camera in this module is opened and
     # released within the call that needs it.
-    cam = get_hand_camera()
+    cam = open_with_retry(get_hand_camera, cfg.cameras.hand.serial)
     try:
         ee_from_cam = load_calibration(cam.serial)
         world_from_ee = kin.get_state(tensor_args.to_device(q)).ee_pose.get_numpy_matrix()[0]
