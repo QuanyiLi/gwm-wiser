@@ -236,6 +236,12 @@ def main() -> None:
     sampling = {"rat_scale": rat_scale, "task_image": args.task_image}
     timeline = {"drop_static_prefix": args.drop_static_prefix,
                 "append_release": args.append_release}
+    if not plans:
+        raise SystemExit(
+            f"{args.proposals_dir} has no proposals to score. The proposer found nothing "
+            "it could plan for -- read its output, not this one. (Scoring an empty "
+            "candidate list reaches gwm-server as a malformed request and comes back "
+            "as an opaque 500.)")
     candidates = [plan_to_candidate(plan, **timeline) for _, plan in plans]
     per_view = []
     for cam, rgb, K, c2w in views:

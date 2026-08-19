@@ -293,6 +293,30 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                    ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
                     "--k-total", args.k_total], "propose(pick)", args.verbose)
 
+    # Nothing to score is a normal outcome, not a crash. The proposer already
+    # says so and writes an index with num_proposals 0; before this the turn
+    # walked straight into the scorer with an empty candidate list and came
+    # back as `500 Server Error` from gwm-server -- an error about the wrong
+    # thing entirely, several frames away from the fact that the scene had no
+    # graspable object in it.
+    index = json.loads((proposals / "proposals_index.json").read_text())
+    if not index.get("num_proposals"):
+        per = index.get("perception", {}) or {}
+        clusters = per.get("clusters", [])
+        graspless = set(per.get("graspless_clusters", []))
+        print(f"\n  no candidates -- nothing to score, nothing to execute.")
+        if clusters:
+            for c in clusters:
+                why = ("M2T2 proposed no grasp for it" if c in graspless
+                       else "grasps existed but none survived reachability refinement")
+                print(f"      {c}: {why}")
+        else:
+            print("      the scene decomposed into no clusters at all")
+        print("      look at proposals/clusters.png -- if the object is there and was "
+              "still refused, it is out of reach or the grasps are unplannable from "
+              "this pose, not a scoring problem.")
+        return
+
     # --- score / gate / viz --------------------------------------------
     run_module("gwm_tiptop.score_client",
                ["--proposals-dir", proposals, "--external-h5", run_dir / "external_obs.h5",
