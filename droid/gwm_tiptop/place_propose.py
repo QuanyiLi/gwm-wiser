@@ -106,6 +106,10 @@ SELF_SPHERE_PAD = 0.010
 # How far a candidate's first waypoint may sit from the pose the arm is
 # actually in. Anything beyond this is a commanded jump, not a motion.
 START_TOL_RAD = 0.02
+# Rise across the held object's own footprint radius, above which a SOLID
+# destination is not a surface anything would stay on. Dimensionless so it does
+# not move with the payload; see the measurement table in `landing_surface`.
+DEFAULT_MAX_SUPPORT_SLOPE = 0.18
 
 
 def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.ndarray,
@@ -215,15 +219,24 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
     # becomes a destination, so a 60 mm ball's apex was a placement target as
     # readily as a tray: it passes on area (its cap is 24 cm2, the held tomato
     # needs 14) and on plane tilt (a cap is symmetric, so the fit is level).
-    # What it fails is peak-to-valley over the footprint the object needs.
-    # Measured across three captures on this rig:
+    # What it fails is how much the patch RISES across the footprint the object
+    # has to rest on -- expressed as a SLOPE, peak-to-valley over that radius.
     #
-    #     real containers (floor)   p2v 1.6 - 3.6 mm   rms 0.1 - 0.2 mm
-    #     ball apex                 p2v 6.7 - 7.3 mm   rms 1.9 - 2.0 mm
-    #     table-edge clutter        p2v  26 -  29 mm   rms 1.5 - 1.7 mm
+    # Slope rather than millimetres, because the radius is the held object's own
+    # and it changes between turns. Measured over four captures, held r90
+    # ranging 18 - 36 mm:
     #
-    # -- a clean 2x separation on p2v and 6x on rms, so the threshold is not
-    # sitting on top of the data.
+    #                             p2v            slope
+    #     real container floors   1.5 - 3.6 mm   0.076 - 0.120   (7 samples)
+    #     ball apex               5.7 - 7.3 mm   0.294 - 0.347
+    #     table-edge clutter       19 -  29 mm   0.756 - 1.364
+    #
+    # In millimetres those bands very nearly touch, and on 2026-08-19 they did:
+    # a smaller held object (r90 18 mm, down from 21) shrank the disc the ball's
+    # cap was measured over, its p2v fell under a 5 mm limit, and the ball became
+    # a destination again and took 5 of the 16 candidates. As a slope the same
+    # ball reads 0.294 there and 0.347 elsewhere -- it does not move with the
+    # payload.
     p2v = None
     if r_need is not None:
         disc = pts[(np.linalg.norm(pts[:, :2] - target_xy, axis=1) <= r_need)
@@ -232,11 +245,13 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
             p2v = float(np.percentile(disc[:, 2], 98) - np.percentile(disc[:, 2], 2))
 
     out = {"target_xy": target_xy, "land_z": land_z, "rim_z": rim_z, "hollow": bool(hollow),
-           "rim_coverage": round(coverage, 2), "p2v": p2v}
+           "rim_coverage": round(coverage, 2), "p2v": p2v,
+           "slope": None if (p2v is None or not r_need) else p2v / float(r_need)}
     _log.info(
         f"{label}: {'hollow' if hollow else 'solid'}, rim_z {rim_z:.3f}, land_z {land_z:.3f}, "
         f"rim_coverage {coverage:.2f}, target_xy {np.round(target_xy, 3).tolist()}"
-        + ("" if p2v is None else f", landing p2v {p2v*1000:.1f} mm")
+        + ("" if p2v is None else
+           f", landing rise {p2v*1000:.1f} mm over {r_need*1000:.0f} mm (slope {p2v/r_need:.3f})")
     )
     return out
 
@@ -287,11 +302,12 @@ def main() -> None:
     ap.add_argument("--use-robot-arm-filter", action="store_true",
                     help="identify the arm by the robot's own collision spheres rather "
                          "than by cluster height")
-    ap.add_argument("--min-flatness", type=float, default=0.0,
-                    help="metres of peak-to-valley a SOLID destination's landing patch may "
-                         "vary across the held object's footprint before it stops counting "
-                         "as a placement surface (0 = off, droid-sim default; 0.005 on this "
-                         "rig separates containers from ball tops by 2x)")
+    ap.add_argument("--max-support-slope", type=float, default=0.0,
+                    help="rise over the held object's footprint radius, above which a SOLID "
+                         "destination stops counting as a placement surface. Dimensionless, so "
+                         "it does not drift when the payload changes size (0 = off, droid-sim "
+                         "default; 0.18 on this rig separates container floors at 0.076-0.120 "
+                         "from ball tops at 0.294-0.347)")
     ap.add_argument("--skip-leading-close", action="store_true",
                     help="omit the plan's opening gripper-close. Correct wherever the "
                          "gripper is ALREADY holding the object, which is every hardware "
@@ -373,22 +389,22 @@ def main() -> None:
     landings, rejected = {}, []
     for label, mesh in object_trimeshes.items():
         surf = landing_surface(label, np.asarray(mesh.vertices)[:, :2], xyz_scene, surface_z,
-                               r_need=held["r90"] if args.min_flatness > 0 else None)
+                               r_need=held["r90"] if args.max_support_slope > 0 else None)
         if surf is None:
             continue
         # A hollow destination's floor was already validated by the 360-degree
         # enclosure check, and its interior is the support by construction.
         # A SOLID one has to earn it: landing "on top of" something is only a
         # placement if the top can hold the object.
-        if (not surf["hollow"] and args.min_flatness > 0 and surf["p2v"] is not None
-                and surf["p2v"] > args.min_flatness):
-            rejected.append((label, surf["p2v"]))
+        if (not surf["hollow"] and args.max_support_slope > 0 and surf["slope"] is not None
+                and surf["slope"] > args.max_support_slope):
+            rejected.append((label, surf["p2v"], surf["slope"]))
             continue
         landings[label] = surf
-    for label, p2v in rejected:
-        _log.info(f"{label}: NOT a placement destination -- its top varies {p2v*1000:.1f} mm "
-                  f"across the {held['r90']*1000:.0f} mm the held object needs "
-                  f"(limit {args.min_flatness*1000:.0f} mm); nothing would rest there")
+    for label, p2v, slope in rejected:
+        _log.info(f"{label}: NOT a placement destination -- its top rises {p2v*1000:.1f} mm "
+                  f"across the {held['r90']*1000:.0f} mm the held object rests on, a slope of "
+                  f"{slope:.3f} (limit {args.max_support_slope:.2f}); nothing would stay there")
     if not landings and rejected:
         # Refusing every destination is worse than planning a doubtful one: the
         # caller gets no candidates at all and no way to see why. Keep them and
