@@ -97,3 +97,24 @@ def planning_solvers(num_particles: int, num_spheres: int, include_workspace: bo
         _log.info(f"building cuRobo solvers {key} (once per session)")
         _SOLVERS[key] = build_curobo_solvers(*key[:2], include_workspace=key[2])
     return _SOLVERS[key]
+
+
+def default_planning_solvers(num_particles: int = 256, include_workspace: bool = True):
+    """The session's planning solvers, derived from tiptop's own config.
+
+    Everything that needs to PLAN -- the proposer, and `go_to_capture` inside
+    the capture step -- must ask for the same configuration, or the cache key
+    differs and a second 3.6 s solver gets built for no reason. Deriving the
+    sphere count from `build_tamp_config` the same way the proposer does is
+    what keeps the keys equal.
+    """
+    from tiptop.config import tiptop_cfg
+    from tiptop.planning import build_tamp_config
+
+    cfg = tiptop_cfg()
+    config = build_tamp_config(
+        num_particles=num_particles, max_planning_time=60.0, opt_steps=500,
+        robot_type=cfg.robot.type,
+        time_dilation_factor=cfg.robot.time_dilation_factor, near_placement=False)
+    return planning_solvers(config.num_particles, config.coll_n_spheres,
+                            include_workspace=include_workspace)

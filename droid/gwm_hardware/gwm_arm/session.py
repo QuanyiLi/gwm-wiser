@@ -199,9 +199,8 @@ def warm_up(args) -> None:
     """
     t0 = time.perf_counter()
     from tiptop.config import tiptop_cfg
-    from tiptop.planning import build_tamp_config
 
-    from gwm_tiptop.robot_fk import fk_model, planning_solvers
+    from gwm_tiptop.robot_fk import default_planning_solvers, fk_model
 
     cfg = tiptop_cfg()
     print("  building the pipeline (once) ...")
@@ -210,11 +209,7 @@ def warm_up(args) -> None:
     print(f"    \u25b8 {'kinematics':<16} {time.perf_counter() - t0:6.1f} s")
 
     t1 = time.perf_counter()
-    config = build_tamp_config(
-        num_particles=args.k_particles, max_planning_time=60.0, opt_steps=500,
-        robot_type=cfg.robot.type,
-        time_dilation_factor=cfg.robot.time_dilation_factor, near_placement=False)
-    planning_solvers(config.num_particles, config.coll_n_spheres, include_workspace=True)
+    default_planning_solvers(num_particles=args.k_particles)
     print(f"    \u25b8 {'cuRobo solvers':<16} {time.perf_counter() - t1:6.1f} s")
 
     t1 = time.perf_counter()

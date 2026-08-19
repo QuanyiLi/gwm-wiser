@@ -296,7 +296,17 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
     kin = fk_model()            # FK only: where the wrist camera is
     if move and not external_only:
         _log.info("moving to q_capture -- hand on the E-stop")
-        go_to_capture(time_dilation_factor=cfg.robot.time_dilation_factor, motion_gen=motion_gen)
+        # go_to_capture PLANS, so it needs a MotionGen, not the kinematics
+        # model. Taking it from the shared cache means the session's existing
+        # solver is reused rather than a second one built. It is also
+        # workspace-aware, where the previous local build was not -- the
+        # capture motion is now collision-checked against the rig's keep-outs
+        # like every other motion.
+        from gwm_tiptop.robot_fk import default_planning_solvers
+
+        _, motion_gen, _ = default_planning_solvers()
+        go_to_capture(time_dilation_factor=cfg.robot.time_dilation_factor,
+                      motion_gen=motion_gen)
         # tiptop opens the gripper here because its flow only ever picks. Doing
         # that unconditionally DROPS a held object at the capture pose, before
         # the place it was asked to do -- observed 2026-08-19. This is an
