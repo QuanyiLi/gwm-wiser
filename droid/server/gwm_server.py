@@ -80,6 +80,11 @@ class ScoreRequest(BaseModel):
     rat_scale: float | None = 3.0  # WISER schedule x scale from the start; None = uniform over the full trajectory (G-20)
     task_image: str = "current"  # current | none
     dump_dir: str | None = None  # save the exact RAT strips fed to the model
+    # Appended (with a space) to TEXT_INSTRUCTION for BOTH the task embedding
+    # and the empty-instruction prior, so debias subtracts it back out. The
+    # hardware session uses it to pin down "left/right" for its camera; absent
+    # (the default, and droid-sim never sends it) the text path is unchanged.
+    text_instruction_extra: str | None = None
 
 
 def candidate_timeline(cand: Candidate) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -190,8 +195,12 @@ class GwmBackend:
         return {k: v.to(self.embedder.model.device) for k, v in processed.items()
                 if isinstance(v, self.torch.Tensor)}
 
-    def _task_embedding(self, instruction: str, rgb: np.ndarray, mode: str):
+    def _task_embedding(self, instruction: str, rgb: np.ndarray, mode: str,
+                        sys_extra: str | None = None):
         from PIL import Image
+
+        sys_instruction = TEXT_INSTRUCTION if not sys_extra \
+            else f"{TEXT_INSTRUCTION} {sys_extra}"
 
         # The FRAME is part of the key, not just the text. With
         # task_image="current" this embedding is computed from the instruction
@@ -207,13 +216,14 @@ class GwmBackend:
         # Hashing 2.7 MB costs ~2 ms against a ~150 ms embed, and the cache
         # still does its job: within one scene, all 16 candidates and the
         # empty-instruction prior share one embedding.
-        key = (instruction, mode, hashlib.sha1(np.ascontiguousarray(rgb)).hexdigest()
+        key = (instruction, sys_instruction, mode,
+               hashlib.sha1(np.ascontiguousarray(rgb)).hexdigest()
                if mode == "current" else "")
         if key in self._task_cache:
             return self._task_cache[key]
         images = [Image.fromarray(rgb)] if mode == "current" else None
         emb = self.embedder.process([
-            {"text": instruction, "image": images, "instruction": TEXT_INSTRUCTION}
+            {"text": instruction, "image": images, "instruction": sys_instruction}
         ])[0]
         if len(self._task_cache) >= TASK_CACHE_MAX:
             self._task_cache.pop(next(iter(self._task_cache)))
@@ -227,7 +237,8 @@ class GwmBackend:
         h, w = rgb.shape[:2]
         K = np.asarray(req.intrinsics, dtype=np.float64)
         c2w = np.asarray(req.world_from_cam, dtype=np.float64)
-        task_emb = self._task_embedding(req.instruction, rgb, req.task_image)
+        task_emb = self._task_embedding(req.instruction, rgb, req.task_image,
+                                        req.text_instruction_extra)
 
         # The instruction-independent part of every candidate's score, measured
         # against the SAME video embedding. Free: one extra task embedding per
@@ -236,7 +247,8 @@ class GwmBackend:
         # used only if the
         # caller asks -- it is the number that separates "the model grounded
         # this" from "this candidate scores high whatever you ask for".
-        prior_emb = self._task_embedding("", rgb, req.task_image)
+        prior_emb = self._task_embedding("", rgb, req.task_image,
+                                         req.text_instruction_extra)
 
         scores, priors, per_cand = [], [], []
         dump_dir = Path(req.dump_dir) if req.dump_dir else None

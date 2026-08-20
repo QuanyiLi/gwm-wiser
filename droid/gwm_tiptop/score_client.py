@@ -220,6 +220,11 @@ def main() -> None:
                     help="WISER schedule scale from trajectory start (G-20 default 3.0); "
                          "'none' = uniform 6 frames over the full trajectory")
     ap.add_argument("--task-image", default="current", choices=["current", "none"])
+    ap.add_argument("--text-instruction-extra", default=None,
+                    help="appended to the server's retrieval instruction for both the task "
+                         "embedding and the prior (hardware; e.g. pinning down what "
+                         "left/right means for the rig's camera). Absent = the text path "
+                         "droid-sim runs on, byte-identical")
     ap.add_argument("--object-score", default="mean",
                     choices=["mean", "max", "median", "top2"],
                     help="how each object's candidates reduce to one object score; "
@@ -264,6 +269,8 @@ def main() -> None:
                           np.asarray(f[f"{cam}/intrinsic_matrix"]), c2w))
 
     sampling = {"rat_scale": rat_scale, "task_image": args.task_image}
+    if args.text_instruction_extra:
+        sampling["text_instruction_extra"] = args.text_instruction_extra
     timeline = {"drop_static_prefix": args.drop_static_prefix,
                 "append_release": args.append_release}
     if not plans:

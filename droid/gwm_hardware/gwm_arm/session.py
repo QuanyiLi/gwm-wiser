@@ -79,6 +79,16 @@ _log = logging.getLogger("gwm_arm.session")
 
 SCORER_PORT = 8901
 
+# Appended to the scorer's retrieval instruction (gwm-server TEXT_INSTRUCTION)
+# on every hardware score. The 2026-08-20 external_cam mount was aimed so that
+# image left/right IS workspace left/right (G-46) -- but the model has no way
+# to know that from the pixels, and "pick up the red object on the most right
+# side" picked the middle of two identical tomatoes. This sentence tells it.
+# Applied to the task embedding AND the empty-instruction prior, so
+# --debias-prior subtracts it back out; droid-sim never sends it.
+SPATIAL_NOTE = ("Left and right are relative to the robot, and are the same as "
+                "the left and right sides of the image frame.")
+
 # How far up to lift before travelling home, and how far the arm may already be
 # from a plan's start before we insist on planning a motion to it.
 
@@ -415,7 +425,8 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                ["--proposals-dir", proposals, "--external-h5", run_dir / "external_obs.h5",
                 "--instruction", instruction, "--cam", args.cam, "--tag", tag,
                 "--rat-scale", args.rat_scale, "--object-score", args.object_score,
-                "--server-url", args.server_url, "--dump-dir", run_dir / f"rat_{tag}"]
+                "--server-url", args.server_url, "--dump-dir", run_dir / f"rat_{tag}",
+                "--text-instruction-extra", SPATIAL_NOTE]
                # A place plan's scored timeline is not its executed one. It opens
                # with 1.33 s of the arm frozen at the capture pose while the
                # gripper closes, and it ENDS the instant the gripper arrives --
@@ -557,12 +568,16 @@ def main() -> None:
                          "the object is hard to grasp -- a poor, diverse grasp family drags "
                          "its mean down while a well-grasped distractor stays tight. See "
                          "score_client's docstring for the measurement")
-    ap.add_argument("--debias-prior", action="store_true",
+    ap.add_argument("--debias-prior", action=argparse.BooleanOptionalAction, default=True,
                     help="rank objects on score MINUS their instruction-independent prior "
                          "(the score against an EMPTY instruction). Removes the "
-                         "per-candidate constant that ranking is NOT invariant to. Off by "
-                         "default: it is measured but not yet validated -- it rescued one "
-                         "case and did not rescue another. The prior is recorded either way")
+                         "per-candidate constant that ranking is NOT invariant to. ON by "
+                         "default since 2026-08-20: raw score picked a CONTAINER for 'the "
+                         "object between the two containers' purely on prior salience "
+                         "(prior spread 0.057 > language spread 0.032) while the debiased "
+                         "ranking chose correctly at 2.4x the margin, and a debiased place "
+                         "turn selected correctly at +0.0668. --no-debias-prior restores "
+                         "raw-score ranking; the prior is recorded either way")
     ap.add_argument("--record", action="store_true",
                     help="record video while the robot moves, to "
                          "runs/session/<run>/exec_<tag>.mp4. The only record of what a "
