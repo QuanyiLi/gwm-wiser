@@ -107,6 +107,12 @@ async def predict_depth_and_grasps(
         cfg.perception.m2t2.url,
         scene_xyz=xyz_downsampled,
         scene_rgb=rgb_downsampled,
+        # gwm_hardware rig: honour the rig-tuned sampling parameters when the
+        # config declares them, so the TiPToP and GWM arms sample M2T2
+        # identically (fair A/B). Absent keys fall back to the historical
+        # defaults and this call is byte-identical to before.
+        grasp_threshold=float(cfg.perception.m2t2.get("grasp_threshold", 0.035)),
+        num_runs=int(cfg.perception.m2t2.get("num_runs", 5)),
         apply_bounds=cfg.perception.m2t2.apply_bounds,
     )
 

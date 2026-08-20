@@ -114,8 +114,11 @@ perception:
     # default 0.035/5 -> yellow peg 3/9, green peg 7/9; 0.02/10 -> 2/9 both.
     # graspless_retries re-samples M2T2 and merges while any cluster still has
     # no grasps (zero-rate falls geometrically per retry; ~2.6 s each).
-    # Read by gwm_hardware.gwm_arm.propose only; tiptop itself and droid-sim
-    # never see these keys and keep the client defaults (0.035 / 5 / no retry).
+    # Read by BOTH arms since 2026-08-20 so the A/B comparison shares grasp
+    # luck: gwm_hardware.gwm_arm.propose, and tiptop's own
+    # perception_wrapper.predict_depth_and_grasps + tiptop_run (graspless
+    # re-sampling loop). droid-sim's own yml has none of these keys and keeps
+    # the client defaults (0.035 / 5 / no retry).
     grasp_threshold: 0.02
     num_runs: 10
     graspless_retries: 2
@@ -128,6 +131,18 @@ perception:
     enabled: false
     target_faces: 10000
     concurrency: 6
+
+  # Depth sanity gate: the table is bolted down, its top taped at z = 0.055
+  # (2026-08-18; must match gwm_hardware.common.rig_workspace.TABLE_TOP_Z). A
+  # RANSAC table fit further than max_surface_drift_m from it means the DEPTH
+  # is wrong -- FoundationStereo occasionally emits a whole warped sheet
+  # (ledger G-35/G-40) -- so refuse to plan and re-capture instead of building
+  # clusters/grasps/collision meshes on bad geometry. Read by tiptop_run's
+  # process_scene_geometry (both arms gate: gwm_arm has its own
+  # check_surface_z). Delete either key to disable; droid-sim and upstream
+  # never define them.
+  table_top_z_m: 0.055
+  max_surface_drift_m: 0.02
 
   depth_trunc_m: 5.0
   voxel_downsample_size: 0.0075

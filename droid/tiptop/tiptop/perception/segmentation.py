@@ -242,6 +242,11 @@ def segment_table_with_ransac(
     table_color_rgba = np.append(table_color, 255)
     table_box.visual.face_colors = table_color_rgba
 
+    # The box top is deliberately sunk 20 mm below the fitted plane (grasp
+    # clearance, above); record the actual fitted height so callers can sanity
+    # check it without reverse-engineering that offset.
+    table_box.metadata["surface_z"] = float(surface_z)
+
     _log.info(f"Table surface at z = {surface_z:.3f}, dims = {table_box.extents}")
     return table_box
 

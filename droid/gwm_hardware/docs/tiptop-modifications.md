@@ -5,7 +5,8 @@ droid-sim results in `gwm_integrate_doc/plan.md` are reproducible from it
 unchanged. A hardware rig cannot leave it completely untouched — tiptop reads
 its robot config, its calibration and its workspace from files inside the
 package — so every deviation is made by a **versioned, idempotent installer**
-in this directory, each with `--restore`.
+in this directory, each with `--restore` (one exception: deviation 8 is a set
+of config-guarded edits committed in-tree, inert without the rig config).
 
 This file is the complete list. Reading it plus running the installers should
 reproduce the rig from a fresh clone.
@@ -210,6 +211,59 @@ afterwards, which is very likely where it came from. `tiptop_run` closes the
 client itself in its own `finally` (`tiptop_run.py:817`).
 
 **droid-sim impact: none.** The sim does not drive a Bamboo client.
+
+---
+
+## 8. Fair-A/B alignment: rig-tuned M2T2 sampling, graspless re-sampling, depth sanity gate (2026-08-20)
+
+**Installer: none — these are config-guarded, committed in-tree edits** (marker
+comments `# gwm_hardware rig:` in each file; `git log -- droid/tiptop` is the
+restore path). Unlike deviations 1–7 they change NOTHING unless the loaded
+`tiptop.yml` declares the keys: every new read is `cfg....get(key, old_default)`,
+droid-sim's and upstream's configs have none of the keys, and the absent-key
+fallbacks were verified equal to the historical defaults. So the pristine-tree
+guarantee ("sim results reproducible unchanged") still holds without an
+installer.
+
+Why: three robustness fixes born on this rig lived only in `gwm_arm/propose.py`,
+which handed the **GWM arm** better grasp sampling and a depth-fault refusal
+that the **TiPToP baseline** did not get — an unfair A/B. Ledger G-48 has the
+measurements; G-47 (M2T2 stochasticity on small flat objects) and G-35/G-40
+(transient warped-depth sheets from FoundationStereo) are the underlying
+faults, which strike both arms identically because the cameras and servers are
+shared.
+
+What each edit does, and its config key (all in `perception.*` of the rig
+`tiptop.yml`, which is `gwm_hardware/config/tiptop.yml` via the deviation-1
+symlink):
+
+* `tiptop/perception_wrapper.py` — `predict_depth_and_grasps` now forwards
+  `m2t2.grasp_threshold` (rig: 0.02) and `m2t2.num_runs` (rig: 10) to the M2T2
+  request instead of always using the client defaults 0.035/5.
+* `tiptop/tiptop_run.py` — after `process_scene_geometry`, while any detected
+  object has zero associated grasps and `m2t2.graspless_retries` (rig: 2)
+  remain, re-call M2T2 on the same downsampled cloud, MERGE the draws, and
+  re-associate. Mirrors `gwm_arm/propose.py` exactly. Known cost: a
+  legitimately ungraspable object in scene (a flat plate) burns every retry,
+  ~3–5 s each.
+* `tiptop/tiptop_run.py` — `process_scene_geometry` refuses to plan when the
+  RANSAC table fit is further than `perception.max_surface_drift_m` (rig:
+  0.02) from `perception.table_top_z_m` (rig: 0.055, must match
+  `rig_workspace.TABLE_TOP_Z`): the table is bolted down, so a drifted fit
+  means the depth is wrong and clusters/grasps/collision meshes would all be
+  wrong with it. Same semantics as `gwm_arm.propose.check_surface_z`. The
+  remedy is to re-issue the instruction (re-captures); if it repeats, run
+  `rs_preflight` and check FoundationStereo is warm.
+* `tiptop/perception/segmentation.py` — one metadata line:
+  `segment_table_with_ransac` records the fitted plane height as
+  `table_box.metadata["surface_z"]`, because the returned box top is
+  deliberately sunk 20 mm (grasp clearance) and the gate needs the real
+  height. No behavioral change for any caller.
+
+**droid-sim impact: none, verified.** With a config lacking the keys, the M2T2
+call carries the identical parameters as before, the retry loop body never
+runs, and the gate is off (checked by loading a bare config and asserting each
+fallback).
 
 ---
 

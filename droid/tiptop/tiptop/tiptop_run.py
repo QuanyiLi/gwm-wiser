@@ -38,7 +38,7 @@ from tiptop.perception.cameras import (
     get_external_camera,
     get_hand_camera,
 )
-from tiptop.perception.m2t2 import m2t2_to_tiptop_transform
+from tiptop.perception.m2t2 import generate_grasps_async, m2t2_to_tiptop_transform
 from tiptop.perception.sam2 import sam2_client
 from tiptop.perception.segmentation import (
     masked_object_points,
@@ -331,6 +331,31 @@ def process_scene_geometry(
     """
     # Segment table with RANSAC (returns trimesh Box)
     table_trimesh = segment_table_with_ransac(xyz_map, rgb_map, masks)
+
+    # gwm_hardware rig: refuse to plan on a table the fit does not put where
+    # the (bolted-down) table is. A drifted fit means the DEPTH is wrong --
+    # transient FoundationStereo faults produce whole warped sheets -- and
+    # clusters, grasps, and collision meshes are then wrong in a way nothing
+    # downstream notices (gwm_hardware ledger G-35/G-40). Mirrors
+    # gwm_arm.propose.check_surface_z so both A/B arms refuse the same bad
+    # frames. Either key absent (droid-sim, upstream) => gate off, unchanged.
+    _expected_z = tiptop_cfg().perception.get("table_top_z_m", None)
+    _max_drift = tiptop_cfg().perception.get("max_surface_drift_m", None)
+    _fitted_z = table_trimesh.metadata.get("surface_z")
+    if _expected_z is not None and _max_drift is not None and _fitted_z is not None:
+        _drift = float(_fitted_z) - float(_expected_z)
+        if abs(_drift) > float(_max_drift):
+            raise RuntimeError(
+                f"REFUSING TO PLAN: the fitted table surface is {_fitted_z:.4f} m, "
+                f"{_drift * 1000:+.1f} mm from this rig's measured table top "
+                f"({float(_expected_z):.3f} m), tolerance {float(_max_drift) * 1000:.0f} mm. "
+                "The table has not moved, so the depth is wrong, and everything built "
+                "on it would be wrong with it. Re-issue the instruction to re-capture; "
+                "if it repeats, run rs_preflight and check FoundationStereo is warm."
+            )
+        _log.info(f"table fit {_fitted_z:.4f} m, {_drift * 1000:+.1f} mm from the "
+                  f"measured {float(_expected_z):.3f} m -- OK")
+
     table_cuboid = convert_trimesh_box_to_curobo_cuboid(table_trimesh, name="table")
     log_curobo_mesh_to_rerun("world/table", table_cuboid.get_mesh(), static_transform=True)
 
@@ -590,6 +615,41 @@ async def run_perception(
         bbox_viz, masks_viz = save_result
         rr.log("bboxes", rr.Image(bbox_viz))
         rr.log("masks", rr.Image(masks_viz))
+
+    # gwm_hardware rig: M2T2's scene sampling is stochastic and small flat
+    # objects sit right on its edge -- the same cloud gives a 69x39 mm peg
+    # 0..112 associated grasps across repeated calls. An object with zero
+    # grasps this draw is therefore not proven ungraspable: re-sample and
+    # MERGE before giving up on it. Mirrors gwm_arm.propose so both A/B arms
+    # share the same grasp luck. perception.m2t2.graspless_retries absent
+    # (droid-sim, upstream) => the loop never runs and behavior is unchanged.
+    # Known cost: an in-scene object that is legitimately ungraspable (a flat
+    # plate) burns every retry (~3-5 s each, M2T2 + re-association).
+    for _retry in range(int(cfg.perception.m2t2.get("graspless_retries", 0))):
+        _graspless = sorted(l for l, g in processed_scene.grasps.items() if len(g["poses"]) == 0)
+        if not _graspless:
+            break
+        _log.warning(f"{_graspless} got no grasps this M2T2 draw -- re-sampling (retry {_retry + 1})")
+        _more = await generate_grasps_async(
+            session,
+            cfg.perception.m2t2.url,
+            scene_xyz=depth_results["xyz_downsampled"],
+            scene_rgb=depth_results["rgb_downsampled"],
+            grasp_threshold=float(cfg.perception.m2t2.get("grasp_threshold", 0.035)),
+            num_runs=int(cfg.perception.m2t2.get("num_runs", 5)),
+            apply_bounds=cfg.perception.m2t2.apply_bounds,
+        )
+        depth_results["grasps"] = {**depth_results["grasps"],
+                                   **{f"retry{_retry}_{k}": v for k, v in _more.items()}}
+        processed_scene = await asyncio.to_thread(
+            process_scene_geometry,
+            depth_results["xyz_map"],
+            depth_results["rgb_map"],
+            detection_results["masks"],
+            detection_results["bboxes"],
+            depth_results["grasps"],
+            recgen_meshes=recgen_meshes,
+        )
 
     env, all_surfaces = create_tamp_environment(
         processed_scene.object_meshes,
