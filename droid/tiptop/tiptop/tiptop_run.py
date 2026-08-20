@@ -188,16 +188,30 @@ async def check_server_health(session: aiohttp.ClientSession):
 
 
 def _label_rollout(save_dir: Path, output_dir: str, date_str: str, timestamp: str) -> None:
-    """Prompt user to label rollout as success/failure, moving it out of eval/. Loops on invalid input."""
+    """Prompt user to label rollout as success/failure, moving it out of eval/.
+
+    gwm_hardware rig: any answer that is not y/n/empty is appended to
+    human_notes.txt inside the rollout directory (it travels with the move) --
+    the operator's one-line failure reason is worth more than the bit -- and
+    the prompt re-asks until a y/n/empty answer closes it.
+    """
     try:
         while True:
             user_input = (
                 input(
-                    "\nWas the execution successful? Enter 'y' for success, 'n' for failure, or leave empty to skip: "
+                    "\nWas the execution successful? Enter 'y' for success, 'n' for failure, "
+                    "leave empty to skip, or type a note: "
                 )
                 .strip()
-                .lower()
             )
+            user_input_lower = user_input.lower()
+            if user_input_lower in ("y", "n", ""):
+                user_input = user_input_lower
+            else:
+                with open(save_dir / "human_notes.txt", "a") as f:
+                    f.write(user_input + "\n")
+                print("Noted. Now enter 'y', 'n', empty to skip, or add another note.")
+                continue
             if user_input == "y":
                 dest = Path(output_dir) / "success" / date_str / timestamp
                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -213,8 +227,6 @@ def _label_rollout(save_dir: Path, output_dir: str, date_str: str, timestamp: st
             elif user_input == "":
                 _log.info(f"Keeping rollout in eval directory: {save_dir}")
                 return
-            else:
-                print("Invalid input. Please enter 'y', 'n', or leave empty to skip.")
     except EOFError:
         _log.info("No input received, keeping rollout in eval directory")
 
@@ -787,14 +799,23 @@ async def async_entrypoint(container: _DemoContainer, config: TAMPConfiguration,
                         # opening the gripper so the object can drop safely
                         if cutamp_plan is not None and any(atom.fluent.name == Holding.name for atom in env.goal_state):
                             print("WARNING: object will drop when gripper opens, so be ready to catch it.")
+                            # gwm_hardware rig: 'n' keeps the gripper closed
+                            # (e.g. the pick failed and there is nothing to
+                            # drop, or the next instruction places the held
+                            # object). Upstream accepted only 'y', which
+                            # forced an open even when opening was wrong.
                             while True:
                                 try:
-                                    response = input("Open gripper? [y]: ").strip().lower()
+                                    response = input("Open gripper? [y/n]: ").strip().lower()
                                 except KeyboardInterrupt:
                                     raise UserExitException("User interrupted with Ctrl+C")
-                                if response == "y":
+                                if response in ("y", "n"):
                                     break
-                            container.robot.open_gripper()
+                                print("Please answer 'y' (open) or 'n' (keep closed).")
+                            if response == "y":
+                                container.robot.open_gripper()
+                            else:
+                                _log.info("Keeping the gripper closed (user answered 'n')")
                 except Exception:
                     _log.exception("TiPToP run failed")
                     raise

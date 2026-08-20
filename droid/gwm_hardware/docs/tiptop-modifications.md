@@ -267,6 +267,32 @@ fallback).
 
 ---
 
+## 9. `tiptop/tiptop_run.py` — interactive prompts: "Open gripper?" accepts `n`; labels take notes (2026-08-20)
+
+**Installer: none — committed in-tree edit** (marker comment
+`# gwm_hardware rig:`), same category as deviation 8 but interactive-only:
+nothing reads a config for it and no sim path reaches this prompt
+(`execute_plan` on a live robot only).
+
+Upstream's post-pick confirmation looped until the answer was literally `y` —
+there was no way to say no. On this rig "no" is a real answer: the pick
+failed and there is nothing to drop, or the held object should stay held for
+the operator's next step. The prompt is now `Open gripper? [y/n]:`; `y` opens
+as before, `n` keeps the gripper closed and logs it, anything else re-asks.
+
+Same day, `_label_rollout`: an answer that is not y/n/empty used to be thrown
+away as "Invalid input". It is now appended to `human_notes.txt` inside the
+rollout directory (so it travels with the success/failure move) and the
+prompt re-asks -- the operator's one-line failure reason is worth more than
+the bit. The GWM arm's `--record` labeling does the same thing into the run's
+turn.json (`human_notes`), so both arms' evaluation records carry comments
+the same way.
+
+**droid-sim impact: none.** The prompt only exists in the live-robot
+`execute_plan` branch.
+
+---
+
 ## Baseline status
 
 Pick and place both work on hardware (2026-08-18):

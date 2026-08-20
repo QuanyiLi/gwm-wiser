@@ -22,6 +22,17 @@ gate 通过，5.73 s 抓住。
 ./droid/gwm_hardware/gwm_arm/run.sh --execute  # 每一次动作仍需确认
 ```
 
+**评测统计（2026-08-20 起）**：带 `--record` 跑时，每次执行结束后会像 tiptop 的
+`_label_rollout` 一样问一句 `Was the execution successful? Enter 'y' for success,
+'n' for failure, or leave empty to skip`——两臂的统计口径因此一致。答案写进该 run 的
+`turn.json`（字段 `human_label: success|failure`，留空则不写）；**输入任何不是
+y/n/空 的文字会作为备注存进 `human_notes`**（可多条，随后仍会追问 y/n），用来当场记
+失败原因。之后当场打印整个 `runs/session/` 的累计 成功/失败/未标注 计数。事后汇总：
+
+```bash
+grep -h human_label droid/gwm_hardware/runs/session/*/turn.json | sort | uniq -c
+```
+
 **一共只有两类指令,由夹爪状态决定**（`get_gripper_state()` 实测，不是记忆也不是推断）：
 
 | 夹爪 | 提案 | 执行 |

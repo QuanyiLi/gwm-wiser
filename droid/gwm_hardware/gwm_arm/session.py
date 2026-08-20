@@ -335,6 +335,64 @@ def record_turn(run_dir: Path, **fields) -> None:
         _log.debug(f"could not write turn.json: {e}")
 
 
+def ask_execution_label(run_dir: Path, run_root: Path) -> None:
+    """Ask the human whether the execution succeeded; store it in turn.json.
+
+    Same wording and semantics as tiptop's `_label_rollout` (y / n / empty to
+    skip), so the two arms' statistics are collected the same way and mean the
+    same thing. Differences: the label lands as `human_label` in the run's
+    turn.json instead of the run directory being moved (turn.json is the
+    per-run record everything else already reads), and a running tally over
+    the session root prints after each answer so the operator can watch the
+    statistics accumulate.
+
+    Anything that is not y/n/empty is kept too, as `human_notes` in turn.json:
+    the operator watching the run knows WHY it failed ("knocked the cup over
+    on retract"), and that reason is worth more than the bit. Notes accumulate
+    until a y/n/empty answer closes the prompt.
+    """
+    notes, ans = [], ""
+    while True:
+        try:
+            ans = input("\nWas the execution successful? Enter 'y' for success, "
+                        "'n' for failure, leave empty to skip, or type a note: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            ans = ""
+            break
+        if ans.lower() in ("y", "n", ""):
+            ans = ans.lower()
+            break
+        notes.append(ans)
+        print("Noted. Now enter 'y', 'n', empty to skip, or add another note.")
+    if notes:
+        record_turn(run_dir, human_notes=notes)
+        _log.info(f"recorded {len(notes)} note(s) for {run_dir.name}")
+    if ans == "":
+        _log.info(f"left unlabeled: {run_dir.name}")
+    elif ans in ("y", "n"):
+        label = "success" if ans == "y" else "failure"
+        record_turn(run_dir, human_label=label)
+        _log.info(f"recorded human_label={label} for {run_dir.name}")
+
+    counts = {"success": 0, "failure": 0}
+    executed = 0
+    for tj in sorted(run_root.glob("*/turn.json")):
+        try:
+            d = json.loads(tj.read_text())
+        except Exception:  # noqa: BLE001 - stats must never break the run
+            continue
+        if d.get("outcome") != "executed":
+            continue
+        executed += 1
+        if d.get("human_label") in counts:
+            counts[d["human_label"]] += 1
+    unlabeled = executed - counts["success"] - counts["failure"]
+    print(f"  stats over {run_root}: {counts['success']} success / "
+          f"{counts['failure']} failure / {unlabeled} unlabeled "
+          f"(of {executed} executed runs)")
+
+
 def one_turn(instruction: str, run_dir: Path, args) -> None:
     from tiptop.utils import get_robot_client
 
@@ -545,6 +603,12 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     record_turn(run_dir, outcome="executed",
                 recording=str(rec_path) if rec.frames else None,
                 recorded_frames=rec.frames or None)
+
+    # --record marks an evaluation run, and an evaluation run needs a result:
+    # ask the human, mirroring the tiptop arm, so the A/B statistics are
+    # collected identically on both sides.
+    if args.record:
+        ask_execution_label(run_dir, args.run_root)
 
 
 def main() -> None:
