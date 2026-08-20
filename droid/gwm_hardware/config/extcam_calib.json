@@ -3,22 +3,22 @@
     "external_cam": {
       "world_from_cam": [
         [
-          0.9257929756500443,
-          -0.30395815130663045,
-          0.22475944583330162,
-          0.1902387964554718
+          0.0024589955498104583,
+          -0.7551678954325163,
+          0.6555268133714364,
+          -0.18066036478470077
         ],
         [
-          -0.3753360461573237,
-          -0.6682177255066609,
-          0.6423456419823306,
-          -0.9142504111926628
+          -0.9989699744633622,
+          0.027846665731138046,
+          0.03582671249679107,
+          -0.33765844636696085
         ],
         [
-          -0.04505794815595343,
-          -0.6790394050222421,
-          -0.7327177271876361,
-          0.9812164413865062
+          -0.04530941912622009,
+          -0.6549397017403068,
+          -0.7543215783886621,
+          1.0706887406395142
         ],
         [
           0.0,
@@ -28,9 +28,9 @@
         ]
       ],
       "position": [
-        0.1902387964554718,
-        -0.9142504111926628,
-        0.9812164413865062
+        -0.18066036478470077,
+        -0.33765844636696085,
+        1.0706887406395142
       ],
       "convention": "CV-axis cam2world (x right, y down, z forward), robot base frame"
     }
@@ -38,11 +38,11 @@
   "quality": {
     "external_cam": {
       "n_placements": 6,
-      "n_corners": 413,
-      "reproj_rms_px": 0.5916464861870573,
-      "reproj_p95_px": 1.1287818633567135,
-      "pose_spread_m": 0.015546196999058081,
-      "pose_spread_deg": 0.7439707545880374,
+      "n_corners": 416,
+      "reproj_rms_px": 0.4440414767871636,
+      "reproj_p95_px": 0.8236490416076663,
+      "pose_spread_m": 0.010601867903321766,
+      "pose_spread_deg": 0.5749313758143203,
       "verdict": "PASS",
       "placements": [
         "shot_00",
@@ -56,84 +56,84 @@
   },
   "verdict": "PASS",
   "max_reproj_px": 2.0,
-  "shots_dir": "droid/gwm_hardware/runs/extcal2",
+  "shots_dir": "droid/gwm_hardware/runs/extcal_0820",
   "per_shot": [
     {
       "shot": "shot_00",
       "cam": "external_cam",
       "wrist_corners": 70,
-      "wrist_rms_px": 0.377,
+      "wrist_rms_px": 0.409,
       "external_corners": 70,
-      "external_rms_px": 0.287,
+      "external_rms_px": 0.343,
       "board_in_base": [
-        0.3836,
-        -0.2952,
-        0.0734
+        0.3499,
+        -0.1603,
+        0.0659
       ]
     },
     {
       "shot": "shot_01",
       "cam": "external_cam",
       "wrist_corners": 70,
-      "wrist_rms_px": 0.403,
+      "wrist_rms_px": 0.391,
       "external_corners": 70,
-      "external_rms_px": 0.342,
+      "external_rms_px": 0.366,
       "board_in_base": [
-        0.3146,
-        -0.1841,
-        0.0695
+        0.3073,
+        -0.1179,
+        0.066
       ]
     },
     {
       "shot": "shot_02",
       "cam": "external_cam",
-      "wrist_corners": 70,
-      "wrist_rms_px": 0.401,
+      "wrist_corners": 69,
+      "wrist_rms_px": 0.387,
       "external_corners": 70,
-      "external_rms_px": 0.477,
+      "external_rms_px": 0.349,
       "board_in_base": [
-        0.4813,
-        -0.2756,
-        0.0726
+        0.5312,
+        -0.2543,
+        0.0714
       ]
     },
     {
       "shot": "shot_03",
       "cam": "external_cam",
       "wrist_corners": 70,
-      "wrist_rms_px": 0.433,
+      "wrist_rms_px": 0.405,
       "external_corners": 70,
-      "external_rms_px": 0.324,
+      "external_rms_px": 0.346,
       "board_in_base": [
-        0.6299,
-        0.1711,
-        0.065
+        0.6771,
+        0.1686,
+        0.0679
       ]
     },
     {
       "shot": "shot_04",
       "cam": "external_cam",
       "wrist_corners": 70,
-      "wrist_rms_px": 0.401,
-      "external_corners": 63,
-      "external_rms_px": 0.439,
+      "wrist_rms_px": 0.405,
+      "external_corners": 70,
+      "external_rms_px": 0.382,
       "board_in_base": [
-        0.5653,
-        0.213,
-        0.0647
+        0.5584,
+        0.2088,
+        0.064
       ]
     },
     {
       "shot": "shot_05",
       "cam": "external_cam",
-      "wrist_corners": 70,
-      "wrist_rms_px": 0.413,
-      "external_corners": 70,
-      "external_rms_px": 0.307,
+      "wrist_corners": 67,
+      "wrist_rms_px": 0.373,
+      "external_corners": 66,
+      "external_rms_px": 0.327,
       "board_in_base": [
-        0.7164,
-        0.0867,
-        0.0677
+        0.7549,
+        0.0264,
+        0.0695
       ]
     }
   ]

@@ -108,6 +108,17 @@ perception:
   m2t2:
     url: "http://localhost:8123"
     apply_bounds: true
+    # Small flat objects (the 69x39 mm pegs) sit on M2T2's edge and its scene
+    # sampling is stochastic. Measured on the 2026-08-20 peg capture, 9 repeats
+    # per config, counting draws that left a peg with ZERO associated grasps:
+    # default 0.035/5 -> yellow peg 3/9, green peg 7/9; 0.02/10 -> 2/9 both.
+    # graspless_retries re-samples M2T2 and merges while any cluster still has
+    # no grasps (zero-rate falls geometrically per retry; ~2.6 s each).
+    # Read by gwm_hardware.gwm_arm.propose only; tiptop itself and droid-sim
+    # never see these keys and keep the client defaults (0.035 / 5 / no retry).
+    grasp_threshold: 0.02
+    num_runs: 10
+    graspless_retries: 2
 
   sam:
     mode: "local"

@@ -155,11 +155,21 @@ def main() -> None:
 
     finite = np.isfinite(xyz_map).all(axis=2)
     pcd_ds = get_o3d_pcd(xyz_map[finite], rgb_map[finite], cfg.perception.voxel_downsample_size)
+    # grasp_threshold / num_runs come from tiptop.yml when present; the .get
+    # fallbacks are the client's own defaults, so a config without the keys
+    # behaves exactly as before. Measured on the 2026-08-20 peg capture
+    # (9 repeats each): 0.035/5 left the yellow peg graspless 3/9 and the
+    # green peg 7/9; 0.02/10 cut both to 2/9.
+    _m2t2_kwargs = dict(
+        grasp_threshold=float(cfg.perception.m2t2.get("grasp_threshold", 0.035)),
+        num_runs=int(cfg.perception.m2t2.get("num_runs", 5)),
+        apply_bounds=cfg.perception.m2t2.apply_bounds,
+    )
     grasps = generate_grasps(
         cfg.perception.m2t2.url,
         scene_xyz=np.asarray(pcd_ds.points),
         scene_rgb=np.asarray(pcd_ds.colors),
-        apply_bounds=cfg.perception.m2t2.apply_bounds,
+        **_m2t2_kwargs,
     )
     _t0 = _lap("m2t2", _t0)
 
@@ -179,6 +189,29 @@ def main() -> None:
     object_meshes = {l: convert_trimesh_to_curobo_mesh(m, l) for l, m in object_trimeshes.items()}
     filtered_grasps = associate_grasps(grasps, object_pcds, object_meshes,
                                        cfg.perception.contact_threshold_m)
+
+    # M2T2's scene sampling is stochastic, and small flat objects sit right on
+    # its edge: the same cloud gives a 69x39 mm peg 0..112 contact-associated
+    # grasps across repeated calls. A cluster with zero grasps this draw is
+    # therefore not proven ungraspable -- re-sample and MERGE before giving up
+    # on it. Each retry costs one M2T2 round-trip (~2.6 s at num_runs 10) and
+    # runs only while something is still graspless.
+    for _retry in range(int(cfg.perception.m2t2.get("graspless_retries", 0))):
+        graspless = sorted(l for l in object_pcds if len(filtered_grasps[l]["poses"]) == 0)
+        if not graspless:
+            break
+        _log.warning(f"{graspless} got no grasps this M2T2 draw -- re-sampling "
+                     f"(retry {_retry + 1})")
+        more = generate_grasps(
+            cfg.perception.m2t2.url,
+            scene_xyz=np.asarray(pcd_ds.points),
+            scene_rgb=np.asarray(pcd_ds.colors),
+            **_m2t2_kwargs,
+        )
+        grasps = {**grasps, **{f"retry{_retry}_{k}": v for k, v in more.items()}}
+        filtered_grasps = associate_grasps(grasps, object_pcds, object_meshes,
+                                           cfg.perception.contact_threshold_m)
+
     movables = [m for l, m in object_meshes.items() if len(filtered_grasps[l]["poses"]) > 0]
     dropped = sorted(set(object_meshes) - {m.name for m in movables})
     if dropped:
