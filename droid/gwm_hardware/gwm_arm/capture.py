@@ -63,6 +63,37 @@ EXTERNAL_CAM_2 = "external_cam_2"
 _CFG_KEY_TO_CAM = {"external": EXTERNAL_CAM, "external_2": EXTERNAL_CAM_2}
 
 
+def external_camera_crops() -> dict[str, float]:
+    """{cam_name: keep_left_frac} for third-person cameras the config crops.
+
+    `keep_left_frac: 0.667` under a camera in tiptop.yml keeps the left 66.7 %
+    of that camera's frame and discards the right edge AT CAPTURE, before the
+    frame reaches external_obs.h5. Everything downstream -- gwm-server renders,
+    the overlay gate, viz -- takes width from the image itself and the
+    intrinsics from the h5, so one cut here stays consistent end to end.
+
+    Cropping the RIGHT edge only is what makes the intrinsics survive
+    untouched: the pixel origin stays at the top-left corner, so fx, fy, cx,
+    cy all still mean what they meant. A left/top crop would shift the
+    principal point and require rewriting K everywhere it is consumed.
+    """
+    from tiptop.config import tiptop_cfg
+
+    cams = tiptop_cfg().cameras
+    out = {}
+    for key, name in _CFG_KEY_TO_CAM.items():
+        frac = cams[key].get("keep_left_frac") if key in cams else None
+        if frac is None:
+            continue
+        frac = float(frac)
+        if not 0.2 <= frac <= 1.0:
+            raise SystemExit(f"cameras.{key}.keep_left_frac = {frac} -- expected a "
+                             "fraction of the width to KEEP, in [0.2, 1.0]")
+        if frac < 1.0:
+            out[name] = frac
+    return out
+
+
 def connected_serials() -> set[str]:
     """Serials librealsense can actually see right now."""
     import pyrealsense2 as rs
@@ -337,6 +368,7 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
     # Every third-person camera the config declares, in one shot, so all of
     # them describe the same instant and the same robot pose.
     calib = load_extcam_calibration()
+    crops = external_camera_crops()
     views, ext_serials = {}, {}
     for name, serial in external_camera_specs():
         if name not in calib:
@@ -347,7 +379,14 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
         c = RealsenseCamera(serial)
         try:
             fr = c.read_camera()
-            views[name] = (fr.rgb, fr.intrinsics, calib[name])
+            rgb = np.asarray(fr.rgb)
+            if name in crops:
+                keep = int(round(rgb.shape[1] * crops[name]))
+                _log.info(f"{name}: keep_left_frac {crops[name]:g} -- cropping "
+                          f"{rgb.shape[1]} -> {keep} px wide (right edge dropped, "
+                          "K unchanged)")
+                rgb = np.ascontiguousarray(rgb[:, :keep])
+            views[name] = (rgb, fr.intrinsics, calib[name])
             ext_serials[name] = c.serial
         finally:
             c.close()

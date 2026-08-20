@@ -69,6 +69,18 @@ cameras:
   external:
     serial: "348522073586"      # D435
     type: realsense
+    # Keep only the left 2/3 of the frame at capture; the right third is
+    # discarded before the frame enters external_obs.h5. Why (2026-08-20
+    # re-aim): the new mount exposes more of the robot's perception field and
+    # makes left/right legible in the image, which is what GWM's spatial
+    # grounding feeds on -- the right third saw none of that and only diluted
+    # the frame. Safe because the model has proven robust to camera poses:
+    # across every pose tried so far it still grounds the instruction to the
+    # right object/placement properties (ledger G-46). Right-edge crop only,
+    # so K is untouched. Read by gwm_hardware.gwm_arm.capture
+    # (external_camera_crops); tiptop itself ignores this key. Delete the
+    # line to go back to full frames.
+    keep_left_frac: 0.667
 
   # SECOND third-person camera, read only by gwm_hardware.gwm_arm (tiptop never
   # looks at this key). It exists because the sim's best-measured configuration

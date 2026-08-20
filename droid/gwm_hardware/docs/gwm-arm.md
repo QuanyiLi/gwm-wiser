@@ -194,6 +194,31 @@ pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.ai
 画面上有引导框，判据（`aim_camera` 的 docstring 就是这四条）：整只手臂从底座到指尖在框内、
 每个候选物体可见且不被夹爪挡住、没有强逆光、桌面占画面相当一部分。`q` 退出，`s` 存图。
 
+### 5.0b 打分相机的画幅裁剪：只保留左 2/3（2026-08-20）
+
+`external_cam` 重新架设之后，采集时**裁掉画面右侧 1/3，只保留左 2/3**
+（`tiptop.yml` 里 `cameras.external.keep_left_frac: 0.667`，由
+`gwm_arm/capture.py` 的 `external_camera_crops()` 在写 `external_obs.h5` 之前执行）。
+
+**为什么这样架、这样裁**：新机位把机器人的感知场更多地摊进画面，图像里的左/右
+和工作区的左/右清晰对应——GWM 的空间 grounding 吃的就是这个；右侧 1/3 没有
+这些信息，留着只是稀释画幅。
+
+**为什么敢裁**：模型对相机位姿是鲁棒的。到目前为止试过的每一个机位（腕相机冒充
+外视角、旧侧视机位、本次新机位）它都能把指令 ground 到具体的物体/放置属性上
+（G-34 三指令 3/3、G-46 换机位后语言项照样选对对象），所以换机位 + 裁剪不碰
+它的判别能力。
+
+**机制上为什么便宜**：只裁右边，像素原点不动，**K 原样有效**；下游（gwm-server
+渲染、overlay gate、viz）的宽度都取自图像本身，采集处一刀、全链路自动一致。
+恢复全幅 = 删掉 yml 里那一行。裁剪只作用于打分照片——`extcam_calib` 标定和
+`aim_camera` 预览用的都是原始全幅帧，腕相机（深度）完全不涉及。
+
+⚠️ 换机位后 lift 阈值的现状：此机位 overlay gate 的 `edge_lift` 只有 ~0.075
+（阈值 0.1），是轮廓两侧对比度的物理上限（黑爪衬黑布），**不是外参错**——
+抓外参错的 `perturb_margin` 通过（+0.069/0.05），标定 pooled 重投影 0.44 px、
+板 origin 平均差 1.3 mm。跑 gate 时用 `--min-lift 0.06`。
+
 ### 5.1 外部相机外参（新代码，`gwm_arm/extcam_calib.py`）
 
 GWM 从第三人称相机打分，需要它在 base 系下的 `world_from_cam`。tiptop 只标腕相机。方法（`hardware-bringup.md` §6.1）：腕相机已经手眼标定过，用它把 base 系带到桌上的 charuco 板，外部相机再读同一块板。
