@@ -623,7 +623,11 @@ def main() -> None:
                     help="cuTAMP particle count; part of the solver cache key, so "
                          "warm-up and the proposer must agree on it")
     ap.add_argument("--cam", default=EXTERNAL_CAM)
-    ap.add_argument("--rat-scale", default="3.0")
+    # 2.0 since 2026-08-21 (user): 2/3 of the original 3.0 look-ahead, i.e. a
+    # 5.9 s RAT window from the trajectory start instead of 8.85 s. The server
+    # still shrinks the window to fit, so plans shorter than 5.9 s sample
+    # exactly as before; only the longer plans stop looking at their tail.
+    ap.add_argument("--rat-scale", default="2.0")
     ap.add_argument("--object-score", default="top2",
                     choices=["mean", "max", "median", "top2"],
                     help="how each object's candidates reduce to one score. Default `top2` "
