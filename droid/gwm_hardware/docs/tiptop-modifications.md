@@ -293,6 +293,38 @@ the same way.
 
 ---
 
+## 10. `tiptop/perception/segmentation.py` — table candidates need real support (2026-08-20)
+
+**Installer: none — committed in-tree edit** (marker comment
+`# gwm_hardware rig:` in the plane-scoring loop of
+`segment_table_with_ransac`).
+
+Upstream picks the table as "the plane the most detected objects rest on",
+with no minimum on how many points the plane itself has. That breaks the
+moment one object rests ON another: a ball placed inside a cup puts its
+contact point ~50 mm off the table, so the true table can never take every
+vote -- and a scrap plane fitted through a few hundred leftover outliers,
+angled to pass within 30 mm of every contact point including the stacked one,
+outscores it. Measured on five consecutive failing runs: the real table
+(17,060 inliers, 81 % of the downsampled cloud, contact score 4/5) lost to an
+827-point scrap (3.9 %, score 5/5) whose "table" sat 26-38 mm high and
+8x20 cm small; the depth itself was clean (full-cloud RANSAC: z 0.0615, the
+known 2.92 deg tilt). Deviation 8's surface-z gate is what surfaced it --
+before the gate these runs would have planned against the phantom table and
+z-cut real objects instead of refusing.
+
+The fix: a candidate plane is only eligible for the contact vote if it holds
+at least 5 % of the downsampled cloud -- a surface objects rest on is by
+definition a large one. Verified on the three saved failing captures: all now
+select the true table (0.465 x 0.835 m, surface_z 0.059, +4 mm) and the gate
+passes.
+
+**droid-sim impact: behavior changes only in scenes that hit the bug** (a
+stacked object plus a sub-5 % scrap plane outscoring the table). There the old
+answer was wrong; nothing changes for scenes where the table won anyway.
+
+---
+
 ## Baseline status
 
 Pick and place both work on hardware (2026-08-18):
