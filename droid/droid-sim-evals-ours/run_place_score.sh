@@ -4,14 +4,14 @@
 # land as proposals/scene6_place_v2/winner_place_<tag>.json, RAT strips under
 # runs/place_v2/rat/. Instructions must match place_tasks.sh verbatim.
 #
-# v2 = perception-only proposer (2026-08-11 audit): candidates cover EVERY
-# perceived cluster, not just the two bins, so the scorer must reject
-# non-container destinations on its own. v1 artifacts (GT-target proposer)
-# stay under proposals/scene6_place + runs/place_v1 for provenance.
+# The scene6_place_v2 pool comes from the perception-only proposer: candidates
+# cover every perceived cluster, not just the two bins, so the scorer must
+# reject non-container destinations on its own.
 #
-# Plans here are ~7.5 s (< SCHEDULE[-1]*3.0 = 8.85 s), so sample_rat_times'
-# shrink-to-fit branch compresses the window to the whole plan: unlike refer6,
-# the last RAT frame is the arm holding the block inside the chosen bin.
+# Place plans are shorter than the RAT window (SCHEDULE[-1] * rat_scale), so
+# sample_rat_times' shrink-to-fit branch compresses the window to the whole
+# plan: unlike refer6, the last RAT frame is the arm holding the block inside
+# the chosen bin.
 set -uo pipefail
 PY=/root/code/gwm/gwm-wiser/droid/tiptop/.pixi/envs/default/bin/python
 PROP=/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_place_v2

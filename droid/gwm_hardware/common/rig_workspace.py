@@ -11,20 +11,18 @@ Frame: `panda_link0`. +x forward (the direction the arm reaches at q_home),
 +y to the robot's LEFT, +z up. The robot is bolted to the table, so the table
 top is z = 0.
 
-Measured 2026-08-18 (tape, user):
+Tape measurements:
 
     table top, floor to surface   0.61 m
     ROBOT BASE, floor to mount    0.555 m     <- the robot is NOT on this table
     => table top in base frame    +0.055 m
-    table edge to the LEFT        0.50 m      (bench rearranged 2026-08-18:
-    table edge to the RIGHT       0.50 m       1 m wide and centred on the base;
-                                               the wall that used to sit 0.20 m
-                                               to the left is gone)
+    table edge to the LEFT        0.50 m      (1 m wide, centred on the base)
+    table edge to the RIGHT       0.50 m
     table extent BEHIND the base  0.50 m
     forward                       beyond the arm's reach
     overhead                      nothing
-    external camera               to the left, outside the workspace
-                                  (behind the wall, so already covered by it)
+    external camera               outside the workspace, beyond the side
+                                  keep-out
 
 Over-approximate rather than under-: TiPToP's own guidance, and the asymmetry
 of the cost -- a phantom obstacle loses a plan, a missing one loses hardware.
@@ -70,13 +68,12 @@ KEEPOUT_HEIGHT = 1.20      # taller than anything the arm can reach
 # object that is *resting on* the surface, so a collision table flush with the
 # surface makes every top-down grasp a collision.
 #
-# Our slab is a second table on top of that one. At TABLE_TOP_Z it sat 20 mm
-# HIGHER than the one tiptop had just carved clearance into, which re-blocked
-# exactly the gap and made every pick fail with
-# MotionGenStatus.INVALID_START_STATE_WORLD_COLLISION (first tiptop-run,
-# 2026-08-18: 224 particles satisfied the constraints, 0 survived motion
-# refinement). Matching tiptop's own 20 mm hands the tabletop back to the
-# detected table, which is the one that tracks the real surface.
+# Our slab is a second table on top of that one. Flush with TABLE_TOP_Z it
+# would sit 20 mm HIGHER than the one tiptop has just carved clearance into,
+# re-blocking exactly that gap and failing every pick with
+# MotionGenStatus.INVALID_START_STATE_WORLD_COLLISION. Matching tiptop's own
+# 20 mm hands the tabletop back to the detected table, which is the one that
+# tracks the real surface.
 TABLE_COLLISION_SINK = 0.020
 
 # --- ASSUMED ---------------------------------------------------------------
@@ -104,7 +101,7 @@ def zhiwei_workspace() -> tuple[Cuboid, ...]:
                   TABLE_TOP_Z - TABLE_HEIGHT, TABLE_TOP_Z - TABLE_COLLISION_SINK,
                   color=[222, 184, 135])
 
-    # Both sides are open air now. Nothing to collide with, but nothing to catch
+    # Both sides are open air. Nothing to collide with, but nothing to catch
     # a dropped object either, and past the edge is a 0.61 m fall -- so they stay
     # modelled as keep-outs rather than being deleted.
     left_keepout = _slab("left_keepout",

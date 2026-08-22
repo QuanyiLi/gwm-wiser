@@ -1,4 +1,4 @@
-"""gwm-server: trajectory scoring microservice (integration plan D9 / gwm_integrate_doc GI-4).
+"""gwm-server: trajectory scoring microservice.
 
 POST /score with the current external-cam frame, camera params, the task
 instruction, and execution-timeline candidates; returns per-candidate scores
@@ -17,10 +17,10 @@ and the argmax. Backends:
   text instruction; score = cosine(task, predicted video embedding).
 
 RAT sampling is controlled by the single per-request hyperparameter
-``rat_scale`` (G-20): default 3.0 = WISER schedule x3 from the trajectory
-start (8.85 s window, the sim-source training ceiling); None = uniform 6
-frames over the full trajectory, whatever its length. Windows longer than the
-plan shrink to fit, mirroring training's fit-fallback (D-33).
+``rat_scale``: default 3.0 = WISER schedule x3 from the trajectory start
+(8.85 s window, the sim-source training ceiling); None = uniform 6 frames
+over the full trajectory, whatever its length. Windows longer than the plan
+shrink to fit, mirroring training's fit-fallback.
 
 Run inside the gwm venv:
 
@@ -77,7 +77,7 @@ class ScoreRequest(BaseModel):
     world_from_cam: list  # (4, 4) CV-axis cam2world
     instruction: str
     candidates: list[Candidate]
-    rat_scale: float | None = 3.0  # WISER schedule x scale from the start; None = uniform over the full trajectory (G-20)
+    rat_scale: float | None = 3.0  # WISER schedule x scale from the start; None = uniform over the full trajectory
     task_image: str = "current"  # current | none
     dump_dir: str | None = None  # save the exact RAT strips fed to the model
     # Appended (with a space) to TEXT_INSTRUCTION for BOTH the task embedding
@@ -102,11 +102,11 @@ def candidate_timeline(cand: Candidate) -> tuple[np.ndarray, np.ndarray, np.ndar
 
 
 def sample_rat_times(rat_scale: float | None, t: np.ndarray) -> np.ndarray:
-    """Six timeline indices for the RAT window (G-20 hyperparameter).
+    """Six timeline indices for the RAT window.
 
     rat_scale None discretizes the whole trajectory uniformly; a number places
     the WISER schedule x scale at the trajectory start, shrinking the scale
-    when the window would overrun the plan (training's fit-fallback, D-33).
+    when the window would overrun the plan (training's fit-fallback).
     """
     if rat_scale is None:
         return np.linspace(0, len(t) - 1, NUM_RAT_FRAMES).round().astype(int)
@@ -166,8 +166,8 @@ class GwmBackend:
         model, ckpt = load_canonical_like_planner(ckpt_path)
         # The GWM head is the only weight on this server that is NOT already
         # bf16 -- the Qwen embedder is loaded bf16 above and is ~16 GB of the
-        # ~20 GB total. fp32 is the numeric path every droid-sim result was
-        # produced on, so it stays the default; bf16 halves the head's ~1.4 GB.
+        # ~20 GB total. fp32 is the numeric path droid-sim runs on, so it
+        # stays the default; bf16 halves the head's ~1.4 GB.
         self.head_dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[head_dtype]
         self.gwm = model.to(self.head_dtype).eval().to(self.embedder.model.device)
         _log.info(f"GWM head in {head_dtype}")
@@ -179,8 +179,8 @@ class GwmBackend:
     def _condition_inputs(self, frames_u8: np.ndarray) -> dict:
         """(6, H, W, 3) uint8 -> budgeted Qwen video inputs on the model device.
 
-        Training parity: anchor-resize to 624x352 (D-29), then the qwen_rat
-        pixel budget pins the (3,18,30) grid (ADR-0019).
+        Training parity: anchor-resize to 624x352, then the qwen_rat pixel
+        budget pins the (3,18,30) grid.
         """
         from PIL import Image
 
@@ -204,17 +204,16 @@ class GwmBackend:
 
         # The FRAME is part of the key, not just the text. With
         # task_image="current" this embedding is computed from the instruction
-        # AND the scene photo, so keying on (instruction, mode) alone returns a
-        # embedding built from a DIFFERENT scene the second time an instruction
-        # is repeated. This server outlives many scenes -- it is started once
-        # and answers every turn of a session -- and instructions repeat
-        # constantly ("pick up the tomato" ran six times on 2026-08-19), so
-        # every repeat after the first was scored against the first scene's
-        # photo. Silent, and it only ever makes a repeat look more like its
-        # predecessor.
+        # AND the scene photo, so keying on (instruction, mode) alone would
+        # return an embedding built from a DIFFERENT scene the second time an
+        # instruction is repeated. This server outlives many scenes -- it is
+        # started once and answers every turn of a session -- and instructions
+        # repeat constantly, so every repeat after the first would be scored
+        # against the first scene's photo. Silent, and it only ever makes a
+        # repeat look more like its predecessor.
         #
-        # Hashing 2.7 MB costs ~2 ms against a ~150 ms embed, and the cache
-        # still does its job: within one scene, all 16 candidates and the
+        # Hashing the frame costs a few ms against a far longer embed, and the
+        # cache still does its job: within one scene, all candidates and the
         # empty-instruction prior share one embedding.
         key = (instruction, sys_instruction, mode,
                hashlib.sha1(np.ascontiguousarray(rgb)).hexdigest()
@@ -243,10 +242,9 @@ class GwmBackend:
         # The instruction-independent part of every candidate's score, measured
         # against the SAME video embedding. Free: one extra task embedding per
         # request (`_task_cache` keys on the frame, so it is shared by every
-        # candidate of this scene), then one cosine each. Returned always,
-        # used only if the
-        # caller asks -- it is the number that separates "the model grounded
-        # this" from "this candidate scores high whatever you ask for".
+        # candidate of this scene), then one cosine each. Returned always, used
+        # only if the caller asks -- it is the number that separates "the model
+        # grounded this" from "this candidate scores high whatever you ask for".
         prior_emb = self._task_embedding("", rgb, req.task_image,
                                          req.text_instruction_extra)
 
@@ -355,9 +353,9 @@ def main() -> None:
     ap.add_argument("--embedder", default="Qwen/Qwen3-VL-Embedding-8B")
     ap.add_argument("--head-dtype", default="fp32", choices=["fp32", "bf16"],
                     help="dtype for the GWM head. fp32 (default) is the numeric path "
-                         "every droid-sim result was produced on; bf16 saves ~0.7 GB of "
-                         "the server's ~20 GB, almost all of which is the bf16 Qwen "
-                         "embedder and not reachable this way")
+                         "droid-sim runs on; bf16 saves ~0.7 GB of the server's ~20 GB, "
+                         "almost all of which is the bf16 Qwen embedder and not reachable "
+                         "this way")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=8901)
     args = ap.parse_args()

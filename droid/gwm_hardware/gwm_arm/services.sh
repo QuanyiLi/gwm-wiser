@@ -8,7 +8,7 @@
 # The GWM arm needs everything the baseline arm needs (M2T2 for grasps,
 # FoundationStereo for depth, the camera pre-flight, the sm_120 PTX warm-up)
 # plus one more: gwm-server, which owns the pinned transformers==4.57.6
-# environment and cannot share a process with the tiptop stack (D9). So this
+# environment and cannot share a process with the tiptop stack. So this
 # script defers the shared half to the baseline arm's script rather than
 # duplicating it, and adds only what is ours.
 #
@@ -19,8 +19,8 @@
 #          of VRAM or waiting for the Qwen weights.
 #   gwm    the real thing: Qwen3-VL-Embedding-8B + the trained GWM checkpoint.
 #
-# Killing by port, never by `kill $!` -- a 20 GB orphaned scorer starved a whole
-# evening of eval once (G-25).
+# Kill by port, never by `kill $!`: an orphaned 20 GB scorer would otherwise
+# hold the card until somebody notices.
 set -uo pipefail
 
 ROOT=/home/quanyi/gwm-wiser

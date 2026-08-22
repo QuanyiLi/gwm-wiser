@@ -55,7 +55,7 @@ third_party
 /real_data_train/data/
 /.wandb_api_key.env
 
-# droid/ monorepo absorption (2026-08-10): env dirs, weights, secrets, run artifacts
+# droid/: env dirs, weights, secrets, run artifacts
 /droid/**/.pixi/
 /droid/**/.venv/
 /droid/tiptop/.env
@@ -67,7 +67,7 @@ third_party
 /droid/droid-sim-evals/assets.zip
 /droid/droid-sim-evals/assets/
 
-# Hardware bring-up (2026-08-17): FoundationStereo is a real-robot-only dep
+# FoundationStereo is a real-robot-only dep
 # (droid-sim used GT depth), cloned in-tree like the other absorbed repos.
 # Its own .git is kept, so it is ignored wholesale rather than absorbed.
 /droid/FoundationStereo/

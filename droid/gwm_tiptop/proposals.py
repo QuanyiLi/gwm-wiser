@@ -1,4 +1,4 @@
-"""run_proposals: K executable pick trajectories via cuTAMP as an unmodified library (G-4/G-5/G-6).
+"""run_proposals: K executable pick trajectories via cuTAMP as an unmodified library.
 
 For every anonymous cluster we plan toward Holding(object_i), rank the
 satisfying particles, pick a diverse subset via confidence-weighted SE(3)
@@ -45,7 +45,7 @@ def se3_fps_indices(poses: np.ndarray, confidences: np.ndarray | None, k: int, r
     Distance = translation distance + rot_weight * geodesic rotation distance.
     Selection starts at the highest-confidence pose; each next pick maximizes
     (min distance to selected) * confidence — diversity first, confidence as a
-    tie-breaker (M2T2 confidence is only used within an object, per G-6).
+    tie-breaker (M2T2 confidence is only used within an object).
     """
     n = len(poses)
     if n <= k:

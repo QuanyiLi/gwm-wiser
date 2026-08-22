@@ -12,6 +12,6 @@ Owned by neither experiment arm. Both `gwm_hardware.tiptop_arm` and
   can use (the rig ships with IR auto-exposure off)
 - `warm_servers.py` -- absorb the first-call PTX JIT cost that would otherwise
   blow through tiptop's 10 s perception-server timeout
-- `install_*.py`    -- the five versioned, idempotent deviations this rig makes
-  to the pristine `droid/tiptop/` worktree (see docs/tiptop-modifications.md)
+- `install_*.py`    -- versioned, idempotent patches this rig applies to the
+  pristine `droid/tiptop/` worktree and to the FoundationStereo server
 """

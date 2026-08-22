@@ -8,54 +8,53 @@ unchanged. All file asset paths are absolutized so the output can live here
 and be reached through a symlink in droid-sim-evals/assets/ (the loader
 formats `assets/scene{name}_{variant}.usd`).
 
-Placement default (0.547, -0.243, long-axis yaw 100°), user-specified
-geometry: |banana - bowl| >= |bowl - cube| (0.298 vs 0.212 m), bowl in the
+Placement default (0.547, -0.243, long-axis yaw 100°) satisfies the layout
+constraints |banana - bowl| >= |bowl - cube| (0.298 vs 0.212 m), bowl in the
 middle, banana on the OPPOSITE side of the bowl from the cube. Solved offline
 against the scene-1 home-pose captures under: (a) wrist visibility — M2T2 and
 Gemini both perceive from the home wrist rgbd, and the exact opposite-side ray
 exits the wrist frame, so this is the most-collinear wrist-visible point
-(cube-bowl-banana angle 132°, 9/9 body samples visible on clean table);
-(b) no spawn interpenetration — clearance is measured SEGMENT-to-center (a
-19 cm banana tip pointed at the bowl caused a PhysX depenetration blast in an
-earlier rev), enforced against BOTH the bowl's stock spawn and its rest pose,
-so the stock bowl and its ~6 cm settle-wobble stay untouched and clear.
-Banana base orientation is its MEASURED resting attitude (an x90 spawn drops
-3.3 cm and rolls/yaws ~80°); spawning already-settled plus a compensating
-world-Z yaw makes spawn == rest. scene1's three prims are byte-identical to
-stock.
+(cube-bowl-banana angle 132°, every body sample visible on a clean table);
+(b) no spawn interpenetration — clearance is measured SEGMENT-to-center, so a
+banana tip pointed at the bowl cannot overlap it and trigger a PhysX
+depenetration impulse; this is enforced against BOTH the bowl's stock spawn
+and its rest pose, so the stock bowl and its ~6 cm settle-wobble stay
+untouched and clear. Banana base orientation is its MEASURED resting attitude
+(an x90 spawn drops 3.3 cm and rolls/yaws ~80°); spawning already-settled plus
+a compensating world-Z yaw makes spawn == rest. scene1's three prims are
+byte-identical to stock.
 
-BINS (rev2, for the placement/referring eval). Two `small_KLT_visual_collision`
+BINS (for the placement/referring eval). Two `small_KLT_visual_collision`
 prims copied from scene3_0.usd, squared off by a non-uniform scale (see
 bin_geom) and recolored via a UsdPreviewSurface bound on the payload's
 `Visuals` scope with `strongerThanDescendants` -- the stock magenta binding
 sits on the descendant meshes, so a weaker binding is ignored.
 
-The positions come from optimize_bin_layout.py, whose objective is external-
-camera PIXEL separation rather than world distance: with the object pre-grasped,
-GWM's only cue is the arm silhouette over one bin vs the other, and it scores
-from `external_cam` alone (plan.md G-9), so two bins separated along that
-camera's viewing ray are worthless however far apart they are in metres.
-Constraints that shaped the answer, in order of how much they cost:
+The positions come from optimize_bin_layout.py, which searches the table for
+bin placements under these layout constraints:
 
-  - Gripper shadow. The home wrist RGB-D is the only view M2T2/Gemini/
-    perception_geometric get (G-23), and the fingers black out a wide band
-    across the near-centre of it. The x ~ 0.55 slot between the bowl and the
-    banana looks ideal on paper and gives 173 px, but it is 30% gripper-
-    shadowed; requiring <= 2% costs ~60 px and pushes both bins to lower x.
+  - Wrist visibility and gripper shadow. The home wrist RGB-D is the only view
+    M2T2/Gemini/perception_geometric get, and the fingers black out a wide
+    band across the near-centre of it; every bin corner must be inside the
+    wrist frame with margin, and at most 2% of a bin opening may fall in the
+    gripper shadow, which rules out the x ~ 0.55 slot between the bowl and
+    the banana and pushes both bins to lower x.
+  - External-camera visibility. Both bins fully in frame, not occluding each
+    other or the banana, and as far apart in the image as the other
+    constraints allow, so the two destinations are visually distinct from the
+    static viewpoint.
   - Square footprint. The stock 0.198 x 0.297 bin cannot fit the corridor
     between the bowl and the banana at any orientation. Squaring it to 0.115
     frees the whole -Y half of the free block; the price is 0.43 mm walls in
-    the squeezed direction (stock 1.10/1.20 mm). Verified: settles by step 10
-    with zero drift over 100 steps, same as the 0.72 mm uniform-0.6 rev.
-  - Bin size below ~0.12 buys separation fast (0.13 -> 0.11 nearly doubles the
-    pixel separation) because it unlocks slots the larger bin cannot enter.
-  - Reach is NOT binding: both bins land near r = 0.40, inside the 0.415-0.660
-    band the stock scenes exercise.
+    the squeezed direction (stock 1.10/1.20 mm), which still settle within a
+    few steps and hold their pose. Smaller bins also unlock slots a larger
+    bin cannot enter.
+  - Clearance and reach. AABB clearance to the three stock objects, and a
+    planar reach band matching what the stock scenes exercise.
 
 Result: 0.115 m square bins 0.068 m tall, 0.102 x 0.105 m opening, red at
-(0.395, -0.055), green at (0.305, -0.250) -- 0.215 m apart in world, 109 px in
-the external camera, 1.4x the stock |bowl-cube| 0.153 m that GWM already
-discriminates 10/10. Spawn z gives a 5 mm drop (stock KLT uses 7.1 mm).
+(0.395, -0.055), green at (0.305, -0.250) -- 0.215 m apart in world. Spawn z
+gives a 5 mm drop (stock KLT uses 7.1 mm).
 
 VARIANTS. `--variant 0` is the pick scene (no held block) so the refer6 pick
 tasks keep working; `--variant 1` adds `held_block` inside the gripper and is
@@ -65,10 +64,8 @@ all ten refer6 pick tasks, which assume an empty hand.
 
 Prim names are `red_bin` / `green_bin` / `held_block`, none containing "KLT" or
 "cube": SuccessTracker resolves rule patterns by unique case-insensitive
-substring over scene.rigid_objects, and a 2-way match raises
-(droidsim-repro-protocol.md records one such ambiguity hanging the
-interpreter). "bin" alone matches both bins by design -- rules must say
-"red_bin"/"green_bin".
+substring over scene.rigid_objects, and a 2-way match raises. "bin" alone
+matches both bins by design -- rules must say "red_bin"/"green_bin".
 
 Run with the gwm-wiser .venv python (has usd-core):
 
@@ -93,8 +90,8 @@ from bin_geom import DEFAULT_HEIGHT, DEFAULT_SIZE, bin_report, bin_scale, bin_sp
 ASSETS = Path("/root/code/gwm/gwm-wiser/droid/droid-sim-evals/assets")
 HERE = Path(__file__).resolve().parent
 BANANA_SPAWN_Z = 0.065  # measured rest height 0.063 + 2 mm
-# Resting orientation measured after settling the scene3-style x90 spawn
-# (capture scene6_0 rev1); localX (long axis) at in-plane yaw 131.6 deg.
+# Resting orientation measured after settling the scene3-style x90 spawn;
+# localX (long axis) at in-plane yaw 131.6 deg.
 BASE_QUAT = (0.2829093635082245, 0.29658013582229614, 0.679715633392334, 0.6082672476768494)
 
 KLT_SRC = "/World/small_KLT_visual_collision"
@@ -110,8 +107,8 @@ BLOCK_STOCK_EDGE = 0.047
 # sits at z 0.10765 and the measured mesh centre is 0.06844. The offset lives on
 # a descendant, so a prim-level uniform scale scales it too.
 BLOCK_MESH_OFFSET_Z = -0.039214913
-# The block is never released (episode ends once it is in a bin), so grip
-# robustness is irrelevant and the ONLY thing edge length controls is whether
+# The block is welded to the gripper rather than grasped, so grip robustness
+# is irrelevant and the ONLY thing edge length controls is whether
 # the gripper fits through the bin opening. Gripper y-width profile, measured by
 # unprojecting the home wrist depth, fully open:
 #     0-20 mm above the tips  0.0969   (pads only, 6.0 mm thick a side)
@@ -232,7 +229,7 @@ def main() -> None:
     ap.add_argument("--red-y", type=float, default=-0.055)
     ap.add_argument("--green-x", type=float, default=0.305)
     ap.add_argument("--green-y", type=float, default=-0.250)
-    ap.add_argument("--no-bins", action="store_true", help="author the rev1 scene (no bins)")
+    ap.add_argument("--no-bins", action="store_true", help="author the scene without bins")
     ap.add_argument("--block-edge", type=float, default=BLOCK_EDGE,
                     help="held block edge (m); gripper width when closed on it is 0.0588+edge")
     ap.add_argument("--held-block", action="store_true",

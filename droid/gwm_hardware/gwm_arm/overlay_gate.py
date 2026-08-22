@@ -3,15 +3,15 @@
 GWM scores a candidate by looking at `[the external photo, five robot-only
 renders of the candidate]`. If the render and the photo disagree about where
 the robot is, every RAT frame is a lie and the scores are noise dressed as
-semantics. In droid-sim this was GI-2, and it passed on ground truth the sim
-handed over: FK matched `body_pos_w` to 0.0 mm on every arm link. Hardware has
-no such oracle -- the extrinsics come from `extcam_calib`, the kinematics from
-a generated URDF, the flange standoff from a tape measure -- so the check has
-to be made against pixels.
+semantics. In droid-sim this check runs against ground truth the sim hands
+over: FK can be matched to `body_pos_w` on every arm link. Hardware has no
+such oracle -- the extrinsics come from `extcam_calib`, the kinematics from a
+generated URDF, the flange standoff from a tape measure -- so the check has to
+be made against pixels.
 
 Two numbers, from `real_data_train.renderer.edge_gate` (the same gate that
-admits DROID streams into the training tree, D-28), because either alone can
-be fooled:
+admits DROID streams into the training tree), because either alone can be
+fooled:
 
   lift    oriented-edge agreement above chance. The rendered silhouette's
           contour is scored against strong image edges of MATCHING orientation,
@@ -45,10 +45,10 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 _log = logging.getLogger("gwm_arm.overlay_gate")
 
-# droid-sim's validated overlay sat at 13.3-13.5 % robot pixel coverage from a
-# comparable third-person distance (G-29). Coverage is not a correctness test
-# -- it catches the gross failures (camera pointing elsewhere, robot off frame)
-# that would make the edge numbers meaningless to interpret.
+# From a typical third-person distance the robot covers on the order of 10-15 %
+# of the frame. Coverage is not a correctness test -- it catches the gross
+# failures (camera pointing elsewhere, robot off frame) that would make the
+# edge numbers meaningless to interpret.
 MIN_COVERAGE = 0.02
 MAX_COVERAGE = 0.45
 

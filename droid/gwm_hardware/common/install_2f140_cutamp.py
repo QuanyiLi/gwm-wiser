@@ -4,8 +4,8 @@
 `cutamp.robots.franka_robotiq`, whose `panda_robotiq_*` functions hard-code
 `panda_robotiq_2f_85.yml` and `get_robotiq_2f_85_gripper_spheres`. So the
 baseline `tiptop-run` arm plans with a gripper **62 mm too short** unless
-cuTAMP is redirected -- and the baseline has to be correct too, or the A/B is
-comparing against an arm that is quietly unsafe.
+cuTAMP is redirected -- and the baseline has to be correct too, or it runs
+with a model that is quietly unsafe.
 
 Our own drivers can just import `gwm_hardware.common.robot_2f140`; `tiptop-run`
 cannot, hence this. It rewrites three literals in cuTAMP's
@@ -16,8 +16,8 @@ cannot, hence this. It rewrites three literals in cuTAMP's
     2F-85 spheres   -> gwm_hardware.common.robot_2f140.get_gripper_spheres()
 
 The cuTAMP clone is gitignored and rebuilt by `install-cutamp.sh`, so this is
-a **replayable install step, not a fork** (G-4 stays intact: the algorithm is
-untouched, only which robot it loads). Re-run it after any cuTAMP reinstall.
+a **replayable install step, not a fork** (the algorithm is untouched, only
+which robot it loads). Re-run it after any cuTAMP reinstall.
 `--restore` puts the original file back from the `.orig` copy it keeps.
 
 Only the `panda_robotiq_*` entry points are touched; `fr3_robotiq_*` and the

@@ -2,14 +2,12 @@
 
     capture -> propose -> score -> gate -> viz -> execute
 
-Each stage is a separate process, and that is the design, not laziness. The
-planner stack (cuRobo + cuTAMP + M2T2 client, 6-10 GB) and the GWM scorer
-(~20 GB resident) were kept off the same GPU at the same time on the 3090
-(G-8); this rig's 5090 has 32 GB and could probably hold both, but "probably"
-is not a thing to discover halfway through a hardware run. Process boundaries
-give the sequencing for free -- CUDA memory goes back when the process exits --
-and they also mean any stage can be re-run on its own against the artefacts
-the previous one left on disk, which is what actually happens while debugging.
+Each stage is a separate process by design. The planner stack (cuRobo +
+cuTAMP + M2T2 client, 6-10 GB) and the GWM scorer (~20 GB resident) are kept
+off the same GPU at the same time. Process boundaries give the sequencing for
+free -- CUDA memory goes back when the process exits -- and they also mean any
+stage can be re-run on its own against the artefacts the previous one left on
+disk, which is what actually happens while debugging.
 
 Everything runs in the tiptop pixi env. The one component that does not is
 `gwm-server`, which owns the pinned `transformers==4.57.6` environment; it is a
@@ -71,8 +69,8 @@ def ensure_depth_server() -> None:
     if _healthy(DEPTH_PORT):
         return
     _log.info("FoundationStereo is down; starting it (weights take ~30 s)")
-    # expandable_segments is what FoundationStereo's own OOM message asks for:
-    # it had 1.71 GiB "reserved but unallocated" while failing to find 1.72.
+    # expandable_segments is what FoundationStereo's own OOM message asks for
+    # when the allocator has reserved-but-unallocated memory it cannot reuse.
     subprocess.Popen(
         "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True nohup pixi run server > "
         f"{REPO_ROOT}/droid/gwm_hardware/.service-logs/fs.log 2>&1",
@@ -93,10 +91,10 @@ def tag_for(instruction: str) -> str:
 
     The readable part is truncated, so it alone is not unique -- "...between the
     blue cup and the tomato" and "...between the blue cup and the Oreo box" cut
-    to the same 48 characters, and the second scoring silently overwrote the
-    first's scores and winner (found 2026-08-19, the hard way). A short digest
-    of the FULL instruction is appended so two different instructions can never
-    land on the same artefacts.
+    to the same prefix, and the second scoring would silently overwrite the
+    first's scores and winner. A short digest of the FULL instruction is
+    appended so two different instructions can never land on the same
+    artefacts.
     """
     t = re.sub(r"[^a-z0-9]+", "_", instruction.lower()).strip("_")
     digest = hashlib.sha1(instruction.encode()).hexdigest()[:6]
@@ -145,15 +143,14 @@ _NOISY = ("curobo", "cutamp", "trimesh", "PIL", "matplotlib", "urllib3", "sapien
 def run_module(module: str, argv: list, what: str, verbose: bool = False) -> None:
     """Run a stage IN THIS PROCESS instead of spawning one.
 
-    The stages were separate processes so CUDA memory came back between them
-    (G-8). That reason is gone: with FoundationStereo's allocator cache
-    released, all four modules sit co-resident at 23.1 GB of 32.6. What the
-    process boundary still cost was real and repeated -- imports, the cuRobo
-    model load, and the scene decomposition, every stage, every turn.
+    A subprocess per stage hands CUDA memory back between stages, but with
+    all four modules co-resident on the card that is not needed, and the
+    process boundary costs real, repeated work -- imports, the cuRobo model
+    load, and the scene decomposition, every stage, every turn.
 
-    In-process, the module-level caches finally do their job: `fk_model` loads
-    once per session, `scene_cache` decomposes each capture once instead of
-    three times, and imports are paid at startup rather than four times a turn.
+    In-process, the module-level caches do their job: `fk_model` loads once
+    per session, `scene_cache` decomposes each capture once instead of three
+    times, and imports are paid at startup rather than four times a turn.
 
     A stage that raises does not take the session down; the caller reports it
     and the next instruction starts clean. `sys.argv` is restored either way.
@@ -180,13 +177,12 @@ def run_module(module: str, argv: list, what: str, verbose: bool = False) -> Non
                     raise RuntimeError(f"{module}: {e}") from e
     finally:
         sys.argv = saved
-        # Hand back this process's transient CUDA blocks between stages.
-        # Running the stages in-process is what made this necessary: a
-        # subprocess used to return everything by exiting, whereas the session
-        # accumulates cuRobo's working set and keeps it. That 2.2 GB was
-        # precisely the headroom FoundationStereo needed for its next forward,
-        # and turn 2 of a session OOM'd on it. The MODELS stay resident (that
-        # is the point of the caches); only the allocator's free blocks go.
+        # Hand back this process's transient CUDA blocks between stages. A
+        # subprocess returns everything by exiting, whereas the session
+        # accumulates cuRobo's working set and keeps it -- and that is the
+        # headroom FoundationStereo needs for its next forward. The MODELS
+        # stay resident (that is the point of the caches); only the
+        # allocator's free blocks go.
         try:
             import torch
 
@@ -262,21 +258,18 @@ def main() -> None:
                     help=f"comma-separated subset of {STAGES}")
     ap.add_argument("--tag", default=None)
     ap.add_argument("--k-total", type=int, default=16)
-    # ONE scoring view by default, deliberately, while the rig is being brought
-    # up: one camera means one extrinsic to calibrate, one overlay gate to
-    # read, and one thing to blame when a score looks wrong. `external_cam` is
-    # the side-view D435 -- it already frames the arm, the gripper and the
-    # whole tabletop, and it shoots against the black backdrop rather than into
-    # the window. The head-on D435i (`external_cam_2`) sees the arm better but
-    # is aimed straight at a window, and RGB is the ONLY thing the scorer gets.
+    # ONE scoring view by default: one camera means one extrinsic to calibrate,
+    # one overlay gate to read, and one thing to blame when a score looks
+    # wrong. `external_cam` is the side-view D435 -- it frames the arm, the
+    # gripper and the whole tabletop, and it shoots against the black backdrop
+    # rather than into the window. The head-on D435i (`external_cam_2`) sees
+    # the arm better but is aimed straight at a window, and RGB is the ONLY
+    # thing the scorer gets.
     #
-    # The upgrade, once both views are calibrated and both pass the overlay
-    # gate, is one flag: `--cam external_cam,external_cam_2`. score_client
-    # then averages each candidate's score across the views before the
-    # unchanged two-stage selection. On the sim that beat every single view and
-    # every other fusion rule under score noise, because the views genuinely
-    # disagree (r=+0.58 between their per-object score deviations, and a
-    # between-view spread as large as the semantic signal itself -- G-30).
+    # Once both views are calibrated and both pass the overlay gate,
+    # `--cam external_cam,external_cam_2` fuses them: score_client averages
+    # each candidate's score across the views before the two-stage selection,
+    # which is more robust to per-view score noise than any single view.
     ap.add_argument("--cam", default=EXTERNAL_CAM,
                     help="scoring viewpoint(s), comma-separated for fusion. "
                          f"Known: {EXTERNAL_CAM}, {EXTERNAL_CAM_2}")
@@ -294,13 +287,12 @@ def main() -> None:
     ap.add_argument("--horizontal-cut", dest="use_plane_normal", action="store_false",
                     help="droid-sim's world-z above-table cut (see gwm_arm.propose)")
     ap.add_argument("--gate-min-slab-pts", type=int, default=None,
-                    help="rig-dependent point-count threshold; see magic_numbers.md #8")
+                    help="minimum point count in the closing-line slab (rig-dependent)")
     ap.add_argument("--no-rerun", dest="rerun", action="store_false",
                     help="skip the Rerun viewer in the viz stage (headless sessions)")
     ap.add_argument("--free-depth", action="store_true",
-                    help="tear FoundationStereo down after capture. Only needed on a "
-                         "card too small to hold every module at once; since the "
-                         "memory-release patch it costs 2.0 GB, so the default keeps it")
+                    help="tear FoundationStereo down after capture; only needed on a "
+                         "card too small to hold every module at once")
     args = ap.parse_args()
 
     stages = [s.strip() for s in args.stages.split(",") if s.strip()]
@@ -329,24 +321,11 @@ def main() -> None:
                 cmd.append("--no-move")
             run(cmd, "capture")
 
-    # VRAM budget on this 32 GB card, measured 2026-08-19:
-    #
-    #   gwm-server       19100 MiB   score
-    #   FoundationStereo  2072 MiB   capture        (was 9342 -- see below)
-    #   M2T2              1180 MiB   propose
-    #   cuRobo             740 MiB   propose / gate / viz
-    #   ------------------------------------------------------------
-    #                    23092 MiB of 32607 -> ~9.5 GB spare, ALL co-resident
-    #
-    # The first live run OOM'd here because FoundationStereo sat at 9342 MiB,
-    # of which 5684 MiB was PyTorch allocator cache retained after a single
-    # 1280x720 forward. `common/install_fs_memory_release.py` releases it; the
-    # server now settles at 2072 MiB with identical depth (96.7 % valid) and no
-    # measured slowdown. That is what makes every module online at once, rather
-    # than the modules taking turns.
-    #
-    # Nothing needs tearing down mid-run any more. `--free-depth` keeps the
-    # old behaviour for a smaller card.
+    # VRAM on this 32 GB card: gwm-server (~19 GB), FoundationStereo (~2 GB
+    # once `common/install_fs_memory_release.py` drops its allocator cache
+    # after each forward), M2T2 (~1.2 GB) and cuRobo (<1 GB) all fit
+    # co-resident, so nothing needs tearing down mid-run. `--free-depth`
+    # tears FoundationStereo down after capture for a smaller card.
     if "capture" in stages and not args.replay_run and args.free_depth \
             and any(s in stages for s in ("propose", "score", "gate", "viz")):
         _log.info("--free-depth: tearing down FoundationStereo after capture")

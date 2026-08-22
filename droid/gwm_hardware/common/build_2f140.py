@@ -18,8 +18,8 @@ Sources (all already vendored inside the cuTAMP clone, nothing downloaded):
   every number is quoted from those files and cited inline).
 - meshes: `robotiq_description/meshes/{visual,collision}/2f_140/*.stl`.
 
-cuTAMP stays unforked (G-4/G-7) and `tiptop/` stays pristine (G-18): this
-writes into our own tree and is consumed by `gwm_hardware.common.robot_2f140`.
+cuTAMP stays unforked and `tiptop/` stays pristine: this writes into our own
+tree and is consumed by `gwm_hardware.common.robot_2f140`.
 
 The cuTAMP clone is gitignored and rebuilt by `install-cutamp.sh`, and the
 emitted URDF carries absolute mesh paths, so the OUTPUT is machine-local (same
@@ -291,7 +291,7 @@ def build_urdf(flange_offset_m: float, out_path: Path) -> Path:
     # fingers across the wrong axis of the object. Same class of failure as the
     # stock Franka ready pose's q7 = pi/4, which exists to cancel the Franka
     # Hand's flange offset and becomes the error once a Robotiq is bolted on
-    # square (found on the controller side, 2026-08-18).
+    # square.
     _sub(root, "link", name="gripper_frame")
     _add_joint(root, "gripper_joint", "fixed", "robotiq_140_base_link",
                "gripper_frame", (0, 0, 0), (0, 0, -PI / 2))
@@ -374,9 +374,8 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--flange-offset", type=float, default=0.0,
                     help="metres between the flange face and the gripper base "
-                         "(the 'standoff'). 0 = gripper bolted straight to the "
-                         "flange, which is this rig. Recover it from the "
-                         "renderer overlay gate if the model sits proud.")
+                         "(the 'standoff'); 0 = gripper bolted straight to the "
+                         "flange, as on this rig")
     ap.add_argument("--tcp-driver-angle", type=float, default=0.0,
                     help="driver angle the TCP is measured at; 0 = fully open")
     ap.add_argument("--out-dir", type=Path,

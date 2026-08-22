@@ -113,7 +113,7 @@ def look_at(eye: np.ndarray, target: np.ndarray, up=(0.0, 0.0, 1.0)) -> np.ndarr
     """CV-axis cam2world (x right, y down, z forward) looking from eye at target.
 
     This is the convention `FrankaRobotRenderer.render` consumes despite its
-    `cam2world_gl` parameter name (GI-2 finding), and the same one the h5
+    `cam2world_gl` parameter name, and the same one the h5
     `pos_w`/`quat_w_ros` pair encodes.
     """
     f = np.asarray(target, float) - np.asarray(eye, float)

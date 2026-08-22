@@ -2,22 +2,18 @@
 
 GWM scores a candidate trajectory from ONE third-person RGB frame plus five
 robot-only renders of that trajectory. So this camera decides what the scorer
-can and cannot see, and on the sim side that turned out to be first-order:
-switching viewpoint moved object accuracy 9/10 -> 10/10 (G-29), and the task it
-fixed had failed purely because the target sat small, distant and inside the
-gripper's shadow.
+can and cannot see, and the viewpoint is first-order: a target that sits small,
+distant and inside the gripper's shadow cannot be scored, whatever the model
+knows about it.
 
 It does NOT have to reproduce DROID's extrinsics, and it does NOT have to fit
-the whole arm in frame. An earlier version of this file claimed it did, on the
-reasoning that "a cropped arm cannot be aligned against a render" -- which is
-simply wrong: the render is produced with THIS camera's intrinsics and
-extrinsics, so it is cropped in exactly the same place as the photo. The
-overlay gate passes at 8.04 % robot coverage with the base out of frame
-(2026-08-19). What it has to do:
+the whole arm in frame: the render is produced with THIS camera's intrinsics
+and extrinsics, so it is cropped in exactly the same place as the photo, and
+the overlay gate passes with the base out of frame. What it has to do:
 
   1. enough of the arm visible to distinguish one trajectory from another --
      the gripper end above all, since that is what differs between candidates;
-  2. every candidate object visible and not hidden behind the gripper;
+  2. every candidate object visible and not occluded by the gripper;
   3. no strong backlight -- a window behind the workspace blows out the RGB,
      and the scorer only ever sees RGB;
   4. the table surface filling a decent part of the frame, not the background.

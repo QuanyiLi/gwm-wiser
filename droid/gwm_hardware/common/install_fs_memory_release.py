@@ -1,6 +1,6 @@
 """Make FoundationStereo give its 5.7 GB back after each inference.
 
-Measured on this rig 2026-08-19:
+On this rig's GPU:
 
     FoundationStereo, weights loaded, before any inference   3658 MiB
     after ONE 1280x720 stereo forward                        9342 MiB
@@ -16,7 +16,7 @@ It is the difference between "the modules take turns" and "everything runs at
 once". On this 32 GB card:
 
     FoundationStereo 9342 + gwm-server 19100 + M2T2 1180 + cuRobo 740
-        = 30.4 GB of 32.6 -> cuRobo cannot get in, and did not (CUDA OOM)
+        = 30.4 GB of 32.6 -> cuRobo cannot get in (CUDA OOM)
     FoundationStereo 3658 + gwm-server 19100 + M2T2 1180 + cuRobo 740
         = 24.7 GB -> ~8 GB spare, all four co-resident
 
@@ -25,9 +25,8 @@ The cost is that the next inference re-allocates its working set. Against a
 
 The patch is one `torch.cuda.empty_cache()` at the end of `run_inference`,
 after the result is already a numpy array on the host. The FoundationStereo
-clone is gitignored and rebuilt by its own setup, so -- exactly like the
-cuTAMP and tiptop deviations -- this is a versioned, idempotent installer with
-a backup and a `--restore`, not a hand edit.
+clone is gitignored and rebuilt by its own setup, so this is a versioned,
+idempotent installer with a backup and a `--restore`, not a hand edit.
 
     pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_fs_memory_release
     pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.common.install_fs_memory_release --restore

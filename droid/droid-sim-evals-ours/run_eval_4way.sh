@@ -5,19 +5,16 @@
 # results_<arm>_<tag>.csv; pick task ids are refer6_* and place ids are place_*,
 # so the two families share the folder without colliding.
 #
-# Arms (the three GWM ones differ ONLY in which scoring viewpoint chose the
-# plan; the replayed pipeline is identical, so where they select the same plan
-# their trials are expected to be byte-identical — that agreement doubles as a
-# determinism check on the harness):
-#   gwmfusion  winner_*_fusion.json  two-camera fused scoring (G-30)
+# Arms (the three GWM ones differ only in which scoring viewpoint chose the
+# plan; the replayed pipeline is identical):
+#   gwmfusion  winner_*_fusion.json  two-camera fused scoring
 #   gwmcam1    winner_*_cam1.json    external_cam only
-#   gwmcam2    winner_*.json         external_cam_2 only (the shipped default)
+#   gwmcam2    winner_*.json         external_cam_2 only (the default)
 #   tiptop     no winner file        upstream TiPToP, replanning every trial
 #
 # Phases 1-3 (the GWM arms) need no GPU planner — a fixed-plan policy server on
 # :8770 serves the winner. Phase 4 needs M2T2 (:8123) and tiptop-server (:8765)
-# and is NOT started here: run it separately once those servers are up, because
-# the place half of it goes through the never-yet-exercised proxy path.
+# and is not started here: run it separately once those servers are up.
 #
 #   OUT=runs/eval_4way TRIALS=5 ./run_eval_4way.sh          # phases 1-3
 #   OUT=runs/eval_4way TRIALS=5 ARM=tiptop bash run_refer6_tiptop.sh   # phase 4a

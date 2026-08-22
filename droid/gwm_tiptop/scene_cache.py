@@ -1,19 +1,19 @@
 """One decomposition of a capture, shared by everything that reads it.
 
 The proposer, the grasp gate and the debug viewer each start from the same
-wrist h5 and each independently redo the same work: load it, project depth to
-a world cloud, RANSAC the table, DBSCAN the clusters. Measured on the zhiwei
-rig that is ~1.1 s a time, three times a turn, for a byte-identical answer.
+wrist h5 and would otherwise each redo the same work: load it, project depth
+to a world cloud, RANSAC the table, DBSCAN the clusters -- about a second a
+time, several times a turn, for a byte-identical answer.
 
 Keying on the file's path, size and mtime means a re-capture invalidates it
 automatically while a re-read never pays twice, and the cache is per-process,
 so nothing persists across runs to go stale on disk.
 
-The decomposition FLAGS are part of the key on purpose. The gate judging plans
-against a scene decomposed differently from the one the proposer planned in is
-not a hypothetical -- it happened on 2026-08-19, the gate lost the target
-object, and every candidate for it came back "no raw points". Two callers
-asking for different flags get different entries and no illusion of agreement.
+The decomposition FLAGS are part of the key on purpose. A gate judging plans
+against a scene decomposed differently from the one the proposer planned in
+loses the target object, and every candidate for it comes back "no raw
+points". Two callers asking for different flags get different entries and no
+illusion of agreement.
 """
 
 import logging

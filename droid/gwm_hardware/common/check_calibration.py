@@ -1,16 +1,18 @@
 """Is the table tilted, or is the hand-eye calibration tilted?
 
 Reconstructing the tabletop through FK -> ee_from_cam -> depth at q_capture
-gives a plane that is flat to 0.84 mm rms but sits 2.56 deg off the base
-frame's vertical, 5 mm high. Those two explanations have opposite consequences:
+can give a plane that is flat to well under a millimetre rms yet sits a few
+degrees off the base frame's vertical. Those two explanations have opposite
+consequences:
 
 - **the table really is tilted** relative to the robot base -- harmless.
   tiptop does not assume a table height; `find_table_plane` RANSACs it out of
   the observed cloud every capture, so a tilt is simply measured.
 - **the calibration is tilted** -- the whole cloud is rotated, every grasp
   inherits the error, and the RANSAC cannot help because it fits a plane to
-  already-wrong points. 2.56 deg is 18 mm of height error at 0.4 m out, which
-  presents as a gripper that intermittently scuffs the table or closes on air.
+  already-wrong points. A 3 deg error is ~20 mm of height error at 0.4 m out,
+  which presents as a gripper that intermittently scuffs the table or closes
+  on air.
 
 They separate cleanly: measure the plane's normal **in the base frame** from
 several arm poses. A physical tilt is the same from every pose; a calibration
@@ -29,9 +31,8 @@ TABLE_Z = 0.055
 SPEED = 0.10
 # A pose whose plane fit rejects many points is not seeing a clean tabletop --
 # usually the camera's 75 mm lateral offset has swung part of the frame past
-# the table edge onto the floor. Including such poses is what made the
-# six-pose solve diverge to a nonsense 98 deg on 2026-08-18; they are dropped
-# rather than averaged in.
+# the table edge onto the floor. Including such poses makes the joint solve
+# diverge, so they are dropped rather than averaged in.
 MIN_INLIER_FRAC = 0.95
 
 
@@ -177,7 +178,7 @@ def main() -> None:
     # Joint solve: a fixed rotation error `R_corr` in ee_from_cam AND a real
     # table normal `n_table` in the base frame both produce a tilt, but they
     # are separable -- the first is constant in the EE frame, the second in the
-    # base frame. Fit both and see how much of the 2.95 deg each explains.
+    # base frame. Fit both and see how much of the tilt each explains.
     if len(ee_normals) >= 3:
         from scipy.optimize import least_squares
 

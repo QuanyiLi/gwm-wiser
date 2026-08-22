@@ -3,18 +3,17 @@
 # VARIANT 1 (held block welded in the gripper). Needs M2T2 (:8123) and
 # tiptop-server (:8765) up.
 #
-# tiptop plans NATIVELY here: it picks the block, carries it to the bin, opens
-# the gripper and goes home. That works because `weld_held_block` now RELEASES
-# the weld the first time the gripper reopens after closing (G-31); before that
-# fix a release was a no-op and the arm carried the welded block home, so the
-# score measured the weld rather than the grounding.
+# tiptop plans natively here: it picks the block, carries it to the bin, opens
+# the gripper and goes home. `weld_held_block` releases the weld the first time
+# the gripper reopens after closing, so the released block falls into the bin
+# instead of being carried home.
 #
-# TRUNCATE=Place restores the earlier adaptation for provenance: it routes
-# through `policy_server --select proxy`, which forwards to :8765 unchanged and
-# only drops the plan tail after the last `Place(...)` trajectory step, ending
-# the episode where the GWM candidates end (block inside the bin, still held).
+# TRUNCATE=Place selects an alternative protocol: it routes through
+# `policy_server --select proxy`, which forwards to :8765 unchanged and only
+# drops the plan tail after the last `Place(...)` trajectory step, ending the
+# episode where the GWM candidates end (block inside the bin, still held).
 # Each proxied request is logged to served_<arm>_<tag>.jsonl with the full step
-# list and the kept count, so the adaptation stays auditable per trial.
+# list and the kept count.
 set -u
 export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1
 cd "$(dirname "$0")"

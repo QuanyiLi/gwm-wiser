@@ -21,7 +21,7 @@ Two outputs, because they answer different questions:
                candidate paths drawn over the camera image, coloured by score.
 
 **Colour is RELATIVE, on purpose.** GWM's cosine scores across a candidate set
-span about 0.01 (G-28), so an absolute colour map would render every candidate
+span only about 0.01, so an absolute colour map would render every candidate
 the same shade and hide exactly the structure worth seeing. The ramp is
 stretched over the observed min..max of THIS set and the range is printed on
 the legend, so a wide spread and a hair-thin one look different on the page
@@ -252,15 +252,15 @@ def log_rerun(ctx: dict, rows: list[dict], paths: dict[str, np.ndarray],
     # its default recording id from the process -- so every turn of a session
     # lands in the SAME recording. Fixed paths (rgb, cloud, selection) are
     # fine: re-logging static data replaces it. The per-turn subtrees are not:
-    # their entity names vary (plan_12.. when the previous turn had 16 and this
-    # one has 9; object_4 when the cluster count drops), and a static entity
-    # nothing overwrites stays in the scene forever -- measured 2026-08-19,
-    # a session's worth of old trajectories all drawn at once. Static data
-    # also cannot be cleared (verified on 0.27: a recursive static Clear
-    # leaves static components in place). So the variable subtrees are logged
-    # on a per-turn sequence timeline, non-static, and cleared recursively at
-    # the start of each turn; scrubbing the `turn` timeline replays the
-    # session, and the latest time shows only the current turn.
+    # their entity names vary (a turn with fewer candidates or clusters than
+    # the last leaves the higher-numbered entities untouched), and a static
+    # entity nothing overwrites stays in the scene forever, so old
+    # trajectories pile up across turns. Static data also cannot be cleared
+    # (on rerun 0.27 a recursive static Clear leaves static components in
+    # place). So the variable subtrees are logged on a per-turn sequence
+    # timeline, non-static, and cleared recursively at the start of each
+    # turn; scrubbing the `turn` timeline replays the session, and the latest
+    # time shows only the current turn.
     rr.set_time("turn", sequence=next(_TURN_SEQ))
     rr.log("world/candidates", rr.Clear(recursive=True))
     rr.log("world/clusters", rr.Clear(recursive=True))
@@ -364,9 +364,8 @@ def main() -> None:
     # (tcp path, index of the gripper close). The close index matters: a
     # tiptop pick plan is MoveFree -> Pick, and Pick RETRACTS afterwards, so
     # the last waypoint of every candidate is the same retract pose. Marking
-    # the end of the path as "the grasp" would put all 16 crosses on one pixel
-    # off the bottom of the frame -- which is exactly what the first version
-    # of this viewer did.
+    # the end of the path as "the grasp" would put every cross on one pixel
+    # off the bottom of the frame.
     paths = {}
     for row in rows:
         plan = json.loads((args.proposals_dir / row["file"]).read_text())
@@ -374,7 +373,7 @@ def main() -> None:
         if len(q):
             paths[row["file"]] = (tcp_path(kin, tensor_args, q), close_at)
 
-    # Which image to draw on. The scoring view is the honest one -- it is what
+    # Which image to draw on. The scoring view is the right one -- it is what
     # GWM actually saw -- but it needs the external extrinsics, so the wrist
     # view is the fallback that always works.
     if args.external_h5:

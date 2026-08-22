@@ -1,24 +1,21 @@
-"""optimize_bin_layout: place the two bins for maximum GWM discriminability.
+"""optimize_bin_layout: search bin placements for the scene-6 place tasks.
 
-The objective is NOT world-space separation. GWM scores candidates from the
-static `external_cam` only (plan.md G-9), and with the object pre-grasped its
-only cue is the arm silhouette over one bin vs the other, so what matters is how
-far apart the bins are IN EXTERNAL-CAMERA PIXELS. Two bins 0.3 m apart along the
-external camera's viewing ray project nearly on top of each other; the same
-0.3 m perpendicular to that ray is maximally discriminative.
+Feasible layouts are ranked by how far apart the two bins are IN EXTERNAL-
+CAMERA PIXELS rather than in world space: two bins 0.3 m apart along the
+external camera's viewing ray project nearly on top of each other, whereas the
+same 0.3 m perpendicular to that ray keeps the two destinations visually
+distinct from the static viewpoint.
 
-Constraints, all measured from the real captures rather than assumed:
+Constraints, all evaluated against the scene captures:
   wrist    every bin bbox corner inside the home wrist frame with margin, AND
            the bin's opening not shadowed by the gripper -- M2T2/Gemini/
-           perception_geometric see only that view (plan.md G-23: "most of the
-           table beyond/left of the bowl is gripper-shadowed there"), and a
-           clipped or shadowed cluster fits a truncated (wrong) placement
-           surface. The gripper mask is built by unprojecting the no-bins
-           capture's wrist depth and keeping world z > GRIPPER_Z (every table
-           object tops out at 0.118 m, the fingers start around 0.32 m).
+           perception_geometric see only that view, and a clipped or shadowed
+           cluster fits a truncated (wrong) placement surface. The gripper
+           mask is built by unprojecting the no-bins capture's wrist depth and
+           keeping world z > GRIPPER_Z (every table object tops out at
+           0.118 m, the fingers start around 0.32 m).
   external every bin fully in frame; bins must not occlude each other, and must
-           not occlude the banana (GWM scores from this view, and four refer6
-           pick tasks target the banana).
+           not occlude the banana (four refer6 pick tasks target it).
   physical AABB clearance to the three stock objects, and a planar reach band
            matching what the stock scenes actually exercise (0.415 .. 0.660 m).
 

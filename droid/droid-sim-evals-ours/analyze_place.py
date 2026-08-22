@@ -1,9 +1,8 @@
 """analyze_place: aggregate runs/place_v1/results_gwm_*.csv into a markdown table.
 
 Reads the PlaceTracker detail JSON (place_eval.py) per row, so besides the
-success rate it reports WHERE the block actually ended up (_landed_in) --
-separating wrong-bin groundings from drops/plan failures, which a bare
-success column cannot do.
+success rate it reports which bin the block actually ended up in (_landed_in),
+separating wrong-bin groundings from drops and plan failures.
 
     python3 analyze_place.py [--runs runs/place_v1]
 """
@@ -51,7 +50,7 @@ def main() -> None:
     if tot["n"]:
         print(f"| **total** | | **{tot['n']}** | **{tot['succ']}/{tot['n']}** | | | | {tot['pf']} |")
 
-    # per-trial detail lines for eyeballing
+    # per-trial detail lines
     print()
     for tag in TAGS:
         path = args.runs / f"results_{args.arm}_{tag}.csv"

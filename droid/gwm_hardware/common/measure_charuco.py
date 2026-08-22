@@ -1,9 +1,9 @@
 """Measure the Charuco board's checker size with the wrist camera itself.
 
-The tape readings for this board disagree: 37.5 cm across 11 squares implies a
-34.09 mm checker, 27.5 cm across 8 implies 34.38 mm. That 0.8 % lands straight
-in the hand-eye solve and then in every grasp, and no amount of re-reading a
-ruler resolves which edge was measured.
+Tape readings of a laminated board are ambiguous at the sub-millimetre level:
+spans over different numbers of squares can disagree by close to a percent,
+depending on which edge was read. That error lands straight in the hand-eye
+solve and then in every grasp, and no amount of re-reading a ruler resolves it.
 
 The depth camera does resolve it. Detect the interior Charuco corners, read
 each one's metric depth, unproject to 3D in the camera frame, and measure the
@@ -127,7 +127,7 @@ def main() -> None:
         if v:
             print(f"  {k:18s} median {np.median(v)*1000:.2f} mm  "
                   f"over {len(v)} shots  spread {(max(v)-min(v))*1000:.2f} mm")
-    print("\n  tape said 34.09 mm (37.5 cm / 11) or 34.38 mm (27.5 cm / 8)")
+    print("\n  compare against the tape reading (span the whole grid and divide)")
     print("  pass the value you trust to install_charuco_params --checker-mm")
 
 

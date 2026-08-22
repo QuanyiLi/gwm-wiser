@@ -10,9 +10,8 @@ nothing stops it. The process keeps the device claimed, and because the
 pipeline stages run IN-PROCESS the "process" is the whole session: every
 remaining instruction fails the same way, and the only cure was to quit.
 
-Observed on the zhiwei rig 2026-08-19 on the wrist D435i (035422072950,
-fw 5.12.15.50): one failed open left /dev/video0, /dev/video2 and /dev/video4
-held by the session for the rest of its life.
+On the wrist D435i, one failed open leaves /dev/video0, /dev/video2 and
+/dev/video4 held by the session for the rest of its life.
 
 So: drop the orphaned pipeline, power-cycle the device, wait for it to
 re-enumerate, and try again. A hardware reset is the documented remedy for a

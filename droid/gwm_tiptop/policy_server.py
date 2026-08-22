@@ -1,24 +1,23 @@
-"""Websocket plan server for selection-policy A/B runs (no planner, no GPU).
+"""Websocket plan server for selection-policy evaluation runs (no planner, no GPU).
 
 Speaks the tiptop_websocket_server protocol (metadata on connect, msgpack
 request in, JSON plan out) but serves precomputed serialize_plan JSONs from a
 proposals dir instead of planning, so batch_eval_v2 / grasp_eval run unchanged
 against it (--ws-port). Policies:
 
-- ``random``  — uniform over the proposals_index.json candidates (the "fake
-  GWM" baseline arm; instruction-blind by design).
-- ``fixed``   — always serve --plan-file (the GWM-argmax arm; selection was
+- ``random``  — uniform over the proposals_index.json candidates (the
+  instruction-blind baseline).
+- ``fixed``   — always serve --plan-file (the GWM-selected plan; selection is
   done offline by score_client against gwm-server).
 - ``proxy``   — forward the request to the real tiptop-server and serve ITS
-  plan, optionally truncated at ``--truncate-after`` (the tiptop baseline arm
-  for the place eval). Rationale: on scene 6 variant 1 the held block is
-  welded to the gripper for the whole episode, so tiptop's native tail
-  (open gripper + GoToInitial) carries the block back home and would score
-  every trial False regardless of grounding. Truncating at the last Place
-  trajectory step ends the episode exactly where the GWM place candidates end
-  — block inside the chosen bin, still held — so both arms are judged on the
-  same episode shape. Nothing else about tiptop is changed: it still does its
-  own per-trial perception + Gemini grounding + cuTAMP planning.
+  plan, optionally truncated at ``--truncate-after`` (the tiptop baseline for
+  the place eval). In the place eval the held block is welded to the gripper
+  for the whole episode, so tiptop's native tail (open gripper + GoToInitial)
+  would carry the block back home. Truncating at the last Place trajectory
+  step ends the episode exactly where the GWM place candidates end — block
+  inside the chosen bin, still held — so both policies produce the same
+  episode shape. Nothing else about tiptop is changed: it still does its own
+  per-trial perception + Gemini grounding + cuTAMP planning.
 
 Every request logs the served candidate to --log-jsonl and checks the
 request's q_init against the plan's stored q_init (catches a sim reset state

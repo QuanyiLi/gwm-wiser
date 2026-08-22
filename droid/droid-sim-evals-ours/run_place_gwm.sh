@@ -6,8 +6,7 @@
 # serves that winner. Resumes from CSVs; one retry per task.
 #
 # TRIALS defaults to 1: the arm replays one fixed plan and the scene has no
-# randomization, so trial 0 is deterministic (G-16: same plan + same trial
-# index -> identical physics outcome); extra trials re-measure nothing.
+# randomization, so repeated trials reproduce the same outcome.
 set -u
 export OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1
 cd "$(dirname "$0")"

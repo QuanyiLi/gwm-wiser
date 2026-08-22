@@ -2,9 +2,9 @@
 
 `assets/` and `config/` sit at the `gwm_hardware/` package root, not inside a
 subpackage, because both experiment arms and the tiptop-tree installers read
-them. Import these constants rather than recomputing `__file__`-relative paths
--- that is what made the 2026-08-19 subpackage split a one-line change per
-consumer instead of a hunt.
+them. Import these constants rather than recomputing `__file__`-relative paths,
+so a package reshuffle is a one-line change here rather than a hunt through
+every consumer.
 """
 
 from pathlib import Path

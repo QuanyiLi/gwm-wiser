@@ -5,20 +5,20 @@ TiPToP plans an entire episode from ONE wrist-camera frame taken at
 default is MIT's bench and on this rig covers far too little table.
 
 Analysis alone cannot settle it. Fitting the table plane to the wrist depth at
-a known pose recovers the camera's height and tilt relative to the flange
-(measured on this rig: the camera sits **81 mm behind the TCP** along the
-approach axis, optical axis 2.75 deg off the gripper's), but a single plane
-gives no lateral offset and no roll, so where the footprint actually lands and
-which way it is oriented can only be seen by looking. Hence the loop.
+a known pose recovers the camera's height and tilt relative to the flange (on
+this rig the camera sits **136 mm behind the TCP** along the approach axis,
+its optical axis a few degrees off the gripper's), but a single plane gives no
+lateral offset and no roll, so where the footprint actually lands and which
+way it is oriented can only be seen by looking. Hence the loop.
 
 Safety, because this commands real motion:
 
 - every candidate is IK-solved and collision-checked against
   `gwm_hardware.common.rig_workspace` before anything moves, and the cuRobo plan is
   checked again as a trajectory;
-- the left wall is 0.20 m from the base and at `q_capture` the arm's outermost
-  sphere is already near it, so the wall clearance of each candidate is printed
-  and candidates under `MIN_WALL_CLEARANCE_M` are dropped;
+- the clearance between the arm's outermost sphere and the +y table edge
+  (`LEFT_WALL_Y`) is printed for each candidate, and candidates under
+  `MIN_WALL_CLEARANCE_M` are dropped;
 - `--dry-run` (the default) plans and reports without sending anything.
 
     # look first
@@ -37,10 +37,11 @@ import numpy as np
 import torch
 
 MIN_WALL_CLEARANCE_M = 0.040
-LEFT_WALL_Y = 0.500     # table edge; the wall that was here is gone
+LEFT_WALL_Y = 0.500     # +y table edge
 TABLE_TOP_Z = 0.055
-# Measured on this rig by fitting the table plane at a known pose, with the
-# table top at z = +0.055 (the robot base sits 55 mm below the working surface).
+# Camera height above the TCP along the approach axis, from a table-plane fit
+# at a known pose with the table top at z = +0.055 (the robot base sits 55 mm
+# below the working surface).
 CAMERA_AXIAL_OFFSET_M = 0.136
 # Wrist D435 colour FOV, from its own intrinsics.
 FOOTPRINT_W_PER_M = 1.380
@@ -51,25 +52,18 @@ OUT = Path.home() / "Desktop/rig_check"
 def candidates():
     """TCP targets over the work area, best-first.
 
-    The bench was rearranged on 2026-08-18: the table is now 1 m wide and
-    CENTRED on the base, and the wall that sat 0.20 m to the left is gone. So
-    the view should centre on y = 0 rather than being pushed right, and the
-    left clearance that used to bind at 46 mm no longer does.
+    The table is 1 m wide and CENTRED on the base, so the view should centre
+    on y = 0.
 
     `yaw` rotates the gripper about the vertical -- the redundant DOF for a
     straight-down TCP -- and it matters because the wrist camera is **not on
-    the TCP axis**. Measured over the first sweeps at TCP [0.50,-0.15,0.55]:
+    the TCP axis**: yaw swings where the footprint lands. At yaw 0 the robot's
+    own base fills part of the frame; at -90 the base is out of frame entirely
+    and the table fills the most of it, so -90 leads, and the remaining freedom
+    is where to centre it.
 
-        yaw    0  -> the robot's own base filled the frame's left third
-        yaw +180 -> 61.7 % table
-        yaw  +90 -> 70.2 % table
-        yaw  -90 -> 85.8 % table, base out of frame entirely
-
-    so -90 leads, and the remaining freedom is where to centre it.
-
-    WHICH IMAGE AXIS IS WHICH WORLD AXIS (measured 2026-08-18, forward
-    kinematics at q_capture through the hand-eye extrinsic -- not assumed, and
-    the opposite of the intuitive reading):
+    WHICH IMAGE AXIS IS WHICH WORLD AXIS (from forward kinematics at q_capture
+    through the hand-eye extrinsic -- the opposite of the intuitive reading):
 
         image width  (1.380 per m) -> world  y
         image height (0.782 per m) -> world -x
@@ -83,8 +77,8 @@ def candidates():
     y is capped at +-0.30 by M2T2 regardless of what the camera sees, and x is
     the axis the frame actually runs out of.
 
-    Raising the camera was tried and rejected on 2026-08-18. It buys nothing in
-    y (M2T2's crop binds first) and IK runs out before it buys much in x: with
+    Raising the camera does not help. It buys nothing in y (M2T2's crop binds
+    first) and IK runs out before it buys much in x: with
     the 2F-140's TCP 212 mm past the flange and panda_joint4 unable to
     straighten, a straight-down TCP solves only up to z ~ 0.65-0.67, and only
     for tx <= 0.37. That pose sees x in [0.14, 0.73] -- it trades the far end
@@ -137,8 +131,7 @@ def main() -> None:
                     help="actually move the robot (default: plan and report only)")
     ap.add_argument("--max-poses", type=int, default=3)
     ap.add_argument("--speed", type=float, default=0.10,
-                    help="time_dilation_factor, 1.0 = full speed. The config's "
-                         "operating value is 0.2; exploratory moves halve that")
+                    help="time_dilation_factor for the moves, 1.0 = full speed")
     args = ap.parse_args()
 
     import aiohttp
@@ -218,8 +211,8 @@ def main() -> None:
             print(f"\n  moving to TCP [{tx:.2f} {ty:+.2f} {tz:.2f}] "
                   f"yaw {np.degrees(yaw):+.0f} deg, speed {args.speed}")
             # tiptop's own mover -- it is what feeds time_dilation_factor into
-            # MotionGenPlanConfig. Hand-rolling execution here is how the first
-            # sweep ended up running at full speed.
+            # MotionGenPlanConfig; hand-rolled execution here would bypass it
+            # and run at full speed.
             go_to_q(q_target=[float(v) for v in q],
                     time_dilation_factor=args.speed, motion_gen=mg)
             time.sleep(1.0)

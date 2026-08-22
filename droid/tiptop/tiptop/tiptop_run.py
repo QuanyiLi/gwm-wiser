@@ -190,10 +190,9 @@ async def check_server_health(session: aiohttp.ClientSession):
 def _label_rollout(save_dir: Path, output_dir: str, date_str: str, timestamp: str) -> None:
     """Prompt user to label rollout as success/failure, moving it out of eval/.
 
-    gwm_hardware rig: any answer that is not y/n/empty is appended to
-    human_notes.txt inside the rollout directory (it travels with the move) --
-    the operator's one-line failure reason is worth more than the bit -- and
-    the prompt re-asks until a y/n/empty answer closes it.
+    Any other answer is treated as a free-text note: it is appended to
+    human_notes.txt inside the rollout directory (so it travels with the move)
+    and the prompt re-asks until a y/n/empty answer closes it.
     """
     try:
         while True:
@@ -344,13 +343,12 @@ def process_scene_geometry(
     # Segment table with RANSAC (returns trimesh Box)
     table_trimesh = segment_table_with_ransac(xyz_map, rgb_map, masks)
 
-    # gwm_hardware rig: refuse to plan on a table the fit does not put where
-    # the (bolted-down) table is. A drifted fit means the DEPTH is wrong --
-    # transient FoundationStereo faults produce whole warped sheets -- and
-    # clusters, grasps, and collision meshes are then wrong in a way nothing
-    # downstream notices (gwm_hardware ledger G-35/G-40). Mirrors
-    # gwm_arm.propose.check_surface_z so both A/B arms refuse the same bad
-    # frames. Either key absent (droid-sim, upstream) => gate off, unchanged.
+    # Refuse to plan when the fitted table drifts more than
+    # perception.max_surface_drift_m from perception.table_top_z_m. The table
+    # itself does not move, so a drifted fit means the depth is wrong --
+    # transient FoundationStereo faults can warp whole sheets of the cloud --
+    # and the clusters, grasps, and collision meshes built on it would be wrong
+    # in a way nothing downstream notices. Either key absent => gate off.
     _expected_z = tiptop_cfg().perception.get("table_top_z_m", None)
     _max_drift = tiptop_cfg().perception.get("max_surface_drift_m", None)
     _fitted_z = table_trimesh.metadata.get("surface_z")
@@ -359,7 +357,7 @@ def process_scene_geometry(
         if abs(_drift) > float(_max_drift):
             raise RuntimeError(
                 f"REFUSING TO PLAN: the fitted table surface is {_fitted_z:.4f} m, "
-                f"{_drift * 1000:+.1f} mm from this rig's measured table top "
+                f"{_drift * 1000:+.1f} mm from the configured table top "
                 f"({float(_expected_z):.3f} m), tolerance {float(_max_drift) * 1000:.0f} mm. "
                 "The table has not moved, so the depth is wrong, and everything built "
                 "on it would be wrong with it. Re-issue the instruction to re-capture; "
@@ -628,14 +626,12 @@ async def run_perception(
         rr.log("bboxes", rr.Image(bbox_viz))
         rr.log("masks", rr.Image(masks_viz))
 
-    # gwm_hardware rig: M2T2's scene sampling is stochastic and small flat
-    # objects sit right on its edge -- the same cloud gives a 69x39 mm peg
-    # 0..112 associated grasps across repeated calls. An object with zero
-    # grasps this draw is therefore not proven ungraspable: re-sample and
-    # MERGE before giving up on it. Mirrors gwm_arm.propose so both A/B arms
-    # share the same grasp luck. perception.m2t2.graspless_retries absent
-    # (droid-sim, upstream) => the loop never runs and behavior is unchanged.
-    # Known cost: an in-scene object that is legitimately ungraspable (a flat
+    # M2T2's scene sampling is stochastic and small flat objects sit right on
+    # its edge: the same cloud can give such an object no associated grasps on
+    # one call and dozens on the next. An object with zero grasps this draw is
+    # therefore not proven ungraspable, so re-sample and merge before giving up
+    # on it. perception.m2t2.graspless_retries absent (or 0) => the loop never
+    # runs. Known cost: an object that is legitimately ungraspable (a flat
     # plate) burns every retry (~3-5 s each, M2T2 + re-association).
     for _retry in range(int(cfg.perception.m2t2.get("graspless_retries", 0))):
         _graspless = sorted(l for l, g in processed_scene.grasps.items() if len(g["poses"]) == 0)
@@ -799,11 +795,9 @@ async def async_entrypoint(container: _DemoContainer, config: TAMPConfiguration,
                         # opening the gripper so the object can drop safely
                         if cutamp_plan is not None and any(atom.fluent.name == Holding.name for atom in env.goal_state):
                             print("WARNING: object will drop when gripper opens, so be ready to catch it.")
-                            # gwm_hardware rig: 'n' keeps the gripper closed
-                            # (e.g. the pick failed and there is nothing to
-                            # drop, or the next instruction places the held
-                            # object). Upstream accepted only 'y', which
-                            # forced an open even when opening was wrong.
+                            # 'n' keeps the gripper closed (e.g. the pick
+                            # failed and there is nothing to drop, or the next
+                            # instruction places the held object).
                             while True:
                                 try:
                                     response = input("Open gripper? [y/n]: ").strip().lower()
@@ -815,7 +809,7 @@ async def async_entrypoint(container: _DemoContainer, config: TAMPConfiguration,
                             if response == "y":
                                 container.robot.open_gripper()
                             else:
-                                _log.info("Keeping the gripper closed (user answered 'n')")
+                                _log.info("Keeping the gripper closed (answered 'n')")
                 except Exception:
                     _log.exception("TiPToP run failed")
                     raise

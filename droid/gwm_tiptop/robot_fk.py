@@ -2,23 +2,16 @@
 
 Most consumers of the robot model here never plan: the grasp gate FKs a
 closing pose, the debug viewer FKs a trajectory, the capture step FKs the
-wrist camera, the framing check projects collision spheres. All of them were
-calling `tiptop.motion_planning.build_curobo_solvers`, which constructs an IK
-solver AND a `MotionGen` AND warms both up.
+wrist camera, the framing check projects collision spheres. None of them
+needs `tiptop.motion_planning.build_curobo_solvers`, which constructs an IK
+solver AND a `MotionGen` AND warms both up -- several seconds per stage, paid
+again in every stage of a turn -- when cuTAMP's container loader yields the
+same kinematics model about an order of magnitude faster.
 
-Measured on the zhiwei rig, 2026-08-19:
-
-    build_curobo_solvers            4.55 s
-    cuTAMP's container loader       0.45 s      10.2x
-
-and the two agree exactly -- TCP to 0.0000 mm, and the 273 valid collision
-spheres identical to 0.000000 mm (cuRobo pads the sphere buffer to a fixed
-size, which is the only reason the raw arrays differ in length; filter on
-radius > 0, as every consumer here already does).
-
-That is ~4 s per stage, and a full turn pays it in the gate, the viewer and
-the capture, so it was ~12 s of every instruction spent constructing planners
-that never planned.
+The two agree exactly: same TCP, and identical valid collision spheres
+(cuRobo pads the sphere buffer to a fixed size, which is the only reason the
+raw arrays differ in length; filter on radius > 0, as every consumer here
+already does).
 
 The embodiment comes from tiptop's config, so this honours the rig's 2F-140
 redirect (`install_2f140_cutamp`) exactly as the planner path does. Anything
@@ -30,8 +23,8 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-# Per-process, keyed by embodiment. Loading costs 0.45 s and the model is
-# immutable, so a session that FKs in several stages should pay it once.
+# Per-process, keyed by embodiment. The model is immutable, so a session that
+# FKs in several stages loads it once.
 _MODELS: dict = {}
 
 
@@ -108,10 +101,9 @@ def _build_solvers(num_particles: int, num_spheres: int, include_workspace: bool
 # collision checker inside a recorded cuda graph, recreating the cache will
 # break the graph as the reference pointer to the cache will change."
 #
-# While every stage built its own solver, no solver ever saw a second scene and
-# the hazard could not fire. Shared across turns it fires as soon as one turn
-# has more clusters than the turns before it -- observed 2026-08-19 as
-# "after two plannings the third one always fails", landing as
+# A solver that only ever sees one scene never trips this. Shared across turns
+# it fires as soon as one turn has more clusters than the turns before it,
+# landing as
 #
 #     RuntimeError: CUDA error: an illegal memory access was encountered
 #
@@ -119,18 +111,18 @@ def _build_solvers(num_particles: int, num_spheres: int, include_workspace: bool
 # recoverable in-process: the context is poisoned and the session dies.
 #
 # Pre-sizing the cache would keep the graphs, but the size has to be chosen
-# before warm-up records them and there is no honest bound on how many clusters
-# a scene will have. Correctness first.
+# before warm-up records them and there is no reliable bound on how many
+# clusters a scene will have. Correctness first.
 SHARED_USE_CUDA_GRAPH = False
 
 
 def planning_solvers(num_particles: int, num_spheres: int, include_workspace: bool = True):
     """`build_curobo_solvers`, built once per (process, configuration).
 
-    Constructing the IK solver + MotionGen and warming them costs 3.6 s and is
-    the single largest fixed cost in the proposer. The result depends only on
-    the arguments and the robot model, neither of which changes between
-    instructions, so a session should pay it at startup and never again.
+    Constructing the IK solver + MotionGen and warming them takes several
+    seconds and is the single largest fixed cost in the proposer. The result
+    depends only on the arguments and the robot model, neither of which changes
+    between instructions, so a session should pay it at startup and never again.
 
     Keyed on the arguments rather than assumed constant: a caller that asks for
     a different particle count gets a correctly-built solver, not a silently
@@ -152,7 +144,7 @@ def default_planning_solvers(num_particles: int = 256, include_workspace: bool =
 
     Everything that needs to PLAN -- the proposer, and `go_to_capture` inside
     the capture step -- must ask for the same configuration, or the cache key
-    differs and a second 3.6 s solver gets built for no reason. Deriving the
+    differs and a second solver stack gets built for no reason. Deriving the
     sphere count from `build_tamp_config` the same way the proposer does is
     what keeps the keys equal.
     """
@@ -177,11 +169,11 @@ def release_shared_solver(motion_gen) -> None:
     Any path that leaves the attachment in place hands the next stage a robot
     with a phantom object welded to its gripper.
 
-    Measured on 2026-08-19, the first place after a pick on a shared solver:
-    all 16 approach plans failed with INVALID_START_STATE_WORLD_COLLISION --
-    the CAPTURE pose, which the arm was physically sitting in, reported as
-    colliding with the world. Nothing was wrong with the pose; the phantom was
-    what collided.
+    The symptom, on the first place after a pick on a shared solver: every
+    approach plan fails with INVALID_START_STATE_WORLD_COLLISION -- the
+    CAPTURE pose, which the arm is physically sitting in, reported as
+    colliding with the world. Nothing is wrong with the pose; the phantom is
+    what collides.
 
     Idempotent -- cuTAMP itself calls this unconditionally at the top of its
     own solve, for the same reason.
@@ -196,15 +188,15 @@ def reset_world_to_workspace(motion_gen) -> None:
     """Put the rig's static keep-outs back into a shared solver's world.
 
     Both proposers call `motion_gen.update_world(...)` to plan against the
-    scene they just perceived. Before the solvers were cached that was
-    harmless -- each stage built its own. Shared, it means the world a later
-    motion plans against is whatever the LAST proposal left there: the
-    previous turn's objects, and no rig workspace at all.
+    scene they just perceived. With a shared solver, the world a later motion
+    plans against is whatever the LAST proposal left there: the previous
+    turn's objects, and no rig workspace at all.
 
     So any motion that is not part of a proposal -- going to the capture pose,
     going home -- resets the world first. Workspace-only is deliberate and is
     what tiptop's own `go_to_q` does: at the start of a turn nothing has been
-    perceived yet, so the honest world is the one that does not change.
+    perceived yet, so the only world known to be valid is the one that does
+    not change.
     """
     from curobo.geom.types import WorldConfig
 

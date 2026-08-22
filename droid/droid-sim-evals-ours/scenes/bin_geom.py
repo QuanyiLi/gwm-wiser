@@ -78,5 +78,5 @@ def bin_report(size: float = DEFAULT_SIZE, height: float = DEFAULT_HEIGHT) -> st
         f"    inner opening {KLT_INNER_Y * sx:.3f} (X) x {KLT_INNER_X * sy:.3f} (Y) m, "
         f"depth {KLT_INNER_DEPTH * sz:.3f} m\n"
         f"    walls {KLT_WALL_Y * sx * 1000:.2f} mm (X) / {KLT_WALL_X * sy * 1000:.2f} mm (Y) "
-        f"[stock 1.10/1.20 mm; 0.72 mm settled with zero drift in the uniform-0.6 rev]"
+        f"[stock 1.10/1.20 mm]"
     )

@@ -5,8 +5,7 @@
 a `serialize_plan` JSON file, hours or a machine apart from the planner that
 produced it, so it needs an executor of its own. The controller calls are
 identical, deliberately: same `execute_joint_impedance_path`, same
-open/close, same order, so an A/B comparison is not confounded by how the two
-arms drive the robot.
+open/close, same order, so the two arms drive the robot the same way.
 
 What is added is the checking that an offline plan needs and an in-memory one
 does not:
@@ -47,35 +46,25 @@ Q_INIT_TOL_RAD = 0.02
 # not interpolate into a path: it is handed waypoints and follows them, so a
 # first waypoint far from the current configuration is a commanded jump.
 #
-# On 2026-08-19 a place plan was handed one 0.885 rad (51 deg) from the
-# capture pose and the controller aborted with "Trajectory execution failed"
-# -- a message that says nothing about the cause, and the same message a
-# collision or a limit violation produces. The arm did not move (drift
-# 0.0004 rad), so the controller's own guard held; this one exists so the
-# failure is named BEFORE anything is sent, and so a controller with a laxer
-# guard cannot be handed the jump at all.
+# The controller's own guard rejects such a step with "Trajectory execution
+# failed" -- a message that says nothing about the cause, and the same message
+# a collision or a limit violation produces. This check exists so the failure
+# is named BEFORE anything is sent, and so a controller with a laxer guard
+# cannot be handed the jump at all.
 MAX_STEP_JUMP_RAD = 0.05
 
 # The control node refuses a trajectory it judges too aggressive, and says
 # nothing about why: the reply carries `success: False` and no error string,
 # which surfaces as the generic "Trajectory execution failed".
 #
-# Bisected on the robot, 2026-08-19, carrying a tomato:
+# The node's acceleration ceiling sits well under the Panda's own 15 rad/s^2,
+# and the caps here sit below that ceiling with margin, payload or not.
 #
-#     pick plan, peak |a| 2.37 rad/s^2   accepted (executed 2026-08-19, empty)
-#     place plan, peak |a| 5.55          REFUSED, arm did not move
-#     same waypoints at dt x2 (|a| 1.39) accepted, moved 0.36 rad
-#     remainder at dt x2   (|a| 1.54)    accepted, moved 0.50 rad
-#
-# so the ceiling sits between 2.4 and 5.5, well under the Panda's own
-# 15 rad/s^2. The cap here is below every accepted case rather than just under
-# the refused one, because the accepted cases were all measured WITH a payload
-# and one datapoint does not locate a limit.
-#
-# Place plans are the ones that hit it: their approach covers ~0.82 rad in
-# 1.26 s while a pick's covers 0.8 rad in 2.82 s. Retiming is uniform -- the
-# path is untouched, only its clock -- so nothing about which waypoints the
-# arm visits changes, and a plan already inside the limits is not altered.
+# Place plans are the ones that tend to hit it: their approach covers about
+# the same joint distance as a pick's in less than half the time. Retiming is
+# uniform -- the path is untouched, only its clock -- so nothing about which
+# waypoints the arm visits changes, and a plan already inside the limits is
+# not altered.
 MAX_EXEC_VEL = 1.6      # rad/s
 MAX_EXEC_ACCEL = 1.5    # rad/s^2
 
@@ -89,9 +78,8 @@ def retime(step: dict) -> tuple[np.ndarray, np.ndarray, float, float]:
         return pos, vel, dt, 1.0
     # From the planner's OWN velocity field, not a second difference of the
     # positions: at dt = 0.02 the position-derived acceleration is dominated by
-    # interpolation noise (9.3 rad/s^2 on the pick that executed fine, against
-    # 2.4 from the velocities), and retiming against noise would slow a proven
-    # path for nothing.
+    # interpolation noise, and retiming against noise would slow a valid path
+    # for nothing.
     a = np.diff(vel, axis=0) / dt
     # Speed scales as 1/stretch and acceleration as 1/stretch^2.
     s = max(1.0,

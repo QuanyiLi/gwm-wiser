@@ -22,8 +22,7 @@ image x 400-470 and 800-1000; depth puts the real near-field blobs at x 299-397
 and x 1246-1280. The left one is ~90 px off and the right one lands on nothing.
 Some of that is hand-eye residual, and some is likely that the physical 2F-140
 does not carry the stock fingertips the URDF models. Either way the measurement
-wins over the model, and `--from geometry` is kept only so the two can be
-compared.
+wins over the model.
 
     python -m gwm_hardware.common.build_gripper_mask                 # dry run
     python -m gwm_hardware.common.build_gripper_mask --install

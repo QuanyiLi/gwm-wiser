@@ -1,11 +1,10 @@
 """Closing-line grasp gate: veto physically fragile grasp candidates.
 
-Motivation (G-24 plan_14 1/10, G-26 nearbowl plan_12 0/5): GWM retrieval picks
-the right OBJECT but cannot see grasp robustness -- the RAT frames are
-robot-only, so an edge/corner grasp that shoves the target scores as well as a
-centred one. This gate reads the failure mode directly off geometry the system
-already has: at the closing configuration, does the target's perceived point
-mass sit squarely between the finger pads?
+GWM retrieval picks the right OBJECT but cannot see grasp robustness -- the
+RAT frames are robot-only, so an edge/corner grasp that shoves the target
+scores as well as a centred one. This gate reads the failure mode directly
+off geometry the system already has: at the closing configuration, does the
+target's perceived point mass sit squarely between the finger pads?
 
 PERCEPTION-ONLY CONTRACT: inputs are the wrist h5 (same capture the proposer
 used), the saved plans, and the robot's own model. No GT object info.
@@ -27,15 +26,15 @@ Pass requires all four within thresholds. --apply TAG re-picks the winner as
 the most confident (M2T2) PASSING plan of the object score_client selected,
 and rewrites winner_TAG.json (original kept implicitly in the ranking; falls
 back with a warning if nothing passes). Since score_client already ranks
-within an object by M2T2 confidence (G-28), the gate now only changes the
-winner when the most confident candidate is also a fragile one.
+within an object by M2T2 confidence, the gate only changes the winner when
+the most confident candidate is also a fragile one.
 
 Run inside the droid/tiptop pixi env from the gwm-wiser repo root:
 
     python -m gwm_tiptop.grasp_gate \
-        --proposals-dir droid/gwm_integrate_doc/proposals/scene6_rev2 \
+        --proposals-dir droid/gwm_integrate_doc/proposals/scene6 \
         --h5-path droid/droid-sim-evals-ours/scenes/captures/scene6_0/wrist_obs.h5 \
-        --apply refer6_nearbowl
+        --apply gwm
 """
 
 import argparse
@@ -58,9 +57,7 @@ from gwm_tiptop.propose_from_h5 import load_h5_observation
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 _log = logging.getLogger("gwm_tiptop.grasp_gate")
 
-# Robot-side policy thresholds (scene-agnostic). Calibrated on the scene6_rev2
-# pool where the fragile nearbowl winner (plan_12, 0/5) must fail and its
-# robust siblings must pass; see G-26 follow-up in the ledger.
+# Robot-side policy thresholds (scene-agnostic).
 MIN_SLAB_PTS = 150      # raw cloud points inside the capture box
 MIN_THICKNESS = 0.015   # m of material along the closing axis
 MAX_CENTER_OFF = 0.015  # m slab-centroid asymmetry between the pads
@@ -156,11 +153,10 @@ def main() -> None:
     ap.add_argument("--h5-path", required=True, type=Path)
     ap.add_argument("--apply", default=None, metavar="TAG",
                     help="rewrite winner_TAG.json to the best-scoring PASSING plan")
-    # The four thresholds are class-D magic numbers (magic_numbers.md #8):
-    # MIN_SLAB_PTS is an absolute point count, so it tracks the rig's cloud
-    # density, and MIN_THICKNESS encodes a solid-body bias. Exposed so a new
-    # rig can be re-calibrated without editing a module droid-sim shares; the
-    # defaults are the scene6_rev2 values every sim result was produced under.
+    # The four thresholds are rig-dependent: MIN_SLAB_PTS is an absolute point
+    # count, so it tracks the rig's cloud density, and MIN_THICKNESS encodes a
+    # solid-body bias. Exposed so a new rig can be re-calibrated without
+    # editing a module droid-sim shares; the defaults are the droid-sim values.
     ap.add_argument("--min-slab-pts", type=int, default=MIN_SLAB_PTS)
     ap.add_argument("--min-thickness", type=float, default=MIN_THICKNESS)
     ap.add_argument("--max-center-off", type=float, default=MAX_CENTER_OFF)
@@ -172,7 +168,7 @@ def main() -> None:
     ap.add_argument("--use-plane-normal", action="store_true",
                     help="measure height above the FITTED table plane rather than world z "
                          "when re-clustering. Required on a rig whose perceived table is "
-                         "tilted (zhiwei: 2.88 deg); a no-op on a level one")
+                         "tilted; a no-op on a level one")
     args = ap.parse_args()
 
     # FK only -- this gate never plans. See gwm_tiptop.robot_fk.
@@ -180,10 +176,10 @@ def main() -> None:
     kin = fk_model(tensor_args)
 
     # The arm's real pose first, because it is part of how the scene decomposes,
-    # and the gate MUST decompose it exactly as the proposer did. When it did
-    # not (2026-08-19) the gate lost the target and every candidate for it came
-    # back "no raw points", so nothing passed and it silently fell through to
-    # the ungated winner. Sharing the keyed cache is what makes that structural.
+    # and the gate MUST decompose it exactly as the proposer did. Otherwise the
+    # gate can lose the target cluster: every candidate for it comes back "no
+    # raw points", nothing passes, and it silently falls through to the ungated
+    # winner. Sharing the keyed scene cache makes the agreement structural.
     obs = load_h5_observation(args.h5_path)
     robot_spheres = None
     if args.use_robot_arm_filter:
@@ -260,8 +256,9 @@ def main() -> None:
         # between objects); the gate only re-picks WITHIN that object, so a
         # gate-hostile target (e.g. a thin-walled bowl whose rim pinches all
         # fail) can never flip the selection to a distractor. The object comes
-        # from score_client's `selected_target` (object-level aggregate);
-        # pre-2026-08-11 score files only have the per-candidate ranking.
+        # from score_client's `selected_target` (object-level aggregate); older
+        # score files lack it and only carry the per-candidate ranking, so fall
+        # back to ranking[0].
         scores = json.loads((args.proposals_dir / f"scores_{args.apply}.json").read_text())
         old = scores.get("winner_file", scores["argmax_file"])
         target = scores.get("selected_target", scores["ranking"][0]["target"])

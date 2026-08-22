@@ -1,11 +1,9 @@
 """Is the scoring camera aimed well enough? Answered in numbers, not by eye.
 
-The third-person camera decides what GWM can see, and on the sim side that was
-first-order: the same candidates and the same instructions scored 9/10 vs 10/10
-correct objects from the rig's two cameras, and the task that flipped had
-failed purely because its target sat small and gripper-shadowed in one view
-(G-29). So "looks about right" is not good enough, and this is the check that
-replaces it.
+The third-person camera decides what GWM can see, and that is first-order: a
+target that sits small or gripper-shadowed in the scoring view cannot be
+scored well, whatever the candidates are. So "looks about right" is not good
+enough, and this is the check that replaces it.
 
 It answers three questions the naked eye cannot:
 

@@ -10,22 +10,19 @@ It is wrong for anything CARRIED. The 2F-140 is a four-bar linkage: closing
 swings each finger inward along an arc that also drops it, so the real
 fingertips sit BELOW `grasp_frame` by an amount the planner cannot see.
 
-Measured on this rig's generated model:
+On this rig's generated model:
 
     driver 0.00 (open)    fingertip 212.0 mm == grasp_frame
     driver 0.35 (half)    fingertip 229.5 mm    +17.5 mm
     driver 0.70 (closed)  fingertip 235.7 mm    +23.7 mm
 
-That 23.7 mm is a systematic error in the dangerous direction, and it is what
-drove the first hardware place into the table: the planner believed the
-fingertips cleared the container floor by 28.4 mm while they actually cleared
-it by 4.7 mm -- less than this rig's own hand-eye residual. The trajectory
-faulted mid-descent.
+That 23.7 mm is a systematic error in the dangerous direction: a place whose
+planned clearance over the container floor is smaller than the overhang has no
+real clearance at all, and the trajectory faults mid-descent.
 
-This is the same fact `inspect_plan` learned the hard way from the other side
-(docs/tiptop-modifications.md): judging the gripper open called a perfectly
-good cup grasp impossible, because open is the one configuration where the
-pads sit highest.
+The same fact bites from the other side when a plan is judged with the gripper
+open: open is the one configuration where the pads sit highest, so a perfectly
+good cup grasp can be called impossible.
 
 Measured from the model rather than hardcoded, so it follows the URDF: change
 the gripper, regenerate, and the number changes with it.

@@ -5,7 +5,7 @@ squares, 20 mm checker, 15 mm marker. Our board is different, and the numbers
 are not cosmetic -- the checker size is the scale factor of the whole hand-eye
 solve, so an error there lands directly in every commanded grasp.
 
-Board identified from a photo (`IMG_0873.jpeg`) rather than by eye:
+Board identified from a photo with the aruco detector rather than by eye:
 
     dictionary  DICT_5X5_100   (44 markers, ids 0..43 -- also valid in _50)
     grid        11 x 8 squares (CharucoDetector recovers all 70 interior
@@ -13,7 +13,7 @@ Board identified from a photo (`IMG_0873.jpeg`) rather than by eye:
     ratio       marker / checker = 0.7117, measured from the detected corners
 
 The photo fixes the ratio but not the scale, so the checker size has to be
-measured on the physical board and passed in. **Measure across the whole grid,
+taken from the physical board and passed in. **Measure across the whole grid,
 not one square**: span all 11 squares and divide by 11, which divides the
 reading error by 11 as well.
 
@@ -43,10 +43,11 @@ DICT = "DICT_5X5_100"
 # Upstream uses angle_scale = 0.2 rad and the hand-camera branch divides it by
 # 1.5, so the wrist only rotates +-7.6 deg across the whole sweep. Hand-eye
 # (AX=XB) constrains the rotational part of X from the rotation BETWEEN poses,
-# and 7.6 deg conditions it poorly. The first calibration here came out with a
-# 2.6 deg residual: reconstructing the tabletop from three arm poses, the plane
-# normal swung 3.0 deg with the wrist while its magnitude stayed put -- the
-# signature of a rotational hand-eye error, not a tilted table.
+# and 7.6 deg conditions it poorly: a sweep that small leaves a rotational
+# residual of a few degrees, visible when the tabletop is reconstructed from
+# several arm poses as a plane normal that swings with the wrist while its
+# magnitude stays put -- the signature of a rotational hand-eye error, not a
+# tilted table.
 #
 # 0.45 rad gives +-17 deg. Still a small motion, and cuRobo plans and
 # collision-checks it like any other.
@@ -68,7 +69,7 @@ def install(checker_mm: float) -> None:
 
     block = f'''{MARKER}
 # This rig's board, not DROID's 14x9 / 20 mm one. Grid and dictionary read off
-# a photo with the aruco detector; checker size measured on the board itself.
+# a photo with the aruco detector; checker size taken from the board itself.
 CHARUCOBOARD_ROWCOUNT = SQUARES_Y = {SQUARES_Y}
 CHARUCOBOARD_COLCOUNT = SQUARES_X = {SQUARES_X}
 CHARUCOBOARD_CHECKER_SIZE = {checker}

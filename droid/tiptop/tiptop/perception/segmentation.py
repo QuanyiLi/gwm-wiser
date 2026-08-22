@@ -179,16 +179,14 @@ def segment_table_with_ransac(
         inlier_pcd = remaining_pcd.select_by_index(inlier_idxs)
         _log.debug(f"Plane {i}: model={plane_model}, objects_on_plane={score}/{len(contact_pts)}")
 
-        # gwm_hardware rig: a candidate needs real support before its contact
-        # score counts. An object resting ON another object (a ball placed in
-        # a cup) puts its contact point off the true table, so the table can
-        # never take every vote -- and a scrap plane fitted through a few
+        # A candidate plane needs real support before its contact score
+        # counts. An object resting on another object (a ball placed in a
+        # cup) puts its contact point off the true table, so the table can
+        # never take every vote -- and a small plane fitted through a few
         # hundred leftover outliers, angled to pass near every contact point
-        # including the stacked one, then outscores it. Measured 2026-08-20:
-        # the real table (17060 inliers, 81% of the cloud) scored 4/5 while an
-        # 827-point scrap (3.9%) scored 5/5 and won five runs in a row; its
-        # "table" landed 26-38 mm high. A surface objects can rest on is by
-        # definition a large one, so demand 5% of the downsampled cloud.
+        # including the stacked one, can then outscore it. A surface objects
+        # can rest on is by definition a large one, so require candidates to
+        # hold at least 5% of the downsampled cloud.
         if len(inlier_idxs) < 0.05 * len(pcd.points):
             _log.debug(
                 f"Plane {i}: only {len(inlier_idxs)} inliers "

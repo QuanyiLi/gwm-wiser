@@ -2,9 +2,9 @@
 
 Importing this module wraps `src.sim_evals.sim_utils.settle_sim` so the first
 settle of a run authors a `UsdPhysics.FixedJoint` between the Robotiq
-`base_link` and `held_block`, then leaves it enabled forever. The place tasks
-never open the gripper -- the episode ends with the block held inside a bin --
-so there is no release path and the joint is authored once and never touched.
+`base_link` and `held_block`. The joint stays enabled until the gripper
+reopens after having closed on the block (`maybe_release`) and is re-enabled
+at every settle (`ensure_weld`), so each trial starts with the block welded.
 
 Why this seam:
 - `batch_eval_v2.main` / `capture_scene6.main` do
@@ -20,8 +20,7 @@ Why this seam:
   pose, and every later reset restores exactly the poses the joint frames
   encode. The joint prim persists across in-process resets.
 
-Physics facts this relies on (verified against the installed isaacsim 5.0 /
-PhysX 107.3.18 by direct source read):
+Physics facts this relies on (isaacsim 5.0 / PhysX 107.3.18):
 - This env runs `use_fabric=True`, which sets `/physics/updateToUsd=False` --
   runtime USD transforms are frozen at spawn values, so joint frames must come
   from the live tensor API, never `UsdGeom.XformCache` (that is why
@@ -38,21 +37,15 @@ PhysX 107.3.18 by direct source read):
   `SimulationManager.get_physics_sim_view().check()` guards it -- fail loudly
   rather than record garbage episodes.
 
-RELEASE (added 2026-08-11, G-31): the weld is disabled the first time the
-gripper REOPENS after having closed on the block. Without it the place
-benchmark is asymmetric. The GWM place candidates end holding the block inside
-the bin, but TiPToP's native place plan hovers at the bin mouth and RELEASES,
-so a no-op release makes the arm carry the block home and the score measures
-the weld, not the grounding — measured on the smoke run, tiptop puts the block
-3-10 mm from the correct bin centre in xy (tighter than any GWM arm's 14-35 mm)
-yet z_rel +0.061..+0.065 lands it outside the judge band.
-
-Releasing on reopen costs the GWM arms nothing: their plans close the gripper
-and never open it, so the closure peak `_q_max` just sits at its maximum and
-the joint is never disabled — already-recorded GWM results stay valid.
-`ensure_weld` re-enables the joint at every settle, so a trial that released
-does not leak into the next one (and settle_sim's lossy gripper round-trip
-stays defused).
+Release: the weld is disabled the first time the gripper REOPENS after having
+closed on the block. The GWM place candidates end holding the block inside the
+bin, whereas TiPToP's native place plan releases above the bin mouth and goes
+home; without a release the arm would carry the welded block away and the
+judge would score the weld rather than the placement. Plans that close the
+gripper and never open it are unaffected: the closure peak `_q_max` stays at
+its maximum and the joint is never disabled. `ensure_weld` re-enables the joint
+at every settle, so a trial that released does not leak into the next one (and
+settle_sim's lossy gripper round-trip stays defused).
 """
 
 import logging
@@ -70,24 +63,21 @@ GRIPPER_LINK = "base_link"  # Robotiq 2F-85 base, the wrist_cam's parent link
 _MAX_FORCE = 3.4e38  # unbreakable, matches omni.physx utils' MAX_FLOAT convention
 
 # Release detection on the Robotiq driver joint (`finger_joint`, rad: 0 = open,
-# pi/4 = fully closed; closing on the welded 30 mm block measures 0.550).
+# pi/4 = fully closed; closing on the welded 30 mm block measures about 0.55).
 # A close counts once the MEASURED q exceeds CLOSE_MIN_RAD; after that, a
 # release fires on EITHER of:
 #   - the COMMANDED joint target dropping below OPEN_TARGET_RAD (the env's
 #     BinaryJointPositionZeroToOneAction writes target 0.0 for open, pi/4 for
 #     close), or
 #   - the measured q dropping below RELEASE_FRACTION * its trial peak.
-# Why the command branch is the primary one (G-31 rev3): squeezing a block that
-# is RIGIDLY welded to the gripper base closes a kinematic loop PhysX must
-# solve; at some place poses the contact solver pins the fingers shut and the
-# drive cannot reopen them — grass-rerun t1 held q=0.550 through ~127 steps of
-# commanded open (target 0.0), so any measured-q criterion misses a release the
-# robot plainly commanded. A real gripper has no welded block to jam on, so the
-# jam is a harness artifact and command intent is the faithful signal. The
-# measured branch stays as a fallback. History: v1 absolute latches (>0.30 /
-# <0.12, estimated not measured) missed 2/20; v2 relative-measured missed the
-# full jam 1/20; the crossings are logged so any residual miss is diagnosable
-# from the driver log alone.
+# The command branch is the primary one: squeezing a block that is RIGIDLY
+# welded to the gripper base closes a kinematic loop PhysX must solve, and at
+# some place poses the contact solver pins the fingers shut so the drive cannot
+# reopen them; a measured-q criterion alone would then miss a release the robot
+# plainly commanded. A real gripper has no welded block to jam on, so the jam
+# is a harness artifact and command intent is the faithful signal. The
+# measured branch stays as a fallback, and both crossings are logged so a
+# missed release is diagnosable from the driver log alone.
 CLOSE_MIN_RAD = 0.20
 RELEASE_FRACTION = 0.5
 OPEN_TARGET_RAD = 0.1
@@ -203,8 +193,8 @@ def ensure_weld(env) -> None:
             _set_joint_enabled(scene, True)
             _log.info("weld re-enabled for the next trial")
         elif _q_max > 0.0:
-            # A GWM-style trial (close, never reopen) ends here every time;
-            # for a plan that DID open, this line is the smoking gun.
+            # A plan that closes and never reopens ends here every time; for a
+            # plan that did open, this line flags a missed release.
             _log.info(f"previous trial ended without a release (peak finger_joint {_q_max:.3f} rad)")
         _q_max, _released, _close_logged = 0.0, False, False
         return

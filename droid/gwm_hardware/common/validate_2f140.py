@@ -77,8 +77,8 @@ def main() -> None:
           f"+{(tcp_z - TCP_2F85_M) * 1000:.1f} mm vs 2F-85")
 
     print("2b. grasp_frame ORIENTATION vs the 2F-85 the pipeline was tuned on")
-    # This is the check that would have caught the 90 deg bug of 2026-08-18.
-    # None of the others did: the closing axes coincide at equal joint angles,
+    # This is the only check that catches a 90 deg yaw error in grasp_frame.
+    # None of the others can: the closing axes coincide at equal joint angles,
     # so the two models look identical side by side. The error only appears
     # once the planner is asked to satisfy a grasp pose -- it rotates the wrist
     # 90 deg and closes across the wrong axis of the object. Since

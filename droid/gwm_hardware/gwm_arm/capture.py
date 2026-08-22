@@ -6,7 +6,7 @@ files, so this module does -- from a live capture, or by replaying a
 `tiptop_outputs/eval/<timestamp>/` run the baseline arm already recorded.
 
 Two files, because the method looks at the scene through two different cameras
-and they are not interchangeable (G-9):
+and they are not interchangeable:
 
     wrist_obs.h5      PLANNING geometry -- wrist RGB + FoundationStereo depth +
                       K + the camera pose FK puts it at + q_init.
@@ -20,15 +20,14 @@ The extrinsics correction, and why the hardware files carry a 0
 --------------------------------------------------------------
 `load_h5_observation` subtracts 15 mm from the camera height by default,
 matching what droid-sim's websocket client does to the observation before
-tiptop sees it (magic_numbers.md #F). That is a property of THAT client, not of
-the pipeline: here `world_from_cam` is FK x hand-eye, already correct, so these
-files set `extrinsics_z_correction = 0.0` and say so out loud. Getting this
-wrong drops the entire cloud 15 mm -- through the table plane, and straight
-into every grasp height.
+tiptop sees it. That is a property of THAT client, not of the pipeline: here
+`world_from_cam` is FK x hand-eye, already correct, so these files set
+`extrinsics_z_correction = 0.0` explicitly. Getting this wrong drops the entire
+cloud 15 mm -- through the table plane, and straight into every grasp height.
 
     # replay what the baseline arm already captured (no robot needed)
     python -m gwm_hardware.gwm_arm.capture replay \
-        droid/tiptop/tiptop_outputs/eval/2026-08-18_21-23-50 \
+        droid/tiptop/tiptop_outputs/eval/<timestamp> \
         --out-dir runs/gwm/scene01
 
     # live, from the rig (moves the arm to q_capture unless --no-move)
@@ -51,10 +50,10 @@ _log = logging.getLogger("gwm_arm.capture")
 EXTCAM_CALIB = CONFIG / "extcam_calib.json"
 
 # Names the third-person views carry inside external_obs.h5 and on
-# `score_client --cam`. Deliberately the same names droid-sim used, because the
-# rig now has the same shape it did: two third-person cameras on opposite sides
-# plus the wrist. That makes `--cam external_cam,external_cam_2` -- the sim's
-# best-measured configuration (G-30 two-camera fusion) -- the same string here.
+# `score_client --cam`. The same names droid-sim uses, because the rig has the
+# same shape: two third-person cameras on opposite sides plus the wrist, so
+# `--cam external_cam,external_cam_2` (two-camera fusion) means the same thing
+# here as in the sim.
 #
 # `cameras.external` -> external_cam, `cameras.external_2` -> external_cam_2,
 # read from tiptop.yml so the serials have exactly one home.
@@ -263,13 +262,13 @@ def wrist_as_external(wrist_h5: Path, out: Path, cam: str = EXTERNAL_CAM) -> Pat
     chain -- score_client, gwm-server, the renderer seam, the gate, the
     viewer -- be exercised before that, using a camera pose that is genuinely
     correct (the wrist camera's, from FK x hand-eye) rather than an invented
-    one. So the plumbing is tested honestly; nothing here is fabricated.
+    one, so the plumbing is tested on real geometry.
 
     What it is NOT is a scoring viewpoint. GWM's training corpus contains no
-    wrist views and RAT assumes a fixed camera (G-9), and at the capture pose
-    the wrist camera is INSIDE the robot it is supposed to be looking at, so
-    the robot-only renders come out as a close-up of the gripper. Scores from
-    this file mean nothing. The file says so in its own attributes.
+    wrist views and RAT assumes a fixed camera, and at the capture pose the
+    wrist camera is INSIDE the robot it is supposed to be looking at, so the
+    robot-only renders come out as a close-up of the gripper. Scores from this
+    file mean nothing. The file says so in its own attributes.
     """
     import h5py
 
@@ -308,7 +307,7 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
 
     Reuses tiptop's own camera, hand-eye and depth code rather than
     reimplementing it, so the geometry the GWM arm plans on is the same
-    geometry the baseline arm plans on -- which is the point of an A/B.
+    geometry the baseline arm plans on.
     """
     import aiohttp
     from curobo.types.base import TensorDeviceType
@@ -330,11 +329,10 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
     if move and not external_only:
         _log.info("moving to q_capture -- hand on the E-stop")
         # go_to_capture PLANS, so it needs a MotionGen, not the kinematics
-        # model. Taking it from the shared cache means the session's existing
-        # solver is reused rather than a second one built. It is also
-        # workspace-aware, where the previous local build was not -- the
-        # capture motion is now collision-checked against the rig's keep-outs
-        # like every other motion.
+        # model. Taking it from the shared cache reuses the session's existing
+        # solver rather than building a second one, and that solver is
+        # workspace-aware: the capture motion is collision-checked against the
+        # rig's keep-outs like every other motion.
         from gwm_tiptop.robot_fk import default_planning_solvers, reset_world_to_workspace
 
         _, motion_gen, _ = default_planning_solvers()
@@ -345,10 +343,10 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
         go_to_capture(time_dilation_factor=cfg.robot.time_dilation_factor,
                       motion_gen=motion_gen)
         # tiptop opens the gripper here because its flow only ever picks. Doing
-        # that unconditionally DROPS a held object at the capture pose, before
-        # the place it was asked to do -- observed 2026-08-19. This is an
-        # invariant rather than a caller flag on purpose: a flag is something a
-        # future caller forgets, and the cost of forgetting is on the floor.
+        # that unconditionally would DROP a held object at the capture pose,
+        # before the place it was asked to do. This is an invariant rather than
+        # a caller flag on purpose: a flag is something a future caller
+        # forgets, and the cost of forgetting is on the floor.
         st = client.get_gripper_state().get("state", {})
         if st.get("is_grasped"):
             _log.info(f"gripper is holding something (width {st.get('width', 0) * 1000:.1f} mm) "
@@ -398,11 +396,10 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
         return
 
     # Closed in a finally, and that matters more than it looks: a RealSense
-    # admits ONE process at a time, and since the stages moved in-process the
-    # session outlives the turn. A handle left open here made the NEXT
-    # instruction fail with "Device or resource busy" -- the pick worked, the
-    # place could not even capture. Every camera in this module is opened and
-    # released within the call that needs it.
+    # admits ONE process at a time, and because the stages run in-process the
+    # session outlives the turn. A handle left open here makes the NEXT
+    # instruction fail with "Device or resource busy". Every camera in this
+    # module is opened and released within the call that needs it.
     cam = open_with_retry(get_hand_camera, cfg.cameras.hand.serial)
     try:
         ee_from_cam = load_calibration(cam.serial)
@@ -423,15 +420,15 @@ def capture_live(out_dir: Path, move: bool, external_only: bool,
 
     # The gripper is in the wrist frame and its own surface is not scene
     # geometry. tiptop's live path zeroes the cloud wherever the mask is True
-    # (`perception_wrapper.py:91`); doing it here keeps the two A/B arms
-    # consuming the SAME geometry, which is the whole point of an A/B.
+    # (`perception_wrapper.py:91`); doing it here keeps both arms consuming
+    # the SAME geometry.
     #
     # NaN rather than upstream's 0.0: a zeroed point lands at the base origin,
     # below the table, where the above-table cut discards it anyway -- the
     # effect is identical and NaN says what is meant. This rig's mask covers
-    # 0.74 % of the frame (the fingers grazing the bottom edge), not the 20.6 %
-    # of DROID's shipped 2F-85 + ZED mask, which on this bench would delete a
-    # fifth of the tabletop; see docs/tiptop-modifications.md section 6.
+    # under 1 % of the frame (the fingers grazing the bottom edge), not the
+    # ~20 % of DROID's shipped 2F-85 + ZED mask, which on this bench would
+    # delete a fifth of the tabletop.
     gripper_mask = load_gripper_mask() if apply_gripper_mask else None
     masked_frac = 0.0
     if gripper_mask is not None:

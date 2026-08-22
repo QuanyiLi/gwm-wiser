@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # rat_scale regression sweep against a running gwm-server (:8901).
-# Scores the scene1 proposals for both grasp instructions at the G-20 default
+# Scores the scene1 proposals for both grasp instructions at the default
 # (3.0), canonical (1.0), and full-trajectory uniform (none); rankings land in
 # the proposals dir as scores_<tag>.json, RAT strips under
 # runs/gwm_ab/rat_debug/<tag>/.

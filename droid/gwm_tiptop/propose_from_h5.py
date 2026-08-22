@@ -1,4 +1,4 @@
-"""GI-3 driver: H5 observation -> semantic-free pick proposals.
+"""H5 observation -> semantic-free pick proposals.
 
 Mirrors the tiptop-h5 offline path but with the Gemini/SAM2 stage replaced by
 geometric scene decomposition (perception_geometric) and single-plan cuTAMP
@@ -42,13 +42,14 @@ _log = logging.getLogger("gwm_tiptop.propose")
 
 
 # droid-sim's websocket client shifts the camera down by 15 mm before handing
-# tiptop the observation (tiptop_websocket.py:250, magic_numbers.md #F). Every
-# sim capture in gwm_integrate_doc/proposals/ was produced under it, so it stays
-# the default and those results reproduce bit-exactly. It is NOT a property of
-# the pipeline, though: on the real rig `world_from_cam` comes out of
-# `capture_live_observation` as FK x hand-eye, already in the right frame, and
-# applying this would drop the whole cloud 15 mm. Hardware captures therefore
-# write `extrinsics_z_correction = 0.0` into the h5 (gwm_hardware.gwm_arm.capture).
+# tiptop the observation (tiptop_websocket.py:250). Sim captures are produced
+# under that shift, so it stays the default and sim results reproduce
+# bit-exactly. It is NOT a property of the pipeline, though: on the real rig
+# `world_from_cam` comes out of `capture_live_observation` as FK x hand-eye,
+# already in the right frame, and applying this would drop the whole cloud
+# 15 mm. Hardware captures therefore write `extrinsics_z_correction = 0.0`
+# into the h5 (gwm_hardware.gwm_arm.capture); an h5 without the field gets
+# the default.
 DEFAULT_EXTRINSICS_Z_CORRECTION = -0.015
 
 

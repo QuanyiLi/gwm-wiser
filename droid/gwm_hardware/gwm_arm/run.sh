@@ -11,8 +11,8 @@
 # prior. The prior is recorded and printed either way.
 #
 # Starts M2T2, FoundationStereo, the camera pre-flight, the sm_120 warm-up and
-# gwm-server, then hands you a prompt. All four fit on this card at once
-# (measured 23.1 GB of 32.6), so nothing is torn down between turns.
+# gwm-server, then hands you a prompt. All four fit on this card at once, so
+# nothing is torn down between turns.
 set -uo pipefail
 ROOT=/home/quanyi/gwm-wiser
 export PATH="$HOME/.pixi/bin:$PATH"

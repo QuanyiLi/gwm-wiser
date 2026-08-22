@@ -3,18 +3,18 @@
 # the scene6_rev2 candidate pool (16 whole-scene candidates, perception-only
 # proposer) on a running gwm-server (:8901). Two steps per tag:
 #   1. score_client  -- object chosen by the MEAN of its candidates' GWM scores
-#                       (--object-score, G-28), winner = that object's best
-#                       candidate -> winner_refer6_<tag>.json. The old global
-#                       per-candidate argmax is --object-score max: it scored
-#                       6/10 correct objects here vs mean's 9/10, because
-#                       se3_fps_indices samples each object's small quota at
-#                       the EXTREMES of its grasp family.
-#   2. grasp_gate    -- closing-line veto within the WINNING OBJECT (G-27),
-#                       re-picks the best PASSING plan of that object; keeps
-#                       the ungated winner when the object has none.
-# Wordings come from refer6_tasks.sh so the scorer and the runners can never
-# drift apart (they did before rev2: this driver kept the pre-bin wordings).
-# RAT strips land under runs/refer6_rev2/rat/.
+#                       (--object-score mean), winner = that object's best
+#                       candidate -> winner_refer6_<tag>.json. The mean is
+#                       preferred over the global per-candidate argmax
+#                       (--object-score max) because se3_fps_indices samples
+#                       each object's small quota at the EXTREMES of its grasp
+#                       family, so a single best candidate is a noisy proxy
+#                       for the object.
+#   2. grasp_gate    -- closing-line veto within the WINNING OBJECT; re-picks
+#                       the best PASSING plan of that object and keeps the
+#                       ungated winner when the object has none.
+# Wordings come from refer6_tasks.sh so the scorer and the runners cannot
+# drift apart. RAT strips land under runs/refer6_rev2/rat/.
 set -uo pipefail
 PY=/root/code/gwm/gwm-wiser/droid/tiptop/.pixi/envs/default/bin/python
 PROP=/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_rev2
@@ -23,8 +23,8 @@ WRIST_H5=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/scenes/captures/sce
 GATE=${GATE:-1}
 # CAM/SUF exist for viewpoint ablations: the capture h5 stores BOTH external
 # cameras, and gwm-server takes K/c2w per request, so re-scoring from the other
-# side costs one server run and no re-capture. SUF keeps the artifacts apart
-# (scores_refer6_<tag><SUF>.json), so the canonical cam-1 selection survives.
+# side costs one server run and no re-capture. SUF keeps the artifacts of
+# different viewpoints apart (scores_refer6_<tag><SUF>.json).
 CAM=${CAM:-external_cam_2}
 SUF=${SUF:-}
 DBG=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/runs/refer6_rev2/rat$SUF

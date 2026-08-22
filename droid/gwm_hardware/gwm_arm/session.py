@@ -20,24 +20,22 @@ There is no intent classification and no "go home" command. What the robot is
 holding decides what kind of trajectory gets proposed, and that is the whole
 routing rule.
 
-**Scoring is identical to droid-sim.** A place instruction is scored against
-place trajectories exactly as `gwm_tiptop.place_propose` produces them -- same
-candidates, same two-stage selection, same numbers -- so the sim results stay
-the comparison they were built to be.
+**Scoring follows `gwm_tiptop` unchanged.** A place instruction is scored
+against place trajectories exactly as `gwm_tiptop.place_propose` produces them
+-- same candidates, same two-stage selection.
 
-**Execution deliberately is not.** droid-sim's place episode ends with the
-block still held, because there the "grasp" is a weld and releasing is a no-op
-(G-25). On hardware the object is really held, so a place that ends holding it
-has not placed anything. So the hardware place executes further than it
-scored:
+**Execution goes further than the scored plan.** droid-sim's place episode
+ends with the block still held, because there the "grasp" is a weld and
+releasing is a no-op. On hardware the object is really held, so a place that
+ends holding it has not placed anything. So the hardware place executes
+further than it scored:
 
     scored:    [close, approach, constrained descent]   <- as in sim
     executed:  the same, THEN open the gripper, THEN return home
 
 The extra two steps are deterministic consequences of having placed something,
 not choices, so they need no candidate and no score. `gwm_tiptop/` is untouched
-by this -- the divergence lives here, on the hardware side, which is where it
-belongs.
+by this -- the hardware-specific behaviour lives here.
 
 Going home prefers z
 --------------------
@@ -80,17 +78,14 @@ _log = logging.getLogger("gwm_arm.session")
 SCORER_PORT = 8901
 
 # Appended to the scorer's retrieval instruction (gwm-server TEXT_INSTRUCTION)
-# on every hardware score. The 2026-08-20 external_cam mount was aimed so that
-# image left/right IS workspace left/right (G-46) -- but the model has no way
-# to know that from the pixels, and "pick up the red object on the most right
-# side" picked the middle of two identical tomatoes. This sentence tells it.
-# Applied to the task embedding AND the empty-instruction prior, so
-# --debias-prior subtracts it back out; droid-sim never sends it.
+# on every hardware score. The external_cam mount is aimed so that image
+# left/right IS workspace left/right -- but the model has no way to know that
+# from the pixels, so an instruction like "the object on the right" has no
+# frame to resolve against. This sentence supplies it. Applied to the task
+# embedding AND the empty-instruction prior, so --debias-prior subtracts it
+# back out; droid-sim never sends it.
 SPATIAL_NOTE = ("Left and right are relative to the robot, and are the same as "
                 "the left and right sides of the image frame.")
-
-# How far up to lift before travelling home, and how far the arm may already be
-# from a plan's start before we insist on planning a motion to it.
 
 
 def gripper_state(client) -> dict:
@@ -153,12 +148,10 @@ def retrace_descent(plan: dict, client) -> bool:
     return True
 
 
-# The tallest thing this rig's captures normally see, measured over nine
-# consecutive good captures on 2026-08-19: relief p99 65.8 - 75.1 mm, with
-# 2.7 - 5.7 % of the table cloud above 40 mm. A tenth capture, same camera pose
-# and same objects one minute later, came back at 22.7 mm and 0.48 % -- the cup
-# read 1.2 mm tall and the tomato -1.8 mm. Nothing clustered, and the failure
-# presented as "no graspable object", which is not what went wrong.
+# p99 height above the table plane below which a capture of a populated table
+# is suspect. A transient depth fault flattens the whole scene -- objects read
+# a few millimetres tall or less -- so nothing clusters and the failure
+# presents as "no graspable object", which is not what went wrong.
 #
 # This is NOT a gate. An empty table legitimately has no relief, so refusing on
 # a low number would block real work; the point is to say what the depth looked
@@ -201,8 +194,8 @@ def _report_relief(h5_path, perception: dict) -> None:
         print(f"      depth relief: p99 {p99:.1f} mm, {frac:.2f}% of the table cloud "
               f"above 40 mm{note}")
         if p99 < RELIEF_SUSPECT_MM:
-            print("      (good captures on this rig read 66-75 mm. Just re-issue the "
-                  "instruction -- it has been transient every time.)")
+            print("      (a flat depth read is usually transient -- re-issue the "
+                  "instruction to capture again.)")
     except Exception as e:      # noqa: BLE001 - a diagnostic must never mask the real report
         _log.debug(f"could not measure depth relief: {e}")
 
@@ -212,13 +205,13 @@ def return_to_capture(execute: bool, plan: dict | None = None) -> None:
 
     Every turn begins at `q_capture`: the capture step drives there, the scene
     photo the scorer sees is taken from there, and every candidate is planned
-    starting from it. Parking at `q_home` between turns therefore bought a
-    motion whose only effect was that the next turn had to undo it. Ending at
-    the capture pose leaves the arm where the next instruction already needs
-    it, and `go_to_capture` becomes a no-op instead of a second traverse.
+    starting from it. Parking at `q_home` between turns would add a motion
+    whose only effect is that the next turn has to undo it. Ending at the
+    capture pose leaves the arm where the next instruction already needs it,
+    and `go_to_capture` becomes a no-op instead of a second traverse.
 
     `cfg.robot.q_home` is deliberately NOT changed: the baseline TiPToP arm
-    homes there, and the two experiments do not share resting poses just
+    homes there, and the two arms do not have to share a resting pose just
     because they share a robot.
 
     "Clear" is the plan's own descent reversed when there is one, and nothing
@@ -252,8 +245,7 @@ def release_then_return(execute: bool, plan: dict | None = None) -> None:
 
     Not scored and not a candidate: having placed something, releasing it and
     getting the arm out of the way are the only things that can happen next.
-    droid-sim stops before both because its grasp is a weld (G-25); hardware
-    cannot.
+    droid-sim stops before both because its grasp is a weld; hardware cannot.
     """
     from tiptop.utils import get_robot_client
 
@@ -282,11 +274,11 @@ def warm_up(args) -> None:
 
     A session should pay its construction costs once, at startup, and then do
     nothing per instruction but the work that instruction actually implies.
-    Measured on this rig, the fixed costs are the cuRobo IK+MotionGen build
-    (3.6 s), the kinematics model (0.45 s), the FoundationStereo weights
-    (~30 s cold) and the scorer's 16 GB of Qwen (~60 s cold). Paying those at
-    the prompt makes the first instruction look four times slower than the
-    rest for no reason anyone can see.
+    The fixed costs are the cuRobo IK+MotionGen build, the kinematics model,
+    the FoundationStereo weights and the scorer's Qwen weights (the last two
+    take tens of seconds cold). Paying those at the prompt makes the first
+    instruction look several times slower than the rest for no reason anyone
+    can see.
 
     Everything here is cached module-level, so the stages pick it up without
     being told: `planning_solvers` and `fk_model` key on the configuration,
@@ -318,12 +310,11 @@ def warm_up(args) -> None:
 def record_turn(run_dir: Path, **fields) -> None:
     """Merge `fields` into the run's turn.json.
 
-    The instruction used to survive in exactly one place -- inside
-    `proposals/scores_<tag>.json` -- which means a turn that died before
-    scoring left no record of what was asked. That is backwards: the runs
-    worth reading later are the ones that failed. Written first, before the
-    arm moves, and updated as the turn resolves, so an interrupted or crashed
-    turn still says what it was trying to do.
+    `proposals/scores_<tag>.json` only exists once scoring has run, so on its
+    own it leaves a turn that died earlier with no record of what was asked
+    -- and the runs worth reading later are the ones that failed. turn.json
+    is written first, before the arm moves, and updated as the turn resolves,
+    so an interrupted or crashed turn still says what it was trying to do.
     """
     path = run_dir / "turn.json"
     try:
@@ -339,12 +330,11 @@ def ask_execution_label(run_dir: Path, run_root: Path) -> None:
     """Ask the human whether the execution succeeded; store it in turn.json.
 
     Same wording and semantics as tiptop's `_label_rollout` (y / n / empty to
-    skip), so the two arms' statistics are collected the same way and mean the
-    same thing. Differences: the label lands as `human_label` in the run's
-    turn.json instead of the run directory being moved (turn.json is the
-    per-run record everything else already reads), and a running tally over
-    the session root prints after each answer so the operator can watch the
-    statistics accumulate.
+    skip), so the two arms' labels mean the same thing. Differences: the label
+    lands as `human_label` in the run's turn.json instead of the run directory
+    being moved (turn.json is the per-run record everything else already
+    reads), and a running tally over the session root prints after each
+    answer.
 
     Anything that is not y/n/empty is kept too, as `human_notes` in turn.json:
     the operator watching the run knows WHY it failed ("knocked the cup over
@@ -433,9 +423,9 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
 
     # --- propose -------------------------------------------------------
     if held:
-        _log.warning("PLACE proposals on hardware are not yet validated -- the sim "
-                     "version assumed a welded block and sim bins (G-25/G-26). Read "
-                     "the candidates before executing.")
+        _log.warning("PLACE proposals: the place proposer assumes a rigidly held "
+                     "object and container-like destinations. Read the candidates "
+                     "before executing.")
         run_module("gwm_tiptop.place_propose",
                    ["--h5-path", run_dir / "wrist_obs.h5", "--output-dir", proposals,
                     "--k-total", args.k_total, "--use-plane-normal",
@@ -452,11 +442,10 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                     "--k-total", args.k_total], "propose(pick)", args.verbose)
 
     # Nothing to score is a normal outcome, not a crash. The proposer already
-    # says so and writes an index with num_proposals 0; before this the turn
-    # walked straight into the scorer with an empty candidate list and came
-    # back as `500 Server Error` from gwm-server -- an error about the wrong
-    # thing entirely, several frames away from the fact that the scene had no
-    # graspable object in it.
+    # says so and writes an index with num_proposals 0; handing the scorer an
+    # empty candidate list would come back as `500 Server Error` from
+    # gwm-server -- an error about the wrong thing entirely, several frames
+    # away from the fact that the scene had no graspable object in it.
     index = json.loads((proposals / "proposals_index.json").read_text())
     if not index.get("num_proposals"):
         per = index.get("perception", {}) or {}
@@ -503,7 +492,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
     elif not held:
         _log.warning("--no-gate: the closing-line grasp gate is OFF. GWM cannot see "
                      "grasp robustness (its RAT frames are robot-only), and this gate "
-                     "is what took nearbowl from 0/5 to 5/5 in G-27")
+                     "is what filters out a fragile winner")
 
     if args.debug:
         argv = ["--proposals-dir", proposals, "--h5-path", run_dir / "wrist_obs.h5",
@@ -525,10 +514,9 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                                  "n": d["n"]} for d in _rank])
     # Which perceived objects were never on the menu. A selection among 2 of the
     # 4 things on the table reads exactly like a selection among 4 unless this
-    # is said: on 2026-08-19 "go get the food" picked the box by +0.0606 and the
-    # tomato was not a candidate at all -- perceived, 382 points, inside the
-    # M2T2 crop, but no grasp survived, so the margin was between two wrong
-    # answers and the scorer never saw the right one.
+    # is said: an object can be perceived, inside the M2T2 crop, and still have
+    # no grasp survive planning, in which case the margin is between the
+    # remaining candidates and the scorer never saw it.
     _per = index.get("perception", {}) or {}
     _scored = {d["target"] for d in scores.get("object_ranking", [])}
     _absent = [c for c in _per.get("clusters", []) if c not in _scored]
@@ -568,10 +556,9 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
         record_turn(run_dir, outcome="scored (dry run, nothing moved)")
         return
     # --execute is the arming gate for the whole session; a second per-turn
-    # confirmation only earns its keystroke when there is something new to look
-    # at, which is exactly --debug (the Rerun scene and the scored overlay).
-    # Without it, the numbers above are already on screen and the answer was
-    # always "go".
+    # confirmation is only asked when there is something new to look at, which
+    # is --debug (the Rerun scene and the scored overlay). Without it, the
+    # numbers above are already on screen.
     if args.debug and input("\n  execute this plan? type 'go': ").strip().lower() != "go":
         print("  aborted")
         record_turn(run_dir, outcome="aborted at the confirmation prompt")
@@ -605,8 +592,7 @@ def one_turn(instruction: str, run_dir: Path, args) -> None:
                 recorded_frames=rec.frames or None)
 
     # --record marks an evaluation run, and an evaluation run needs a result:
-    # ask the human, mirroring the tiptop arm, so the A/B statistics are
-    # collected identically on both sides.
+    # ask the human, the same way the tiptop arm does.
     if args.record:
         ask_execution_label(run_dir, args.run_root)
 
@@ -623,10 +609,10 @@ def main() -> None:
                     help="cuTAMP particle count; part of the solver cache key, so "
                          "warm-up and the proposer must agree on it")
     ap.add_argument("--cam", default=EXTERNAL_CAM)
-    # 2.0 since 2026-08-21 (user): 2/3 of the original 3.0 look-ahead, i.e. a
-    # 5.9 s RAT window from the trajectory start instead of 8.85 s. The server
-    # still shrinks the window to fit, so plans shorter than 5.9 s sample
-    # exactly as before; only the longer plans stop looking at their tail.
+    # RAT look-ahead scale: 2.0 is a 5.9 s RAT window from the trajectory
+    # start. The server still shrinks the window to fit, so shorter plans are
+    # sampled over their whole length; only longer plans stop looking at their
+    # tail.
     ap.add_argument("--rat-scale", default="2.0")
     ap.add_argument("--object-score", default="top2",
                     choices=["mean", "max", "median", "top2"],
@@ -635,17 +621,11 @@ def main() -> None:
                          "comparable samples of how good that object is, which fails when "
                          "the object is hard to grasp -- a poor, diverse grasp family drags "
                          "its mean down while a well-grasped distractor stays tight. See "
-                         "score_client's docstring for the measurement")
-    ap.add_argument("--debias-prior", action=argparse.BooleanOptionalAction, default=True,
+                         "score_client's docstring")
+    ap.add_argument("--debias-prior", action=argparse.BooleanOptionalAction, default=False,
                     help="rank objects on score MINUS their instruction-independent prior "
-                         "(the score against an EMPTY instruction). Removes the "
-                         "per-candidate constant that ranking is NOT invariant to. ON by "
-                         "default since 2026-08-20: raw score picked a CONTAINER for 'the "
-                         "object between the two containers' purely on prior salience "
-                         "(prior spread 0.057 > language spread 0.032) while the debiased "
-                         "ranking chose correctly at 2.4x the margin, and a debiased place "
-                         "turn selected correctly at +0.0668. --no-debias-prior restores "
-                         "raw-score ranking; the prior is recorded either way")
+                         "(the score against an EMPTY instruction). Off by default. "
+                         "The prior is recorded either way")
     ap.add_argument("--record", action="store_true",
                     help="record video while the robot moves, to "
                          "runs/session/<run>/exec_<tag>.mp4. The only record of what a "

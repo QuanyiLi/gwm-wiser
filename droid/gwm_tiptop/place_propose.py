@@ -1,11 +1,11 @@
 """Place-only proposals from a single wrist RGB-D: held object -> every cluster.
 
-PERCEPTION-ONLY CONTRACT (audit 2026-08-11): ground truth about the scene --
-how many objects exist, what they are, where they sit -- is judge-side
-knowledge and must never reach this proposer. Its only inputs are the wrist
-observation (rgb/depth/K/extrinsics/q_init) and the robot's own model
-(kinematics + collision spheres). No objects.json, no hardcoded destination
-list, no heights lifted from asset dimensions.
+PERCEPTION-ONLY CONTRACT: ground truth about the scene -- how many objects
+exist, what they are, where they sit -- is judge-side knowledge and must
+never reach this proposer. Its only inputs are the wrist observation
+(rgb/depth/K/extrinsics/q_init) and the robot's own model (kinematics +
+collision spheres). No objects.json, no hardcoded destination list, no
+heights lifted from asset dimensions.
 
 The held object is WELDED to the gripper (weld_held_block.py) and never
 released, so no grasps are needed -- no M2T2, no cuTAMP. Each candidate is a
@@ -109,7 +109,7 @@ SELF_SPHERE_PAD = 0.010
 START_TOL_RAD = 0.02
 # Rise across the held object's own footprint radius, above which a SOLID
 # destination is not a surface anything would stay on. Dimensionless so it does
-# not move with the payload; see the measurement table in `landing_surface`.
+# not move with the payload; see the slope note in `landing_surface`.
 DEFAULT_MAX_SUPPORT_SLOPE = 0.18
 # How near a cluster's hull has to sit to the measured in-hand points before
 # that cluster IS the held object. Generous, because the two point sets come
@@ -131,15 +131,13 @@ def estimate_held_object(xyz: np.ndarray, ee_pos: np.ndarray, self_spheres: np.n
     bottom with a density walk, because on a stereo rig the held object often
     trails a ray-aligned flying-pixel streak BELOW itself (its silhouette is a
     depth cliff onto the table) and the streak is connected, so the DBSCAN
-    step above keeps it. Measured over the 8 place captures of 2026-08-19: two
-    carried streaks of 11-12 % of the cloud reaching 100+ mm down, putting p2
-    61 and 116 mm below the true bottom -- and `d_bottom` is EE-minus-bottom,
-    so those two objects were RELEASED that many millimetres too high. Open3d's
-    statistical outlier filter recovers only 20-27 of those mm (the streak is
-    locally dense); walking the 5 mm z-histogram down from its peak until the
-    bin falls under 5 % of peak recovers 61 and 118, and moves the six clean
-    captures by at most 11 mm (median 2.7). Off for droid-sim: GT depth, no
-    streaks, and its p2 numbers are the ones every sim result was produced on.
+    step above keeps it. A streak reaching far below the true bottom drags p2
+    down with it -- and `d_bottom` is EE-minus-bottom, so the object would be
+    RELEASED that far too high. A statistical outlier filter recovers only
+    part of that (the streak is locally dense); walking the 5 mm z-histogram
+    down from its peak until the bin falls under 5 % of peak finds the true
+    bottom, and barely moves a clean capture. Off for droid-sim: GT depth has
+    no streaks, and p2 is the bottom its results are computed on.
     """
     d_ee = np.linalg.norm(xyz - ee_pos, axis=1)
     keep = (d_ee < HAND_CROP_RADIUS) & (xyz[:, 2] > table_z + FLOAT_TOLERANCE) \
@@ -219,14 +217,12 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
     `cluster_top` (hardware only, `--clamp-rim-to-cluster`) bounds `rim_z` by
     the destination's own outlier-filtered top. `rim_z` is a p98, so it only
     survives a high tail thinner than 2 % of the footprint, and a real stereo
-    rig blows through that: measured 2026-08-19, ~390 occlusion-edge flying
-    pixels smeared over z 0.24-0.39 along a cardboard box's lower silhouette
-    were 6.2 % of that footprint's above-table points, and put the box's rim at
-    0.307 against a true top of 0.122. Everything downstream then followed: the
-    enclosure check saw only those flying pixels (coverage 0.12 against the 0.80
-    it needs), so a plainly hollow box was called SOLID and its six candidates
-    released 185 mm above it in mid-air. A z cap does not fix this -- the smear
-    is graded, and cutting at 200 mm still left rim_z at 0.169 -- but the
+    rig can exceed that: occlusion-edge flying pixels smeared along a box's
+    lower silhouette can make up several percent of the footprint's above-table
+    points and put the rim well above the true top. Everything downstream then
+    follows: the enclosure check sees only those flying pixels, a plainly
+    hollow box is called SOLID, and its candidates are released in mid-air
+    above it. A fixed z cap does not fix this -- the smear is graded -- but the
     cluster top does, because `cluster_objects` already ran statistical outlier
     removal on those points. Off for droid-sim, whose GT depth has no such tail.
     """
@@ -236,10 +232,10 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
         return None
     inside = hull.find_simplex(xyz[:, :2]) >= 0
     # No above-table cut on the landing points: a thin-shelled container's
-    # floor sits AT the detected plane height (measured: KLT floor within 1 mm
-    # of the table RANSAC plane), so any z threshold either eats the floor or
-    # admits table noise. The enclosure check below is what separates a floor
-    # from open table inside a crescent footprint.
+    # floor sits essentially AT the detected plane height (a KLT floor comes
+    # within about 1 mm of the table RANSAC plane), so any z threshold either
+    # eats the floor or admits table noise. The enclosure check below is what
+    # separates a floor from open table inside a crescent footprint.
     pts = xyz[inside & (xyz[:, 2] > table_z - 0.010)]
     if len(pts) < 60:
         return None
@@ -285,27 +281,18 @@ def landing_surface(label: str, hull_xy: np.ndarray, xyz: np.ndarray, table_z: f
     band = surf[np.abs(surf[:, 2] - land_z) < 0.012]
     target_xy = band[:, :2].mean(axis=0) if len(band) >= 20 else pts[:, :2].mean(axis=0)
     # Is the patch the held object would rest on actually FLAT? Every cluster
-    # becomes a destination, so a 60 mm ball's apex was a placement target as
-    # readily as a tray: it passes on area (its cap is 24 cm2, the held tomato
-    # needs 14) and on plane tilt (a cap is symmetric, so the fit is level).
+    # becomes a destination, so a ball's apex is a placement target as readily
+    # as a tray: it passes on area (its cap can exceed the held object's
+    # footprint) and on plane tilt (a cap is symmetric, so the fit is level).
     # What it fails is how much the patch RISES across the footprint the object
     # has to rest on -- expressed as a SLOPE, peak-to-valley over that radius.
     #
     # Slope rather than millimetres, because the radius is the held object's own
-    # and it changes between turns. Measured over four captures, held r90
-    # ranging 18 - 36 mm:
-    #
-    #                             p2v            slope
-    #     real container floors   1.5 - 3.6 mm   0.076 - 0.120   (7 samples)
-    #     ball apex               5.7 - 7.3 mm   0.294 - 0.347
-    #     table-edge clutter       19 -  29 mm   0.756 - 1.364
-    #
-    # In millimetres those bands very nearly touch, and on 2026-08-19 they did:
-    # a smaller held object (r90 18 mm, down from 21) shrank the disc the ball's
-    # cap was measured over, its p2v fell under a 5 mm limit, and the ball became
-    # a destination again and took 5 of the 16 candidates. As a slope the same
-    # ball reads 0.294 there and 0.347 elsewhere -- it does not move with the
-    # payload.
+    # and it changes between turns: a smaller held object shrinks the disc a
+    # ball's cap is measured over, so a fixed millimetre limit that rejects the
+    # ball under a larger payload admits it again. Container floors read a
+    # slope of roughly 0.1, a ball apex roughly 0.3 and table-edge clutter far
+    # more, and a ball reads the same slope whatever the payload.
     p2v = None
     if r_need is not None:
         disc = pts[(np.linalg.norm(pts[:, :2] - target_xy, axis=1) <= r_need)
@@ -330,12 +317,11 @@ def snapshot(res) -> dict:
 
     cuRobo's result objects reference planner-owned buffers, and this loop
     plans repeatedly with two different configs on one `MotionGen`. Read late,
-    a result no longer describes the motion that was planned: on 2026-08-19
-    every place candidate after the first came back with a 0.06 rad
-    "approach" that began at the PREVIOUS candidate's end instead of at the
-    capture pose -- up to 0.885 rad (51 deg) from where the arm actually was,
-    which the controller refused to execute. Snapshotting between the plan and
-    the next `plan_single` is what makes each candidate independent.
+    a result no longer describes the motion that was planned: a candidate's
+    "approach" would begin at the PREVIOUS candidate's end instead of at the
+    capture pose, far from where the arm actually is, and the controller would
+    refuse to execute it. Snapshotting between the plan and the next
+    `plan_single` is what makes each candidate independent.
     """
     ip = res.get_interpolated_plan()
     return {"positions": ip.position.cpu().numpy().copy(),
@@ -348,10 +334,9 @@ def emit_plan(q_init: np.ndarray, dest: str, results: list, skip_close: bool = F
     # has to close it before transporting. On hardware the gripper is ALREADY
     # holding the object -- the controller says so (is_grasped) -- and the
     # leading close costs twice over: it re-squeezes a real object for no
-    # reason, and it prepends 1.33 s of stationary timeline that lands 2 of the
-    # 6 RAT frames on a pose identical across every candidate, so a third of
-    # the scoring evidence carries no signal at all. Place margins on this rig
-    # sat at +0.0001 to +0.0021.
+    # reason, and it prepends 1.33 s of stationary timeline that lands some of
+    # the RAT frames on a pose identical across every candidate, so part of
+    # the scoring evidence carries no signal at all.
     steps = ([] if skip_close else
              [{"type": "gripper", "label": f"Close(held@{dest})", "action": "close"}])
     for label, snap in results:
@@ -374,9 +359,9 @@ def main() -> None:
     ap.add_argument("--max-support-slope", type=float, default=0.0,
                     help="rise over the held object's footprint radius, above which a SOLID "
                          "destination stops counting as a placement surface. Dimensionless, so "
-                         "it does not drift when the payload changes size (0 = off, droid-sim "
-                         "default; 0.18 on this rig separates container floors at 0.076-0.120 "
-                         "from ball tops at 0.294-0.347)")
+                         "it does not drift when the payload changes size (0 = off, the "
+                         "droid-sim default; 0.18 separates container floors from ball tops "
+                         "on the hardware rig)")
     ap.add_argument("--robust-held-bottom", action="store_true",
                     help="measure the held object's bottom by density instead of p2. OFF "
                          "reproduces droid-sim; ON is required on a stereo rig, where the "
@@ -407,8 +392,8 @@ def main() -> None:
                     help="build the constrained descent's goal from the pose the approach "
                          "actually reached, not the one it was asked for. Required wherever "
                          "the approach lands off its request by more than cuRobo's "
-                         "hold_partial_pose tolerance, which is every descent into a "
-                         "container on the zhiwei rig")
+                         "hold_partial_pose tolerance, typically every descent into a "
+                         "container on hardware")
     args = ap.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -419,13 +404,12 @@ def main() -> None:
     # Perceived world: table plane + clusters from the home wrist RGB-D.
     #
     # The DESTINATIONS are these clusters, so a mis-segmented scene does not
-    # degrade the placement -- it aims at the wrong thing entirely. On the
-    # zhiwei rig with droid-sim's defaults it did exactly that: the perceived
-    # table is tilted 2.88 deg, the world-z cut then loses real containers and
-    # invents slivers, and a "place into the yellow box" landed on bare table
-    # beside it because the box was never a cluster (2026-08-19). These are the
-    # same two options the pick proposer and the grasp gate already take, and
-    # for the same reason; both default OFF so droid-sim is unchanged.
+    # degrade the placement -- it aims at the wrong thing entirely. On a rig
+    # whose perceived table is tilted, a world-z cut loses real containers and
+    # invents slivers, and a place into a box lands on bare table beside it
+    # because the box was never a cluster. These are the same two options the
+    # pick proposer and the grasp gate take, and for the same reason; both
+    # default OFF so droid-sim is unchanged.
     robot_spheres = None
     if args.use_robot_arm_filter:
         from gwm_tiptop.robot_fk import fk_model
@@ -451,20 +435,18 @@ def main() -> None:
     # Cached, not built fresh. `build_curobo_solvers` constructs an IK solver
     # AND a MotionGen and warms both; called directly it allocates ~1 GB of GPU
     # state that nothing ever frees. As a one-shot script that is invisible --
-    # the process exits. Run IN-PROCESS by the hardware session, which is how
-    # every stage runs since the pipeline was made to build once, it means a
-    # fresh solver stack stranded on every PLACE turn, and the session grew
-    # until FoundationStereo could not get its 1.72 GB and the turn died with
-    # a CUDA OOM (2026-08-19). The pick proposer has used the cache since it
-    # was written; this was the one caller left out.
+    # the process exits. Run IN-PROCESS by the hardware session it would strand
+    # a fresh solver stack on every PLACE turn, and the process would grow
+    # until FoundationStereo could not get its working memory and the turn died
+    # with a CUDA OOM.
     #
     # And it asks for the SAME key as everything else, not its own (32, 64,
     # no-workspace). A distinct key is a distinct solver stack, so caching two
-    # of them saves nothing -- the session held both, 3.9 GB, and still OOMed.
-    # Sharing is free here: the next line replaces the world outright, so
-    # `include_workspace` cannot reach the plans; `num_spheres` sizes the
-    # ATTACHED-object budget, which a place never uses; and only the IK solver
-    # depends on `num_particles`, which this function never touches.
+    # of them saves nothing. Sharing is free here: the next line replaces the
+    # world outright, so `include_workspace` cannot reach the plans;
+    # `num_spheres` sizes the ATTACHED-object budget, which a place never uses;
+    # and only the IK solver depends on `num_particles`, which this function
+    # never touches.
     _, motion_gen, _ = default_planning_solvers()
 
     # Robot-side quantities: FK end effector and the robot's own collision
@@ -480,8 +462,8 @@ def main() -> None:
     d_xy = ee0_pos[:2] - held["xy"]        # EE offset from held-object centre
     d_bottom = ee0_pos[2] - held["bottom_z"]  # EE height above held-object bottom
 
-    # The object in the gripper is a cluster like any other, and until this it
-    # was treated like any other: added to cuRobo's world as a STATIC mesh at
+    # The object in the gripper is a cluster like any other, and must not be
+    # treated like any other -- added to cuRobo's world as a STATIC mesh at
     # the capture pose, and offered as a destination.
     #
     # Both are wrong, and the first is the one that bites. The carried object
@@ -501,13 +483,12 @@ def main() -> None:
     # them would delete the measurement this whole step depends on.
     #
     # Identified by OVERLAP with the points `estimate_held_object` already
-    # isolated, not by distance to the end effector. Distance looked clean here
-    # -- carried cluster 0.029 m from the EE against 0.457 m for the nearest
-    # table cluster -- but it is a property of THIS capture pose, which sits
-    # 0.43 m above the table. droid-sim's capture pose is at z 0.273, and its
-    # nearest bin is 0.246 m from the end effector: a 0.20 m radius would have
-    # cleared it by 46 mm, and a slightly different layout not at all. Overlap
-    # has no such dependence.
+    # isolated, not by distance to the end effector. A distance threshold looks
+    # clean at a high capture pose, but it is a property of THAT capture pose:
+    # at a lower one (droid-sim's, for instance) the nearest bin sits close
+    # enough to the end effector that a sensible radius clears it by only a few
+    # cm, and a slightly different layout not at all. Overlap has no such
+    # dependence.
     held_tree = KDTree(held["points"])
     carried = {}
     for label, mesh in object_trimeshes.items():
@@ -582,9 +563,9 @@ def main() -> None:
     # is what the carried-object and support-slope filters are for) the share
     # can exceed the table and there is simply nothing more to offer.
     #
-    # That used to abort the turn. It should not: a scene with one valid
-    # destination is a perfectly good scene to place in -- the choice is just
-    # trivial. Cap and say what was lost, rather than refusing to act.
+    # That must not abort the turn: a scene with one valid destination is a
+    # perfectly good scene to place in -- the choice is just trivial. Cap and
+    # say what was lost, rather than refusing to act.
     if max(quotas) > len(XY_OFFSETS):
         capped = [min(q, len(XY_OFFSETS)) for q in quotas]
         _log.warning(
@@ -616,16 +597,11 @@ def main() -> None:
 
         `JointState.from_position` wraps the tensor it is given rather than
         copying it, and cuRobo writes back into a start state it has been
-        handed. Hoisting one `js_init` out of the loop -- which is what this
-        did, and what droid-sim gets away with because its scenes never
-        triggered the write -- means candidate k+1 is planned from wherever
-        candidate k left the buffer.
-        
-        Measured on this rig, 2026-08-19: at k=0 the buffer held the capture
-        pose; from k=1 on it held a pose up to 0.885 rad (51 deg) away, so 15
-        of 16 place candidates were trajectories the arm could not begin. The
-        controller refused the winner outright ("Trajectory execution failed",
-        which names nothing) and the arm never moved.
+        handed. Hoisting one `js_init` out of the loop would mean candidate
+        k+1 is planned from wherever candidate k left the buffer: the capture
+        pose for k=0, and from k=1 on a pose that can be tens of degrees away,
+        so every later candidate is a trajectory the arm cannot begin and the
+        controller refuses to execute.
         """
         return JointState.from_position(
             tensor_args.to_device(np.asarray(obs["q_init"], dtype=np.float64)).float()[None])
@@ -637,28 +613,23 @@ def main() -> None:
         # object. `place_z` positions the held object's BOTTOM, but the closed
         # fingertips reach `--closed-tip-overhang` past `grasp_frame` while the
         # planner has the gripper locked open and cannot see it. Whichever of
-        # the two hangs lower is what has to clear the landing surface.
-        #
-        # Measured on the first hardware place: overhang 23.7 mm against a
-        # held-object drop of 18.4 mm, so the fingers hung 5.3 mm below the
-        # tomato. The planner believed it had 28.4 mm of clearance and actually
-        # had 4.7 mm, and the descent faulted into the table.
+        # the two hangs lower is what has to clear the landing surface. When
+        # the overhang exceeds the held object's drop below the EE, the fingers
+        # hang below the object, the planner believes it has clearance it does
+        # not have, and the descent faults into the table.
         finger_drop = float(max(0.0, args.closed_tip_overhang - float(d_bottom)))
         if surf["hollow"] and args.release_above_rim > 0.0:
             # Hover over the mouth and let it fall, instead of carrying it down
             # to the floor. For a CONTAINER this is both safer and no less
             # accurate:
             #
-            #  * the gripper never enters, so neither the closed fingers' 23.7 mm
-            #    of invisible reach nor the mouth's width can bite -- the first
-            #    hardware place faulted into the table on exactly that;
-            #  * the descent shortens from ~121 mm to a few tens, and the
-            #    tilt-induced lateral projection shrinks with it;
-            #  * droid-sim already measured the precision. The baseline TiPToP
-            #    arm releases ~65 mm above the mouth and its blocks land 5-12 mm
-            #    from the bin centre -- BETTER than the GWM arm's carried poses
-            #    at 14-35 mm (G-32). Free fall from the rim is not the sloppy
-            #    option.
+            #  * the gripper never enters, so neither the closed fingers'
+            #    invisible reach nor the mouth's width can bite;
+            #  * the descent shortens to a few tens of mm, and the tilt-induced
+            #    lateral projection shrinks with it;
+            #  * a short free fall from the rim lands the object within a few
+            #    mm of the container's centre, at least as precisely as a
+            #    carried pose. Free fall from the rim is not the sloppy option.
             #
             # Still measured to the lowest real geometry, so the fingers clear
             # the rim rather than the object merely clearing it.
@@ -688,15 +659,14 @@ def main() -> None:
             # start and goal, and the approach lands within a planner tolerance
             # of its request, not on it. Building the goal from the request
             # therefore asks cuRobo to hold a dimension that already differs,
-            # and it refuses: every descent into the one correctly-detected
-            # container failed with INVALID_PARTIAL_POSE_COST_METRIC
-            # (2026-08-19), preceded by its own "Partial position between start
-            # and goal is not equal" warning.
+            # and it refuses with INVALID_PARTIAL_POSE_COST_METRIC, preceded by
+            # its own "Partial position between start and goal is not equal"
+            # warning.
             #
-            # Anchoring is also the honest statement of the intent: a
-            # constrained descent means "straight down from HERE". The landing
-            # xy then moves by the approach tolerance, which is sub-millimetre
-            # against the +/-18 mm offset pattern the candidates already span.
+            # Anchoring also states the intent directly: a constrained descent
+            # means "straight down from HERE". The landing xy then moves by the
+            # approach tolerance, which is sub-millimetre against the +/-18 mm
+            # offset pattern the candidates already span.
             if args.anchor_descent:
                 _ach = motion_gen.kinematics.get_state(js_pre.position).ee_pose
                 _q = _ach.quaternion[0].detach().cpu().numpy()
@@ -706,17 +676,16 @@ def main() -> None:
                 # landing height. Not along world z: cuRobo evaluates the held
                 # dimensions in the GOAL frame, so a world-vertical descent by a
                 # gripper tilted t degrees registers as lateral motion of
-                # depth*sin(t) and is rejected past 5 mm. Measured here: 2.7 deg
-                # of tilt, harmless over the 45 mm drop onto a solid top
-                # (2.1 mm) and fatal over the 121 mm drop into a container
-                # (5.7 mm) -- which is why only the container ever failed.
+                # depth*sin(t) and is rejected past 5 mm. A few degrees of tilt
+                # is harmless over a short drop onto a solid top and fatal over
+                # the longer drop into a container.
                 #
                 # Descending along the approach axis is also the better
                 # motion: it is the direction the fingers point and the
                 # direction the object was carried in, so it cannot scrape a
                 # container wall the way a world-vertical drop from a tilted
-                # gripper can. It costs depth*sin(t) of lateral drift, ~6 mm
-                # here, against the +/-18 mm offsets the candidates span.
+                # gripper can. It costs depth*sin(t) of lateral drift, a few
+                # mm, against the +/-18 mm offsets the candidates span.
                 _target_z = float(place_z + d_bottom)
                 if abs(_axis[2]) < 1e-6:
                     _log.warning(f"{dest}[{k}]: gripper axis is horizontal; skipping")

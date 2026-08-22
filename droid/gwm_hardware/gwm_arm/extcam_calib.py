@@ -17,13 +17,13 @@ board sitting on the table, and the external camera reads the same board:
 Repeat with the board in several places and average; the spread across
 placements is the error bar, and it is the number to trust rather than any
 single solve. The board, dictionary and checker size come from
-`tiptop.scripts.calibrate_wrist_cam` -- the copy this rig's
-`install_charuco_params` already corrected (11x8, DICT_5X5_100, 34.31 mm) --
-so there is exactly one board definition on the rig.
+`tiptop.scripts.calibrate_wrist_cam` -- as installed by this rig's
+`install_charuco_params` (11x8, DICT_5X5_100, 34.31 mm) -- so there is
+exactly one board definition on the rig.
 
 Split into three commands on purpose: `shoot` is the only one that touches the
 robot, and it only READS joint angles (never commands motion), so the whole
-solve can be re-run and re-argued offline afterwards.
+solve can be re-run offline afterwards.
 
     # 1. park the arm at the capture pose, put the board on the table.
     #    Then, moving the board between shots:
@@ -53,10 +53,10 @@ MIN_CORNERS = 20          # of the board's 70 interior corners
 
 # Acceptance is on the POOLED reprojection residual, in pixels, because pixels
 # are what the overlay gate and the scorer care about. A per-placement pose
-# spread in millimetres was the first gate here and it was the wrong quantity:
-# it is dominated by the wrist camera's ~3 deg hand-eye residual, which no
-# amount of re-shooting this camera can reduce. It is still reported, as a
-# diagnostic of the WRIST calibration.
+# spread in millimetres is the wrong quantity to gate on: it is dominated by
+# the wrist camera's hand-eye residual, which no amount of re-shooting this
+# camera can reduce. It is still reported, as a diagnostic of the WRIST
+# calibration.
 MAX_REPROJ_PX = 2.0
 
 
@@ -231,11 +231,11 @@ def solve(shots_dir: Path, out: Path, install: bool) -> None:
 
     Not an average of per-placement poses. Averaging discards the corner
     correspondences and inherits, in full, the error in `base_from_board` --
-    which on this rig is dominated by the wrist camera's ~3 deg hand-eye
-    rotational residual (docs/tiptop-modifications.md). That residual moves the
-    board's estimated base-frame position by up to 35 mm at a 0.66 m standoff,
-    differently for each placement, so a spread of per-placement poses measures
-    the WRIST calibration far more than it measures this camera.
+    which is dominated by the wrist camera's hand-eye rotational residual. A
+    few degrees of residual move the board's estimated base-frame position by
+    tens of millimetres at the wrist camera's standoff, differently for each
+    placement, so a spread of per-placement poses measures the WRIST
+    calibration far more than it measures this camera.
 
     Pooling instead fits the one unknown -- where this camera is -- to all the
     2D corners at once, and reports the residual in PIXELS. That is the

@@ -3,9 +3,9 @@
 `tiptop.config` reads `tiptop/config/tiptop.yml` and offers no override flag
 or env var, and `tiptop-config` writes straight back to it -- so a hardware rig
 cannot avoid touching that path. Replacing it with a symlink into
-`gwm_hardware/config/` keeps the *content* versioned here (G-18): the only
-deviation left in the tiptop worktree is a one-line symlink, and
-`tiptop-config` writes through it into our copy.
+`gwm_hardware/config/` keeps the *content* versioned here: the only change
+left in the tiptop worktree is a one-line symlink, and `tiptop-config` writes
+through it into our copy.
 
 Idempotent. The displaced upstream default is kept beside ours as
 `tiptop.yml.upstream` the first time, so the stock values stay recoverable.

@@ -1,19 +1,19 @@
 """Warm the perception microservices before a tiptop run, and report health.
 
-Why (found 2026-08-18 during hardware bring-up on the RTX 5090): the M2T2 and
-FoundationStereo pixi envs both pin **torch 2.4.1 / CUDA 12.0**, whose builds
-carry no ``sm_120`` cubins -- only ``compute_90`` PTX. Blackwell runs that PTX
-fine, but the driver has to JIT every kernel on first use. Measured on
-FoundationStereo with a real 1280x720 RealSense IR pair:
+Why: on the RTX 5090, the M2T2 and FoundationStereo pixi envs both pin
+**torch 2.4.1 / CUDA 12.0**, whose builds carry no ``sm_120`` cubins -- only
+``compute_90`` PTX. Blackwell runs that PTX fine, but the driver has to JIT
+every kernel on first use. On FoundationStereo with a real 1280x720 RealSense
+IR pair:
 
-    first /infer after server start   33.3 s
-    every subsequent /infer            1.0 s
+    first /infer after server start   ~30 s
+    every subsequent /infer            ~1 s
 
 ``tiptop.perception.foundation_stereo.infer_depth_async`` sets a hard-coded
 ``aiohttp.ClientTimeout(total=10.0)``, so **the first capture of every session
 raises TimeoutError** -- once per server restart, then never again. ``tiptop/``
-is kept pristine (G-18/G-21), so the fix is operational: send one throwaway
-request per server before handing the rig to tiptop.
+is kept pristine, so the fix is operational: send one throwaway request per
+server before handing the rig to tiptop.
 
 Run after starting the servers, before ``tiptop-run``:
 

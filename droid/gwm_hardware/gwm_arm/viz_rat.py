@@ -20,12 +20,12 @@ Read it for the two things the black strips cannot answer:
   * does the horizon COVER the placement, or does it burn frames on a
     stationary arm and stop before the gripper opens?
   * is the target visible at all, or does the arm cross in front of it?
-    Occlusion by the robot's own body is how the sim's `yellow` failure worked
-    (G-29), and it is invisible in a robot-on-black render by construction.
+    Occlusion by the robot's own body is a real failure mode, and it is
+    invisible in a robot-on-black render by construction.
 
     cd /home/quanyi/gwm-wiser
     PYTHONPATH=.:droid ./.venv/bin/python -m gwm_hardware.gwm_arm.viz_rat \
-        --run-dir droid/gwm_hardware/runs/session/20260819_154219_01
+        --run-dir droid/gwm_hardware/runs/session/<run>
     PYTHONPATH=.:droid ./.venv/bin/python -m gwm_hardware.gwm_arm.viz_rat --all-places
 
 Writes `rat_overlay/cand<i>_<target>_s<score>.png` per candidate, plus

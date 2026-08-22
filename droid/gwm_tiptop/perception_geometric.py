@@ -1,4 +1,4 @@
-"""Mask-free scene decomposition: table plane + DBSCAN clusters (plan G-2/G-3).
+"""Mask-free scene decomposition: table plane + DBSCAN clusters.
 
 Replaces the Gemini/SAM2 path: no labels, no masks. The table is found
 geometrically (horizontal RANSAC plane near the robot base — the DROID rig
@@ -71,10 +71,11 @@ def find_table_plane(
             # Keep the fitted plane, oriented +z up and normalised, so callers
             # can measure height ABOVE THE TABLE rather than above world z.
             # On a perfectly level table the two are the same and nothing
-            # changes; on the zhiwei rig the perceived plane is tilted 2.88 deg
-            # (the hand-eye rotational residual), which is 48 mm of world-z
-            # spread across an 0.85 m footprint -- three times the clearance
-            # that separates an object from the table. See cluster_objects.
+            # changes; on a real rig the hand-eye rotational residual tilts the
+            # perceived plane by a few degrees, which spreads the table surface
+            # over tens of mm of world z across the footprint -- more than the
+            # clearance that separates an object from the table. See
+            # cluster_objects.
             s = np.sign(c) or 1.0
             best_plane = np.array([a, b, c, d], dtype=np.float64) * s / np.linalg.norm([a, b, c])
         remaining = remaining.select_by_index(idxs, invert=True)
@@ -209,35 +210,34 @@ def cluster_objects(
     `resting_tolerance` above the table, which assumes every object rests on
     the table AND is seen down to within 4 cm of it. A tall object viewed from
     a top-down wrist camera fails the second half: the camera sees its top face
-    and almost none of its vertical sides, so its lowest VISIBLE point is high.
-    Measured on the zhiwei rig, an upended 93 mm box was deleted as "robot arm"
-    at a lowest visible point of 59 mm, and the instruction that referred to it
-    then had no referent to find. Where the robot actually is, is not something
-    to infer from height -- FK knows it. Off by default so sim reproduces.
+    and almost none of its vertical sides, so its lowest VISIBLE point is high
+    and a tall upended box gets deleted as "robot arm", leaving an instruction
+    that refers to it with no referent to find. Where the robot actually is,
+    is not something to infer from height -- FK knows it. Off by default so
+    sim reproduces.
 
-    The height rule was doing two jobs, though, and only one of them was the
-    arm. It also deleted anything hanging in mid-air, and when the sphere test
-    took over, that half went unowned: the branch returned early and the
-    floating test became unreachable. On 2026-08-19 a 57-point stereo flying-
-    pixel blob 394 mm above a tomato survived it, was welded onto the tomato by
-    the XY merge below (4.6 mm apart in XY, which Rule 2 does not bound
-    vertically), and turned that tomato's collision mesh into a 73x75x457 mm
-    pillar. cuTAMP then found 0/256 satisfying particles for it -- the object
-    the instruction named was simply not on the menu, with no error anywhere.
-    So the branch now runs its own floating test with `max_float_height`, which
-    is deliberately NOT `resting_tolerance`: 40 mm is the number that deleted
-    the upended box, and reusing it here would undo the fix above. 250 mm sits
-    far above anything that rests on this table and far below flying pixels.
+    The height rule does two jobs, though, and only one of them is the arm. It
+    also deletes anything hanging in mid-air, and that half must stay owned
+    when the sphere test takes over: a stereo flying-pixel blob high above an
+    object would otherwise survive, be welded onto the object below it by the
+    XY merge (Rule 2 does not bound vertically), and turn that object's
+    collision mesh into a tall pillar for which cuTAMP finds no satisfying
+    particles -- the object the instruction names is simply not on the menu,
+    with no error anywhere. So the branch runs its own floating test with
+    `max_float_height`, which is deliberately NOT `resting_tolerance`: 40 mm is
+    the bound that deletes the tall upended box, and reusing it here would undo
+    the fix above. 250 mm sits far above anything that rests on this table and
+    far below flying pixels.
 
     `use_plane_normal` measures "above the table" perpendicular to the plane
     `find_table_plane` fitted, instead of along world z. Off by default so sim
     results reproduce exactly (droid-sim's table is level, where the two agree
-    to floating point). Hardware needs it on: the zhiwei rig's perceived table
-    is tilted 2.88 deg, which spreads its own surface over 48 mm of world z
-    across the capture footprint — more than three times the 15 mm clearance
-    that is supposed to separate an object from the table. With a horizontal
-    cut the high end of the table survives as a phantom "object" the size of
-    the tabletop, and merges into whatever real object sits near it.
+    to floating point). Hardware needs it on: a hand-eye rotational residual of
+    a few degrees spreads the perceived table surface over tens of mm of world
+    z across the capture footprint — more than the 15 mm clearance that is
+    supposed to separate an object from the table. With a horizontal cut the
+    high end of the table survives as a phantom "object" the size of the
+    tabletop, and merges into whatever real object sits near it.
     """
     valid = ~np.isnan(xyz_world).any(axis=2)
     xyz = xyz_world[valid]
@@ -305,9 +305,9 @@ def cluster_objects(
                 )
                 labels[sel] = -1
                 continue
-            # Not the arm -- but still test for junk floating in mid-air (G-43).
-            # `resting_tolerance` cannot be reused here: 40 mm is what deleted
-            # the 93 mm upended box this branch exists to save. `max_float_height`
+            # Not the arm -- but still test for junk floating in mid-air.
+            # `resting_tolerance` cannot be reused here: 40 mm is what deletes
+            # the tall upended box this branch exists to save. `max_float_height`
             # is a separate, far looser bound aimed only at stereo flying pixels.
             lowest = pts[:, 2].min() if plane is None else _height(pts).min()
             if lowest > max_float_height:
@@ -320,7 +320,7 @@ def cluster_objects(
                 labels[sel] = -1
             continue
         # Written as two branches rather than one `_height(...) > tol` so the
-        # default path is the ORIGINAL comparison, floating-point included.
+        # world-z path keeps its exact comparison, floating-point included.
         lowest = pts[:, 2].min() if plane is None else _height(pts).min()
         floating = (lowest > table_top_z + resting_tolerance) if plane is None \
             else (lowest > resting_tolerance)

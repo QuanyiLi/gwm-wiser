@@ -24,8 +24,9 @@ from tiptop.utils import get_robot_client, setup_logging
 from tiptop.workspace import workspace_cuboids
 
 # --- board params patched by gwm_hardware.common.install_charuco_params ---
-# This rig's board, not DROID's 14x9 / 20 mm one. Grid and dictionary read off
-# a photo with the aruco detector; checker size measured on the board itself.
+# Geometry of the ChArUco board in use, not DROID's 14x9 / 20 mm board. The
+# grid and dictionary were identified with the aruco detector; the checker
+# size is a physical measurement and sets the scale of the hand-eye solve.
 CHARUCOBOARD_ROWCOUNT = SQUARES_Y = 8
 CHARUCOBOARD_COLCOUNT = SQUARES_X = 11
 CHARUCOBOARD_CHECKER_SIZE = 0.03431

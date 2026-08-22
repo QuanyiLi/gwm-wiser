@@ -1,4 +1,4 @@
-"""GI-2: overlay-validate the shared FrankaRobotRenderer against droid-sim's external_cam.
+"""Overlay-validate the shared FrankaRobotRenderer against droid-sim's external_cam.
 
 Reads the H5 written by droid-sim-evals/capture_external_cam.py, renders the robot
 at the captured joint state with the captured K / camera pose, and writes
@@ -25,8 +25,8 @@ sys.path.insert(0, str(GWM_WISER_ROOT))
 from real_data_train.renderer.franka_renderer import FrankaRobotRenderer  # noqa: E402
 
 URDF = {
-    # droid-sim variant: Robotiq standoff corrected to 18.2 mm (sim USD ground
-    # truth; gwm-wiser's welded default is a 4 mm smoke-stage placeholder).
+    # droid-sim variant: Robotiq standoff of 18.2 mm, matching the sim USD
+    # (gwm-wiser's default URDF welds it at 4 mm).
     "panda": Path(__file__).parent / "assets/panda_robotiq_droidsim.urdf",
     "fr3": GWM_WISER_ROOT / "real_data_train/data/assets/fr3_robotiq.urdf",
 }
@@ -35,9 +35,9 @@ def cam2world_cv_from_h5(g) -> np.ndarray:
 
     NOTE: FrankaRobotRenderer's `cam2world_gl` parameter, despite the name,
     consumes CV-axis cam2world matrices (x right, y down, z forward):
-    gl_to_sapien_pose maps forward = column z — the mapping cv_pose_to_sapien_pose
-    reuses verbatim, closed-loop-verified against MolmoBot data. Pass the CV
-    matrix directly; do NOT apply a CV->GL axis flip.
+    gl_to_sapien_pose maps forward = column z — the same mapping
+    cv_pose_to_sapien_pose reuses verbatim. Pass the CV matrix directly; do NOT
+    apply a CV->GL axis flip.
     """
     pos = np.asarray(g["pos_w"])
     w, x, y, z = np.asarray(g["quat_w_ros"])

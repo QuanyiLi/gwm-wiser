@@ -1,8 +1,8 @@
 """check_bin_visibility: is every bin corner inside the home wrist frame?
 
 The home wrist RGB-D is the ONLY view M2T2, Gemini and perception_geometric
-get (plan.md G-23), so a bin clipped by that frustum yields a truncated point
-cluster and therefore a wrong fitted placement surface. This projects the 8
+get, so a bin clipped by that frustum yields a truncated point cluster and
+therefore a wrong fitted placement surface. This projects the 8
 world-space bbox corners of each bin into the captured wrist camera and reports
 the pixel margin to each image edge, plus the clearance to every other object.
 

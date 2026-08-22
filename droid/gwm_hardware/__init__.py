@@ -23,7 +23,7 @@ because both arms and the installers consume it:
     config/   versioned -- `tiptop.yml` (symlinked into the tiptop tree) etc.
 
 Resolved in the tiptop pixi env through a site-packages symlink, same recipe
-as `gwm_tiptop` and for the same reason (G-21: never a `.pth`, which shadows
+as `gwm_tiptop` and for the same reason (never a `.pth`, which would shadow
 the editable-installed `tiptop` and `cutamp` packages):
 
     ln -sfn /home/quanyi/gwm-wiser/droid/gwm_hardware \\

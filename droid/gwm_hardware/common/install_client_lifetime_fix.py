@@ -1,8 +1,7 @@
 """Stop `go_to_q` from tearing down the shared, cached robot client.
 
-Found 2026-08-18 on the first `tiptop-run` of this rig: the run reached the
-capture pose, logged "Executed trajectory on the robot", and then died with no
-traceback and exit code 1.
+Symptom: a `tiptop-run` reaches the capture pose, logs "Executed trajectory on
+the robot", and then dies with no traceback and exit code 1.
 
 `tiptop/motion_planning.py:go_to_q` calls `client.close()` right after
 executing its trajectory. `tiptop.utils.get_robot_client` is `@cache`d, so that
@@ -26,10 +25,10 @@ This blocks `tiptop-run` outright -- it fails before the instruction prompt, so
 nothing downstream (perception, planning, execution) ever gets a chance to run.
 
 The close is harmless for `tiptop/scripts/go_to_conf.py`, a one-shot CLI that
-exits immediately afterwards, which is very likely where it came from. In a
-long-lived loop it is a lifetime bug: a movement helper must not decide the
-lifetime of a process-wide singleton it did not create. `tiptop_run` already
-closes the client itself in its own `finally`.
+exits immediately afterwards. In a long-lived loop it is a lifetime bug: a
+movement helper must not decide the lifetime of a process-wide singleton it
+did not create. `tiptop_run` already closes the client itself in its own
+`finally`.
 
 Idempotent, keeps a `.orig`, and `--restore` reverts.
 

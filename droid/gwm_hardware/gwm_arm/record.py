@@ -1,10 +1,10 @@
 """Record a camera while the robot moves.
 
-The turn already saves what the scorer SAW -- one wrist capture and one
-external frame, both taken before anything moved. What it never kept is what
-happened next, and that is the only record of whether a plan that scored well
-actually did the right thing. Reading a failure off a still photograph and a
-joint trajectory is guesswork; a video of the descent is not.
+The turn saves what the scorer SAW -- one wrist capture and one external
+frame, both taken before anything moved. This adds what happened next, which
+is the only record of whether a plan that scored well actually did the right
+thing. Reading a failure off a still photograph and a joint trajectory is
+guesswork; a video of the descent is not.
 
 The WRIST camera is the default because it is the view that shows the thing
 the plan is about -- the object arriving in the gripper, or the object leaving

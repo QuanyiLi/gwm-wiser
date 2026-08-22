@@ -1,24 +1,20 @@
 """RealSense pre-flight: put the IR stereo pair into a state FoundationStereo
 can actually use, and report the rig's camera inventory.
 
-Why this exists (found 2026-08-17 during hardware bring-up): both D435s on the
-rig came up with IR **auto-exposure OFF and exposure pinned at 40000 us** (the
-maximum), which saturated 83-87 % of the IR pair at 255. tiptop does not use
-the RealSense ASIC's own depth -- ``rs_camera.get_depth_estimator`` sends the
-**IR pair** to FoundationStereo (``rs_infer_depth_async``) -- and a saturated
-pair has no projector dot pattern left, which on a white tabletop is the only
-texture there is. Every downstream stage (world point cloud, RANSAC table
-plane, DBSCAN clusters, M2T2 grasps, cuTAMP collision meshes) is built on that
-depth. Measured effect of re-enabling AE:
-
-    D435   ir saturation 87.1 % -> 1.8 %,  depth valid 21.2 % -> 91.3 %
-    D435i  ir saturation 84.6 % -> 1.7 %,  depth valid 17.8 % -> 88.1 %
+Why this exists: the rig's D435s can come up with IR **auto-exposure OFF and
+exposure pinned at 40000 us** (the maximum), which saturates most of the IR
+pair at 255. tiptop does not use the RealSense ASIC's own depth --
+``rs_camera.get_depth_estimator`` sends the **IR pair** to FoundationStereo
+(``rs_infer_depth_async``) -- and a saturated pair has no projector dot pattern
+left, which on a white tabletop is the only texture there is. Every downstream
+stage (world point cloud, RANSAC table plane, DBSCAN clusters, M2T2 grasps,
+cuTAMP collision meshes) is built on that depth. With auto-exposure back on,
+saturation drops to a few percent and most of the frame gets valid depth.
 
 ``tiptop.perception.cameras.rs_camera.RealsenseCamera`` never touches exposure
 -- it only enables streams -- so the device's persisted state carries straight
-into a run, silently. ``tiptop/`` is kept pristine upstream (G-18/G-21), so the
-fix lives here as a pre-flight step both arms run, rather than as a patch to
-the camera class.
+into a run, silently. ``tiptop/`` is kept pristine, so the fix lives here as a
+pre-flight step both arms run, rather than as a patch to the camera class.
 
 Run before every session, from the gwm-wiser repo root:
 

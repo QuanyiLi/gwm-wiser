@@ -6,22 +6,21 @@ particle optimisation, cuRobo refinement, all successes collected. What this
 driver adds is the two things the real rig needs and droid-sim does not.
 
 **1. The above-table cut follows the table, not world z.** `find_table_plane`
-fits a plane; on this rig that plane comes out tilted 2.88 deg, matching the
-hand-eye rotational residual documented in `docs/tiptop-modifications.md`. It
-is a genuine plane -- 1.87 mm rms perpendicular residual -- but 2.88 deg across
-an 0.85 m capture footprint is 48 mm of world-z spread, and the clearance that
-is supposed to separate an object from the table is 15 mm. Cut horizontally and
-the high end of the tabletop stands 24 mm proud of the cut and becomes a
-phantom cluster the size of the table. Measured on the 2026-08-18 blue-cup
-capture, that is exactly what happened. `use_plane_normal=True` measures height
-perpendicular to the fitted plane instead, which is the same thing on a level
-table and the right thing on a tilted one.
+fits a plane; on this rig that plane comes out tilted by a few degrees in the
+base frame, which is the wrist camera's hand-eye rotational residual. It is a
+genuine plane with a millimetre-level perpendicular residual, but ~3 deg
+across a 0.85 m capture footprint is tens of millimetres of world-z spread,
+and the clearance that is supposed to separate an object from the table is
+15 mm. Cut horizontally and the high end of the tabletop stands proud of the
+cut and becomes a phantom cluster the size of the table. `use_plane_normal=True`
+measures height perpendicular to the fitted plane instead, which is the same
+thing on a level table and the right thing on a tilted one.
 
 **2. The workspace obstacles are in the collision world.** droid-sim plans with
 `include_workspace=False` -- there is nothing to hit outside the scene. Here
 there is: table edges, keep-outs, the camera mount (`common/rig_workspace.py`,
 installed over tiptop's MIT-LIS default). The baseline arm plans with them, so
-the A/B arm must too, and a proposal that clips the bench is not a proposal.
+this arm must too, and a proposal that clips the bench is not a proposal.
 
     python -m gwm_hardware.gwm_arm.propose \
         --h5-path runs/gwm/scene01/wrist_obs.h5 \
@@ -62,18 +61,16 @@ def check_surface_z(surface_z: float, tol: float) -> None:
     """Refuse to plan on a table the fit does not put where the table is.
 
     The table is bolted down; its height in the base frame is a measured rig
-    constant (`rig_workspace.TABLE_TOP_Z`, tape 2026-08-18). So a fitted
-    surface far from it means the DEPTH is wrong, and every downstream number
-    -- clusters, grasps, collision meshes -- is then wrong in a way nothing
-    else notices.
+    constant (`rig_workspace.TABLE_TOP_Z`, tape-measured). So a fitted surface
+    far from it means the DEPTH is wrong, and every downstream number --
+    clusters, grasps, collision meshes -- is then wrong in a way nothing else
+    notices.
 
-    This is not hypothetical. On 2026-08-19 one capture came back with a table
-    fitted 50 mm high (0.1044 vs 0.055) at an unchanged camera pose; the
-    cluster cut then sat above two of the three objects and they vanished, and
-    the instruction that referred to one of them silently had no referent. The
-    two captures either side of it were normal, so it was a transient depth
-    fault -- exactly the kind of thing that should stop the run rather than
-    quietly change the answer.
+    A transient depth fault can put the fitted table tens of millimetres high
+    at an unchanged camera pose; the cluster cut then sits above the objects,
+    they vanish, and an instruction that refers to one of them silently has no
+    referent. That is exactly the kind of thing that should stop the run
+    rather than quietly change the answer.
     """
     from gwm_hardware.common.rig_workspace import TABLE_TOP_Z
 
@@ -135,7 +132,7 @@ def main() -> None:
 
     # The arm's real pose, so the clusterer does not have to guess it from
     # height (see cluster_objects' robot_spheres note: the height rule silently
-    # deleted a 93 mm upended box on this rig).
+    # deletes any tall object).
     robot_spheres = None
     if args.robot_arm_filter:
         from curobo.types.base import TensorDeviceType
@@ -157,9 +154,8 @@ def main() -> None:
     pcd_ds = get_o3d_pcd(xyz_map[finite], rgb_map[finite], cfg.perception.voxel_downsample_size)
     # grasp_threshold / num_runs come from tiptop.yml when present; the .get
     # fallbacks are the client's own defaults, so a config without the keys
-    # behaves exactly as before. Measured on the 2026-08-20 peg capture
-    # (9 repeats each): 0.035/5 left the yellow peg graspless 3/9 and the
-    # green peg 7/9; 0.02/10 cut both to 2/9.
+    # uses them unchanged. A lower threshold and more runs give small, flat
+    # objects a better chance of a contact-associated grasp.
     _m2t2_kwargs = dict(
         grasp_threshold=float(cfg.perception.m2t2.get("grasp_threshold", 0.035)),
         num_runs=int(cfg.perception.m2t2.get("num_runs", 5)),
@@ -191,11 +187,11 @@ def main() -> None:
                                        cfg.perception.contact_threshold_m)
 
     # M2T2's scene sampling is stochastic, and small flat objects sit right on
-    # its edge: the same cloud gives a 69x39 mm peg 0..112 contact-associated
-    # grasps across repeated calls. A cluster with zero grasps this draw is
-    # therefore not proven ungraspable -- re-sample and MERGE before giving up
-    # on it. Each retry costs one M2T2 round-trip (~2.6 s at num_runs 10) and
-    # runs only while something is still graspless.
+    # its edge: the same cloud can give a small peg anywhere from zero to
+    # over a hundred contact-associated grasps across repeated calls. A cluster
+    # with zero grasps this draw is therefore not proven ungraspable --
+    # re-sample and MERGE before giving up on it. Each retry costs one M2T2
+    # round-trip and runs only while something is still graspless.
     for _retry in range(int(cfg.perception.m2t2.get("graspless_retries", 0))):
         graspless = sorted(l for l in object_pcds if len(filtered_grasps[l]["poses"]) == 0)
         if not graspless:

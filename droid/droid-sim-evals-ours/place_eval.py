@@ -10,9 +10,11 @@ instruction said red) is distinguishable in the CSV from a plan failure or a
 drop. Without that, both are just `success=False` and the referring-expression
 confusion matrix is unrecoverable.
 
-The block is never released -- the episode ends once it is inside a bin -- so
-"placed" here means the block's mesh centre sits within `xy_tol` of the bin
-centre and inside the `z_rel` band, still gripped.
+The block starts welded to the gripper (weld_held_block). Plans that never
+open the gripper end with the block still gripped inside a bin; plans that do
+open it have the weld released on the first reopen so the block falls. Either
+way "placed" means the block's mesh centre sits within `xy_tol` of the bin
+centre and inside the `z_rel` band at episode end.
 
     ../droid-sim-evals/.venv/bin/python -u place_eval.py \
         --task-id place_red --scene 6 --variant 1 \
@@ -58,7 +60,7 @@ class PlaceTracker(batch_eval_v2.SuccessTracker):
     def snapshot(self) -> None:
         # The one per-step seam batch_eval_v2 already calls: check whether the
         # gripper reopened and, if so, drop the weld so a released block can
-        # actually fall (G-31). No-op for plans that never open the gripper.
+        # actually fall. No-op for plans that never open the gripper.
         if hasattr(self, "_scene"):
             weld_held_block.maybe_release(self._scene)
         super().snapshot()

@@ -20,12 +20,11 @@ difference between them.
 
 The pads must be swept through the CLOSE, not read at the open width. The
 2F-140 is a four-bar linkage: closing swings each finger inward along an arc
-that also drops it, measured here at up to **44 mm** of descent from open to
-closed. The first version of this script judged the open state alone -- the one
-configuration where the pads sit highest -- and called a blue cup ungraspable
-because a pad was 12 mm above its rim. Run on the real robot, that grasp
-succeeded: by the time the fingers met, the pad was some 30 mm BELOW the rim.
-A check that blocks good grasps is worse than no check.
+that also drops it, by up to **44 mm** from open to closed. Judging the open
+state alone -- the one configuration where the pads sit highest -- can call a
+grasp ungraspable when a pad is a little above a rim, even though by the time
+the fingers meet the pad is well BELOW it. A check that blocks good grasps is
+worse than no check.
 
     cd /home/quanyi/gwm-wiser
     pixi run --manifest-path droid/tiptop/pixi.toml python -m gwm_hardware.tiptop_arm.inspect_plan \
@@ -70,8 +69,7 @@ def pad_sweep(q_grasp, steps=15):
 
     The pad's own geometry, not its link origin: the pad is a 30 x 70 mm plate
     and the grasp is usually tilted, so its lower edge sits tens of millimetres
-    below the origin. Using the origin is what made the first two versions of
-    this check disagree with the robot.
+    below the origin. Using the origin would put the pad higher than it is.
 
     cuRobo's kinematics model locks the gripper, so the sweep goes through the
     URDF, whose mimic chain drives the four-bar properly.

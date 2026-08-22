@@ -5,8 +5,8 @@ side: collision spheres, self-collision table, locked/mimic joints and cspace.
 
 The arm half is inherited verbatim from cuTAMP's `panda_robotiq_2f_85.yml`
 (same Panda, same tuned sphere set, same buffers), so only the gripper half is
-new. Gripper spheres are **fitted to the 2F-140 collision meshes by cuRobo's
-own `Mesh.get_bounding_spheres`** rather than hand-placed: hand-placing 2F-85
+new. Gripper spheres are **fitted to the 2F-140 collision meshes** (a voxel
+cover, see `_cover_with_spheres`) rather than hand-placed: hand-placing 2F-85
 numbers onto 140 mm fingers is exactly the failure this whole exercise exists
 to avoid, and a mesh fit is reproducible and auditable.
 
@@ -38,9 +38,9 @@ ARM_LINKS = [f"panda_link{i}" for i in range(8)]
 # are what actually approaches the object and the table.
 # Ceilings, not targets: _cover_with_spheres stops at the first pitch that
 # meets MAX_THICKNESS_INFLATION and only spends more spheres if it has to.
-# Raised on 2026-08-18 -- the old values were far below what the old fitter
-# actually emitted (the 8-sphere pad budget produced 55), so they constrained
-# nothing, while a tight fit on the plate-like links genuinely needs the room.
+# Generous on purpose: a tight fit on the plate-like links genuinely needs the
+# room, and a budget that binds before the inflation bound is met only buys a
+# fatter model.
 GRIPPER_SPHERE_BUDGET = {
     "robotiq_140_base_link": 200,
     "left_outer_knuckle": 200,
@@ -57,16 +57,15 @@ GRIPPER_SPHERE_BUDGET = {
 
 # Wrist-camera mount.
 #
-# Derived from the hand-eye calibration (2026-08-18) rather than guessed. The
-# 2F-85 config carries two rows of spheres on ONE side of the gripper base;
-# copying that verbatim was a hazard, because the bracket is the one asymmetric
-# thing on the wrist and if it is modelled on the wrong side cuRobo guards empty
-# air while the real camera meets the table unprotected. It was mirrored to both
-# sides as an interim measure; the calibration now says which side it is.
+# Placed from the hand-eye calibration rather than copied from the 2F-85
+# config, which carries two rows of spheres on ONE side of the gripper base:
+# the bracket is the one asymmetric thing on the wrist, and if it is modelled
+# on the wrong side cuRobo guards empty air while the real camera meets the
+# table unprotected. The calibration says which side it is.
 #
 #   camera optical centre, in robotiq_140_base_link:
 #       [-65.4, +36.8, +65.9] mm      (i.e. the +y side)
-#   optical axis 1.0 deg off the gripper approach axis
+#   optical axis close to the gripper approach axis
 #
 # What gets enclosed: a D435 body is roughly 90 x 25 x 25 mm, long axis along
 # its stereo baseline (camera +x). That box is swept from the optical centre,
@@ -118,34 +117,31 @@ COVERAGE_SLACK_M = 0.0005
 # How much fatter than a part's own thinnest dimension a sphere may be.
 #
 # This is the one real knob, and it trades safety against planning speed.
-# Capping pitch at the exact thickness (1.0) gives a faithful 287-sphere
-# gripper that cuRobo plans with 30x slower than the stock 36-sphere 2F-85 --
-# and TiPToP refines 16 candidate trajectories per scene, so 30x turns a
-# 2-minute proposal pass into an hour. Larger values coarsen thin parts.
+# Capping pitch at the exact thickness (1.0) gives a faithful, sphere-heavy
+# gripper that cuRobo plans with many times slower than the stock 36-sphere
+# 2F-85 -- and TiPToP refines 16 candidate trajectories per scene, so that
+# multiplier lands on every proposal pass. Larger values coarsen thin parts.
 # Whatever is chosen, coverage stays 100% by construction; only the
 # over-approximation grows. Set from --thickness-multiple and recorded in the
 # emitted config's header.
 THICKNESS_MULTIPLE = 1.0
 
-# The other half of the check that was missing until 2026-08-18.
+# The other half of the coverage check.
 #
 # MIN_COVERAGE only asks "do the spheres cover the mesh". Fat spheres satisfy
-# that trivially, so it never noticed that thin parts were being modelled
-# 1.73-2.73x thicker than they are -- the outer finger, 27.1 mm of real
-# bracket, came out as a 72.8 mm slab. 1.73 is sqrt(3), the circumradius of a
-# cube: the old radius assumed every voxel was FULL, so a plate one voxel thick
-# got a sphere sized for a solid cube of that pitch. 2.73 is 1 + sqrt(3), the
-# same thing when grid alignment puts two layers across the thickness.
+# that trivially, so on its own it never notices thin parts being modelled far
+# thicker than they are. A plain voxel fit that gives every voxel a cube's
+# circumradius makes a plate one voxel thick 1.73x (sqrt(3)) too thick, or
+# 2.73x (1 + sqrt(3)) when grid alignment puts two layers across the thickness.
 #
 # That inflation propagates: build_gripper_spheres derives cuTAMP's grasp
 # filter from these spheres, and cuTAMP keeps that envelope clear of the target
-# object, so an over-thick gripper pushes every grasp outward. Measured
-# consequence -- the executed grasp landed 8-12 mm above EVERY M2T2 proposal on
-# all three objects tried, which is survivable on a tomato and fatal on a 77 mm
-# open cup, where it puts the pads above the rim.
+# object, so an over-thick gripper pushes every grasp outward -- survivable on
+# a tall soft object, fatal on an open cup, where it puts the pads above the
+# rim.
 # 1.80 is a REGRESSION GUARD, not a target -- it sits just above what the
-# fitter reaches at a sphere count cuRobo can plan with. The measured trade,
-# total gripper spheres against worst-link inflation:
+# fitter reaches at a sphere count cuRobo can plan with. The trade on this
+# model's meshes, total gripper spheres against worst-link inflation:
 #
 #     lateral pitch = thickness      190 spheres    1.42 - 1.78x   <- chosen
 #                   = thickness/1.5  806            1.52 - 1.94x
@@ -154,9 +150,8 @@ THICKNESS_MULTIPLE = 1.0
 #
 # Inflation is not even monotonic in the pitch (grid alignment decides whether
 # a layer boundary lands on the surface), and the floor is ~1.3x at 17x the
-# spheres. The old cube-circumradius fitter sat at 287 spheres / 1.73 - 2.73x,
-# so the chosen point is better on both axes at once; buying the last 0.3x
-# would cost more planning time than the tighter model is worth.
+# spheres; buying the last 0.3x would cost more planning time than the tighter
+# model is worth.
 MAX_THICKNESS_INFLATION = 1.80
 SURFACE_SAMPLES = 40000
 
@@ -253,8 +248,8 @@ def _cover_with_spheres(mesh, budget: int):
         thin axis as the local material actually needs.
 
         An isotropic voxel grid pays n^3 to refine when only the lateral n^2
-        buys tightness, which is why the cube-circumradius version could not
-        get under ~1.4x without ~2000 spheres. Here each lateral cell looks at
+        buys tightness, so a cube-circumradius fit cannot get under ~1.4x
+        without thousands of spheres. Here each lateral cell looks at
         the material actually in it: one sphere centred on that material, sized
         to reach it, and extra layers only where the part is genuinely thick.
         """
@@ -283,10 +278,10 @@ def _cover_with_spheres(mesh, budget: int):
         pts = np.array([c for c, _ in rows])
         rad = np.array([r for _, r in rows])
         # EVERY axis, not just the thin one. Checking only the thin axis is the
-        # same one-sided mistake as checking only coverage: the first version of
-        # this fitter passed the thin-axis bound while modelling the gripper base
-        # as four 106 mm balls, which bulged sideways far enough to put the
-        # capture pose in collision with the table.
+        # same one-sided mistake as checking only coverage: a handful of huge
+        # balls can pass the thin-axis bound on the gripper base while bulging
+        # sideways far enough to put the capture pose in collision with the
+        # table.
         env = (pts + rad[:, None]).max(0) - (pts - rad[:, None]).min(0)
         return pts, rad, float((env / ext).max())
 
@@ -325,7 +320,7 @@ def fit_gripper_spheres(urdf_path: Path) -> dict:
         samples = _surface_points(mesh)
         cover = _coverage(samples, rows)
         # Two-sided, and both sides matter. Coverage alone is satisfied by any
-        # sufficiently fat sphere, which is exactly how 2.7x inflation went
+        # sufficiently fat sphere, which is how a 2.7x inflation can go
         # unnoticed; inflation alone is satisfied by no spheres at all.
         env3 = (pts + rad[:, None]).max(0) - (pts - rad[:, None]).min(0)
         ratios = env3 / np.asarray(mesh.extents, dtype=float)
@@ -433,8 +428,8 @@ def build_cfg(urdf_path: Path, out_path: Path, camera_spheres: bool) -> Path:
               f"--thickness-multiple {THICKNESS_MULTIPLE} -- do not edit by hand.\n"
               "# Panda + Robotiq 2F-140 for this rig. Arm half inherited from\n"
               "# cuTAMP's panda_robotiq_2f_85.yml; gripper spheres fitted to the\n"
-              "# 2F-140 collision meshes. See the generator's docstring for the\n"
-              "# wrist-camera-sphere caveat.\n")
+              "# 2F-140 collision meshes. See the generator's docstring for how\n"
+              "# the wrist-camera spheres are placed.\n")
     out_path.write_text(header + yaml.safe_dump(src, sort_keys=False, width=100))
     return out_path
 
