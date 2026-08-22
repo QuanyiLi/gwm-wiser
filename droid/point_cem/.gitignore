@@ -1,0 +1,6 @@
+# generated data — never commit
+results/
+captures/
+__pycache__/
+scene7_0.usd
+assets/panda_bar.urdf
