@@ -5,7 +5,7 @@ PNGs, external_obs.h5, wrist_obs.h5, objects.json), with one difference: after
 the standard double-reset + settle, the gripper is commanded closed and held
 closed before anything is captured.
 
-    cd /root/code/gwm/gwm-wiser/droid/point_cem && \
+    cd /root/code/gwm/gwm-wiser/droid/gwm_point_cem && \
     OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1 \
     ../droid-sim-evals/.venv/bin/python -u capture7.py
 """

@@ -1,7 +1,7 @@
-"""point_cem: shared constants for the 4-image 2x2 pointing + CEM experiment.
+"""gwm_point_cem: shared constants for the 4-image 2x2 pointing + CEM experiment.
 
 Standalone experiment folder. Import-only against the repo: nothing outside
-droid/point_cem/ is modified, except the scene7_0.usd symlink in
+droid/gwm_point_cem/ is modified, except the scene7_0.usd symlink in
 droid-sim-evals/assets/ that the scene loader's filename convention requires
 (same pattern as scene6).
 

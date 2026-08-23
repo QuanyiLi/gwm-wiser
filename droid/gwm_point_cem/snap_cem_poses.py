@@ -5,7 +5,7 @@ the arm is driven to each step's joint target with the gripper closed, and
 both external cameras are saved to
 results/cem_frames/{task}/{step:02d}_{label}_{cam}.png.
 
-    cd /root/code/gwm/gwm-wiser/droid/point_cem && \
+    cd /root/code/gwm/gwm-wiser/droid/gwm_point_cem && \
     OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1 \
     ../droid-sim-evals/.venv/bin/python -u snap_cem_poses.py
 """

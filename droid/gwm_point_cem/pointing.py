@@ -1,4 +1,4 @@
-"""pointing: IK, hover-candidate trajectories, and cached scoring for point_cem.
+"""pointing: IK, hover-candidate trajectories, and cached scoring for gwm_point_cem.
 
 A candidate is a straight joint-space ride from the home pose to an IK
 solution whose fingertip hovers at (x, y, Z_HOVER) with the tool axis

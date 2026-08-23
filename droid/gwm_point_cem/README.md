@@ -1,4 +1,4 @@
-# point_cem — 4-image pointing: GWM score maps + CEM planning
+# gwm_point_cem — 4-image pointing: GWM score maps + CEM planning
 
 *(standalone experiment folder; nothing outside this folder is modified
 except the `scene7_0.usd` symlink the scene loader requires)*
@@ -117,7 +117,7 @@ OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1 \
 OMNI_KIT_ACCEPT_EULA=YES ACCEPT_EULA=Y OMNI_KIT_ALLOW_ROOT=1 \
   ../droid-sim-evals/.venv/bin/python -u snap_cem_poses.py
 
-# 5. bar ablation: restart the server with --urdf droid/point_cem/assets/panda_bar.urdf, then
+# 5. bar ablation: restart the server with --urdf droid/gwm_point_cem/assets/panda_bar.urdf, then
 .venv/bin/python run_grid.py --only dog,panda,banana,strawberry --cache cache_bar.json --out grid_bar.json
 .venv/bin/python dump_strips.py --out strips_bar
 

@@ -1,4 +1,4 @@
-"""plot_figs: render the point_cem figures from results/*.json.
+"""plot_figs: render the gwm_point_cem figures from results/*.json.
 
 Run with the droid-sim venv (has matplotlib):
     ../droid-sim-evals/.venv/bin/python plot_figs.py [--bar-grid grid_bar.json]
