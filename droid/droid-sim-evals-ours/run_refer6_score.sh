@@ -17,7 +17,7 @@
 # drift apart. RAT strips land under runs/refer6_rev2/rat/.
 set -uo pipefail
 PY=/root/code/gwm/gwm-wiser/droid/tiptop/.pixi/envs/default/bin/python
-PROP=/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_rev2
+PROP=${PROP:-/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_rev2}
 H5=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/scenes/captures/scene6_0/external_obs.h5
 WRIST_H5=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/scenes/captures/scene6_0/wrist_obs.h5
 GATE=${GATE:-1}
@@ -27,7 +27,7 @@ GATE=${GATE:-1}
 # different viewpoints apart (scores_refer6_<tag><SUF>.json).
 CAM=${CAM:-external_cam_2}
 SUF=${SUF:-}
-DBG=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/runs/refer6_rev2/rat$SUF
+DBG=${DBG:-/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/runs/refer6_rev2/rat$SUF}
 
 source /root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/refer6_tasks.sh
 cd /root/code/gwm/gwm-wiser

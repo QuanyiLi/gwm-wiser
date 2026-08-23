@@ -14,9 +14,9 @@
 # the chosen bin.
 set -uo pipefail
 PY=/root/code/gwm/gwm-wiser/droid/tiptop/.pixi/envs/default/bin/python
-PROP=/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_place_v2
+PROP=${PROP:-/root/code/gwm/gwm-wiser/droid/gwm_integrate_doc/proposals/scene6_place_v2}
 H5=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/scenes/captures/scene6_1/external_obs.h5
-DBG=/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/runs/place_v2/rat
+DBG=${DBG:-/root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/runs/place_v2/rat}
 cd /root/code/gwm/gwm-wiser
 
 source /root/code/gwm/gwm-wiser/droid/droid-sim-evals-ours/place_tasks.sh
