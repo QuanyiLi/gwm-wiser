@@ -88,6 +88,24 @@ Not tracked by git (see root `.gitignore` + per-dir ones): `.pixi/`, `.venv/`,
 `droid-sim-evals-ours/runs/` (eval results), `droid-sim-evals/assets*`
 (downloaded scenes).
 
+## Paths kept outside git (2026-08-23)
+
+Purged from the history and gitignored, archived as `git archive` tarballs
+under `/root/code/gwm/purged_from_git_2026-08-23/` (the working copies stay on
+disk on the remote box):
+
+| path | what | restore |
+|---|---|---|
+| `droid/droid-sim-evals/` | Joy's DROID-sim eval harness (upstream `tiptop-robot/droid-sim-evals` @ 69a914c) plus our `batch_eval_v2.py` (the judge/harness behind the scene-6 table), `trial_eval.py`, `capture_external_cam.py`, the two paper run scripts, a `viz` flag in `tiptop_websocket.py`, and the `tiptop_assets/*.h5` captures | untar `droid_droid-sim-evals.tar.gz`; upstream part also from GitHub |
+| `droid/gwm_integrate_doc/proposals/` | GWM selection provenance (candidate plan pools, scores, winners; scene-6 pools also in `/root/code/gwm/droid_sim_ret/gwm_selection/`) | `droid_gwm_integrate_doc_proposals.tar.gz` |
+| `droid/gwm_integrate_doc/overlays/` | overlay-gate images | `droid_gwm_integrate_doc_overlays.tar.gz` |
+| `droid/M2T2/sample_data/`, `droid/M2T2/figures/` | upstream M2T2 sample data and README figures | tarballs, or the upstream repo |
+
+Experiment results are never committed: `droid/v-jepa/` results live in
+`/root/code/gwm/v-jepa_ret/`, the scene-6 eval bundle in
+`/root/code/gwm/droid_sim_ret/`, the pointing results in
+`/root/code/gwm/point_exp_result.zip`.
+
 ---
 
 ## Rig 2 — `zhiwei` (real robot, bring-up 2026-08-17)
