@@ -11,9 +11,9 @@ Discovery intersects the episodes metadata with what is actually on disk, so
 any subset download yields exactly the episodes that are complete locally.
 
 Camera calibration status: the release's own ``camera_extrinsics.*`` columns
-are zero-filled (verified 2026-08-06) and no intrinsics are published.
+are zero-filled and no intrinsics are published.
 Calibration is recovered instead by scripts/prepare_droid_calibration.py
-(KarlP join, decision D-28) into molmoact2_droid_calib/calibration.json;
+(KarlP join) into molmoact2_droid_calib/calibration.json;
 ``load_calibrations`` flattens it into the per-stream mapping that
 ``discover_episodes`` consumes. Streams without a joined calibration stay
 ``calibrated=False`` and the render pipeline skips them; every calibrated

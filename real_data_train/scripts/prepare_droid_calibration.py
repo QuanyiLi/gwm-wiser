@@ -1,6 +1,5 @@
 """Recover per-episode DROID camera calibration by joining MolmoAct2-DROID
-against the KarlP/droid post-hoc calibration release (plan: camera-recovery
-section; decision D-28).
+against the KarlP/droid post-hoc calibration release.
 
 The LeRobot conversion dropped DROID episode IDs, but kept the triple
 language annotations verbatim — and the KarlP release is keyed by episode ID
@@ -52,7 +51,7 @@ def parse_args(argv=None):
     p.add_argument("--min-quality", type=float, default=0.0,
                    help="drop calibrations below this KarlP quality metric "
                         "(default 0.0: keep all — the render-time edge gate "
-                        "is the admission criterion, decision D-28)")
+                        "is the admission criterion)")
     return p.parse_args(argv)
 
 

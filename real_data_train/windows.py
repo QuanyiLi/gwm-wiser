@@ -1,4 +1,4 @@
-"""Timestamped six-frame RAT windows (plan of record, ADR-0012).
+"""Timestamped six-frame RAT windows.
 
 Both selected sources have reliable clocks, so windows are enumerated against
 elapsed-time offsets — the legacy WISER 3-second schedule — with a hard
@@ -10,9 +10,9 @@ import bisect
 
 import torch
 
-# Legacy 3-second schedule (seconds from the window anchor), decision D-6.
+# 3-second schedule (seconds from the window anchor).
 SCHEDULE = (0.0, 0.55, 1.15, 1.75, 2.35, 2.95)
-# Half a frame at 15 fps, decision D-6: reject beyond, never snap silently.
+# Half a frame at 15 fps: reject beyond, never snap silently.
 DEFAULT_TOLERANCE_S = 0.033
 
 
@@ -36,7 +36,7 @@ def resolve_scaled_window(
     """Six frame indices for the schedule scaled by `scale`, anchored at
     timestamps[anchor_index] — or None when the scaled window does not fit
     the clip within tolerance or two targets collapse onto one frame
-    (time-scale augmentation, decision D-30).
+    (time-scale augmentation).
     """
     t0 = timestamps[anchor_index]
     indices = []

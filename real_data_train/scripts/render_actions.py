@@ -1,14 +1,14 @@
 """Offline robot-only rendering: source episodes -> the normalized rendered tree.
 
 For every admitted episode-stream this renders EVERY frame (no temporal
-subsampling — frame-step decisions belong to training, decision D-24) with the
+subsampling — frame-step decisions belong to training) with the
 shared Franka renderer and writes:
 
     <data_root>/rendered/<source>/<clip_id>/
         robot_only.mkv                    one video per clip, native res —
                                           FFV1 lossless bit-exact for real
-                                          sources (D-27); near-lossless VP9
-                                          for molmobot (D-32) — verified per
+                                          sources; near-lossless VP9
+                                          for molmobot — verified per
                                           clip at write time
         meta.json                         alignment + provenance record
 
@@ -19,7 +19,7 @@ never touches source-specific formats.
 
 MolmoBot: the arm mount is recovered per episode from tcp_pose by least
 squares and doubles as a kinematics gate (residual <= 2 mm or the stream is
-rejected). MolmoAct2-DROID (decision D-28): calibration comes from the KarlP
+rejected). MolmoAct2-DROID: calibration comes from the KarlP
 join (scripts/prepare_droid_calibration.py, run first); every stream must
 pass the edge-alignment gate (renderer/edge_gate.py), and keep_ranges idle
 filtering is materialized here — each non-idle range long enough to hold a
@@ -44,7 +44,7 @@ from pathlib import Path
 import numpy as np
 
 DEFAULT_DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
-SCHEMA_VERSION = 2   # v2: per-clip FFV1 video (D-27); v1 was PNG per frame
+SCHEMA_VERSION = 2   # v2: per-clip FFV1 video; v1 was PNG per frame
 
 
 def parse_args(argv=None):
@@ -109,8 +109,8 @@ def _write_clip(clip_dir: Path, frames: np.ndarray, meta: dict,
                 fps: float, codec: str = "ffv1") -> None:
     """Write robot_only.mkv (verified) then meta.json (completion mark).
 
-    codec="ffv1": bit-exact lossless, the real-source contract (D-27).
-    codec="vp9": near-lossless VP9 for the high-volume sim tree (D-32),
+    codec="ffv1": bit-exact lossless, the real-source contract.
+    codec="vp9": near-lossless VP9 for the high-volume sim tree,
     verified against the calibrated tolerance gates. Every clip write is its
     own verification gate either way.
     """

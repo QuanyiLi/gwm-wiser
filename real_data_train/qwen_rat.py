@@ -1,20 +1,20 @@
 """RAT condition/target tensors -> preprocessed Qwen inputs with a pixel budget.
 
 Reuses the unchanged gwm_wiser preprocessing path; the per-source
-aspect-preserving pixel budget (ADR-0014) is injected through the existing
+aspect-preserving pixel budget is injected through the existing
 per-video ``min_pixels``/``max_pixels`` hooks that ``fetch_video`` reads.
 
-Default budget: the operating-grid anchor (ADR-0019). The upper edge equals
+Default budget: the operating-grid anchor. The upper edge equals
 a 480x288-frame area (138240 px), which lands ~16:9 sources on exactly
 ``(3,18,30)`` = 1,620 tokens — audit-verified for MolmoBot's 624x352; every
-source must land on this grid exactly (exact-grid policy, plan D-14).
+source must land on this grid exactly (exact-grid policy).
 """
 
 import torch
 
 from gwm_wiser.utils.gwm_data import tensor_images_to_pil
 
-# Operating-grid defaults (ADR-0019 anchor via the ADR-0014 budget mechanism):
+# Operating-grid defaults (the anchor, expressed through the pixel-budget mechanism):
 # lower edge is the production per-frame minimum; upper edge is the 480x288
 # frame area that pins the (3,18,30) grid.
 DEFAULT_MIN_PIXELS = 131072

@@ -1,12 +1,12 @@
 """The normalized rendered tree: discovery, held-out split, window dataset.
 
-Training consumes ONE on-disk contract regardless of source (decision D-18):
+Training consumes ONE on-disk contract regardless of source:
 
     <data_root>/rendered/<source>/<clip_id>/
         robot_only.mkv               state-rendered robot-only RGB, native res
-                                     (real sources: FFV1 lossless bit-exact,
-                                     D-27; molmobot: near-lossless VP9, D-32
-                                     — verified at write time either way)
+                                     (real sources: FFV1 lossless bit-exact;
+                                     molmobot: near-lossless VP9 — verified
+                                     at write time either way)
         meta.json                    written last by render_actions (completion
                                      mark); pairs the stream with its source
                                      RGB video and timestamps
@@ -15,7 +15,7 @@ Full-scene RGB stays in the source videos and is decoded on the fly
 (torchcodec); robot-only frames are the offline renders. Windows are
 timestamped (windows.enumerate_timed_windows) with per-source stride.
 
-Held-out policy (decision D-10): deterministic episode-level hash split on
+Held-out policy: deterministic episode-level hash split on
 episode_uid — camera-independent, so all streams of one episode land on the
 same side; machine-independent, and newly provisioned episodes fall on a
 stable side.
@@ -38,15 +38,15 @@ from real_data_train.windows import (
     resolve_scaled_window,
 )
 
-# Per-source anchor stride in seconds (decision D-6): dense for long real
+# Per-source anchor stride in seconds: dense for long real
 # episodes, one-to-two windows for short sim episodes.
 DEFAULT_STRIDE_S = {"molmoact2_droid": 0.5, "molmobot": 3.0}
 HOLDOUT_PERMILLE = 20   # 2% of episodes
 
-# Per-source time-scale ranges (decision D-33). MolmoBot PnP trajectories are
+# Per-source time-scale ranges. MolmoBot PnP trajectories are
 # scripted, smooth, and slow — at s < 1 their windows are near-static, so the
 # sim range stretches (1-3x canonical) instead of compressing; DROID keeps
-# D-30's symmetric range. Sources not listed stay canonical (no augmentation).
+# a symmetric range. Sources not listed stay canonical (no augmentation).
 DEFAULT_SCALE_RANGES = {
     "molmoact2_droid": (0.5, 1.5),
     "molmobot": (1.0, 3.0),
@@ -64,7 +64,7 @@ def scale_range_for(source: str, scale_range):
         rng = tuple(scale_range)
     return None if rng == (1.0, 1.0) else rng
 
-# Operating-grid anchor resolution (decision D-29): every window is brought
+# Operating-grid anchor resolution: every window is brought
 # to this resolution before Qwen preprocessing, because the pixel-budget
 # mechanism alone cannot land every native resolution on the exact (3,18,30)
 # grid (320x180's reachable grids jump straight from 16x28 to 20x32).
@@ -198,16 +198,16 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
 
     Yields raw RAT samples (condition/target); with a Qwen preprocessor also
     the preprocessed ``qwen_current_inputs`` / ``qwen_trajectory_gt``.
-    Horizontal flip is banned (render homology, decision D-13); color jitter
+    Horizontal flip is banned (render homology); color jitter
     applies to full RGB only.
 
-    Time-scale augmentation (decisions D-30 / D-33): the index stays
+    Time-scale augmentation: the index stays
     anchor-level — one entry per canonical (scale = 1) window, so epoch size,
     source mixture, and the audit are untouched — and with ``scale_range``
     set, __getitem__ re-resolves the schedule at a per-sample scale drawn
     log-uniformly, with a small anchor jitter. ``scale_range`` may be a
     (lo, hi) tuple applied to every source, or a {source: (lo, hi)} dict
-    (D-33 — see DEFAULT_SCALE_RANGES; unlisted sources stay canonical).
+    (see DEFAULT_SCALE_RANGES; unlisted sources stay canonical).
     Draws that do not fit the clip retry, then fall back to the stored
     canonical window. A degenerate tuple (s, s) with zero jitter instead
     re-resolves the index ONCE at that fixed scale, dropping what does not
@@ -312,7 +312,7 @@ class RenderedWindowDataset(torch.utils.data.Dataset):
         rgb = dec.get_frames_at([start + i for i in indices]).data
         rgb = rgb.float() / 255.0                       # (6, 3, H, W)
         robot_only = self._decoder(clip.robot_only_video).get_frames_at(
-            list(indices)).data.float() / 255.0         # per-clip FFV1 (D-27)
+            list(indices)).data.float() / 255.0         # per-clip FFV1
         return {
             "rgb": rgb,
             "robot_only": robot_only,

@@ -1,4 +1,4 @@
-"""Augmentation: jitter touches full RGB only; flip no longer exists (D-13)."""
+"""Augmentation: jitter touches full RGB only; flip does not exist."""
 
 import torch
 
@@ -30,7 +30,7 @@ def test_zero_probability_is_identity():
 
 
 def test_flip_is_gone_for_good():
-    # Render homology (decision D-13): no horizontal flip may exist here.
+    # Render homology: no horizontal flip may exist here.
     assert not hasattr(augment, "augment_window")
     source = open(augment.__file__).read()
     assert "hflip" not in source

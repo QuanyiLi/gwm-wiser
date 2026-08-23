@@ -7,7 +7,7 @@ bulk_download.py):
         trajectories_batch_<B>.h5
         episode_<8d>_<camera>_batch_<B>.mp4     (624x352, ~15.15 fps)
 
-h5 facts (verified 2026-08-06 on FrankaPickOmniCamConfig val):
+h5 facts (checked on FrankaPickOmniCamConfig val):
     traj_<i>/obs/agent/qpos          (T, 2000) uint8 null-padded JSON:
                                      {"arm": [7], "base": [], "gripper": [2]}
     traj_<i>/obs/sensor_param/<cam>/{intrinsic_cv (T,3,3), cam2world_gl (T,4,4),
@@ -19,7 +19,7 @@ different internal render and must NOT be used for the released mp4s. The
 authoritative per-camera parameters live in ``obs_scene.frozen_config``
 (camera_config.cameras[*].fov, vertical, degrees; img_resolution 624x352),
 so K_mp4 = [[f, 0, 312], [0, f, 176], [0, 0, 1]] with
-f = 176 / tan(fov / 2). Verified 2026-08-06 by URDF re-projection overlay:
+f = 176 / tan(fov / 2). Verified by URDF re-projection overlay:
 this K + cam2world_gl aligns the rendered robot with the released mp4, while
 the intrinsic_cv-derived candidates land off-scale.
 """
@@ -31,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
-# Admitted exterior streams for run 1 (plan of record): the GoPro analogue
+# Admitted exterior streams: the GoPro analogue
 # (137-140 deg FOV) is held out, the wrist camera is never used.
 EXTERIOR_CAMERAS = (
     "droid_shoulder_light_randomization",

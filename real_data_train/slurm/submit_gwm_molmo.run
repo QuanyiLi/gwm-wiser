@@ -12,12 +12,12 @@
 # need ~35 h, so the default fits a full run in ONE segment.
 #SBATCH --time=40:00:00
 # --mem deliberately omitted -> the per-node maximum (64 cores x 5900 MB
-# ~ 369 G). Job 4047278 OOM-killed at a 200 G cap (MaxRSS hit it exactly).
+# ~ 369 G); a 200 G cap gets OOM-killed (MaxRSS reaches it exactly).
 
-# Stage-1 GWM training on the Molmo corpora (plan of record; WISER/VRS retired).
+# GWM training on the Molmo corpora.
 # Reference recipe: 3 nodes x 4 H100. The exact-grid policy (every sample lands
-# on the 1620-token operating grid, ADR-0019) restores uniform batching, so the
-# per-rank batch matches the WISER-era recipe.
+# on the 1620-token operating grid) restores uniform batching, so the
+# per-rank batch matches the original GWM recipe.
 #
 # Prerequisites on kuma (each its own slurm job; nothing on the login node):
 #   sbatch real_data_train/slurm/submit_setup_data.run      # data + URDF assets
@@ -26,7 +26,7 @@
 # pre-generate it once (python -m real_data_train.audit, ~20 min CPU) and pass
 # MANIFEST= so the 12 ranks skip it.
 #
-# Measured 2026-08-09 on the real 3x4 H100 run: 0.30 steps/s steady (the
+# Measured on a 3x4 H100 run: 0.30 steps/s steady (the
 # 2-rank debug smoke gives 0.59 — inter-node allreduce/IO halves it),
 # ~80 GB/GPU and ~82 GB/node RSS, 3.6 GB per checkpoint step dir, ~26 ms
 # per Qwen embed forward. 37.5k steps ~ 35 h -> single 40 h segment; for
@@ -45,7 +45,7 @@ CONDA_ENV=${CONDA_ENV:-/work/vita/lanfeng/conda_env/gwm-wiser}
 CONDA_BASE=${CONDA_BASE:-/home/lfeng/miniconda3}
 TOTAL_STEPS=${TOTAL_STEPS:-90000}
 BATCH_SIZE=${BATCH_SIZE:-32}
-# Corpus selection (run-1 default: real + sim, natural mixture — D-28).
+# Corpus selection (default: real + sim, natural mixture).
 # Single-source runs: SOURCES=molmobot or SOURCES=molmoact2_droid.
 SOURCES=${SOURCES:-molmobot molmoact2_droid}
 # Pre-generated audit manifest (python -m real_data_train.audit) — skips the

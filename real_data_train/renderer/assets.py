@@ -1,6 +1,6 @@
-"""Robot URDF assets for the shared Franka renderer (ADR-0017).
+"""Robot URDF assets for the shared Franka renderer.
 
-No public combined arm+gripper URDF exists (verified 2026-08-06), so this
+No public combined arm+gripper URDF exists, so this
 module fetches the three public sources and welds per-rig URDFs:
 
 - Panda arm: haosulab/ManiSkill ``mani_skill/assets/robots/panda/panda_v2.urdf``

@@ -1,6 +1,6 @@
-"""Window augmentation per the plan of record.
+"""Window augmentation.
 
-Horizontal flip is DISABLED for good (decision D-13): a flipped full-RGB
+Horizontal flip is deliberately not offered: a flipped full-RGB
 stream cannot be reproduced by the state renderer at inference time, so flip
 breaks train/inference render homology.
 

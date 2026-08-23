@@ -40,7 +40,7 @@
 #     SOURCE=molmoact2_droid sbatch real_data_train/slurm/submit_render_actions.run
 # prerequisite: submit_prepare_droid_calib.run has produced
 # $DATA_ROOT/molmoact2_droid_calib/calibration.json; every stream then passes
-# the edge-alignment gate before rendering (D-28) and keep_ranges non-idle
+# the edge-alignment gate before rendering and keep_ranges non-idle
 # segments become separate clips.
 #
 # RENDER_ARGS appends extra flags. Free smoke test of the full chain

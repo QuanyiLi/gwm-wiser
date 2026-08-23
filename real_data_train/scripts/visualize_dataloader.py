@@ -40,7 +40,7 @@ def parse_args(argv=None):
     p.add_argument("--time_scale", type=float, nargs=2, default=None,
                    metavar=("MIN", "MAX"),
                    help="preview the schedule time-scale augmentation "
-                        "(D-30), e.g. 0.5 1.5")
+                        "e.g. 0.5 1.5")
     return p.parse_args(argv)
 
 
@@ -71,7 +71,7 @@ def main(argv=None):
         ci, _ = ds.index[i]
         clip = ds.clips[ci]
         sample = ds[i]
-        indices = sample["frame_indices"]   # actual drawn window (D-30)
+        indices = sample["frame_indices"]   # actual drawn window
         rgb = [to_u8(f) for f in sample["target"]]
         robot = [to_u8(f) for f in sample["robot_only"]]
         overlay = [

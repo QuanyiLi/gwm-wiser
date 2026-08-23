@@ -1,4 +1,4 @@
-"""make_bundle: assemble vjepa_ret/ (the tracked results bundle) from runs/.
+"""make_bundle: assemble the results bundle vjepa_ret/ (kept outside git) from runs/.
 
 Copies, per family and config: summary.md, selection.json, config.json,
 energies.npz, csv/, goals/ (model-view goal images) and the current frame;

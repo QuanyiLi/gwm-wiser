@@ -20,14 +20,14 @@
 #         real_data_train/slurm/submit_setup_data.run
 #
 # Selectors go through SETUP_ARGS (default: the ~600 MB smoke subset).
-# MolmoBot run-1 corpus (decision D-31 — ONLY the plain PnP config;
+# MolmoBot training corpus (ONLY the plain PnP config;
 # Pick/Color/NextTo excluded): train shards 0-100 of 1,598, ~217 GB
 # downloaded, ~53 GB (~24%, measured) kept on disk after pruning:
 #     SETUP_ARGS="--source molmobot --split train --shards 0 100 \
 #         --prune-extracted --purge-shard-cache" \
 #         sbatch real_data_train/slurm/submit_setup_data.run
 #
-# DROID run-1 (both exterior streams, ALL files ~197 GB, plus the ~220 MB
+# DROID (both exterior streams, ALL files ~197 GB, plus the ~220 MB
 # KarlP calibration release). Video files outnumber data parquets (518 vs
 # 50 in chunk-000), so --video-files must be given explicitly — the default
 # mirrors --data-files and would silently skip video files 50+. Patterns

@@ -91,9 +91,9 @@ third_party
 # MB, and every one is regenerable from the capture plus the committed drivers.
 /droid/gwm_hardware/runs/
 
-# purged from the git history on 2026-08-23 (kept on disk, archived under
-# /root/code/gwm/purged_from_git_2026-08-23/): upstream sample data / figures,
-# GWM selection provenance, overlay images, Joy's droid-sim-evals harness
+# Kept outside git: upstream M2T2 sample data / figures, the candidate-plan
+# pools and overlay images the selection scripts read, and the droid-sim-evals
+# harness (upstream tiptop-robot/droid-sim-evals plus local eval scripts).
 /droid/M2T2/sample_data/
 /droid/M2T2/figures/
 /droid/gwm_integrate_doc/proposals/

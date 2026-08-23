@@ -50,7 +50,7 @@ def test_window_dataset_yields_rat_samples(synthetic_rendered_root):
                                jitter_prob=0.0)
     assert len(ds) >= 1
     sample = ds[0]
-    # every sample is anchor-resized regardless of native clip size (D-29)
+    # every sample is anchor-resized regardless of native clip size
     assert sample["rgb"].shape == (6, 3, ah, aw)
     assert sample["robot_only"].shape == (6, 3, ah, aw)
     assert torch.equal(sample["condition"][0], sample["rgb"][0])
@@ -74,7 +74,7 @@ def test_robot_only_decodes_bit_exact_from_clip_video(synthetic_rendered_root):
 
 
 def test_fixed_scale_dataset_is_deterministic(synthetic_rendered_root):
-    """(s, s) with no anchor jitter re-resolves the index once (D-30)."""
+    """(s, s) with no anchor jitter re-resolves the index once."""
     ds = RenderedWindowDataset(synthetic_rendered_root, split="all",
                                jitter_prob=0.0, scale_range=(0.5, 0.5),
                                anchor_jitter_s={})
@@ -160,7 +160,7 @@ def test_per_source_scale_ranges(synthetic_rendered_root):
 
     from real_data_train.rendered import DEFAULT_SCALE_RANGES, scale_range_for
 
-    # resolver semantics (D-33)
+    # resolver semantics
     assert scale_range_for("molmobot", DEFAULT_SCALE_RANGES) == (1.0, 3.0)
     assert scale_range_for("molmoact2_droid",
                            DEFAULT_SCALE_RANGES) == (0.5, 1.5)

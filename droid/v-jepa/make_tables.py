@@ -1,4 +1,4 @@
-"""make_tables: markdown tables for the results README from runs/vjepa_<family>/<tag>/selection.json.
+"""make_tables: markdown summary tables from runs/vjepa_<family>/<tag>/selection.json.
 
     .venv/bin/python make_tables.py > runs/tables.md
 """

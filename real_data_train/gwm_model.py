@@ -1,15 +1,15 @@
 """Variable-length training wrapper around the canonical GroundedWorldModel.
 
 The wrapper subclasses the canonical model so learned module names and
-parameter shapes are identical by construction (ADR-0007); only the forward
+parameter shapes are identical by construction; only the forward
 pass differs, generating the two-coordinate positions
 ``(feature_level, flattened_visual_index)`` dynamically for sequence length
 ``4 * visual_token_count``. At 405 tokens per level this reproduces the
 canonical 1620-token position buffer exactly — and the exact-grid policy
-(plan D-14) pins every training sample to that point, so training is always
+pins every training sample to that point, so training is always
 bit-exact with the canonical model. The variable-length forward is retained
-deliberately: it is what keeps the token-scale iteration knob (plan, deferred
-list) a budget-only change instead of a model rewrite.
+deliberately: it is what keeps a future change of token scale a budget-only
+change instead of a model rewrite.
 """
 
 import torch

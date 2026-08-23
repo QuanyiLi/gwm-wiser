@@ -10,7 +10,7 @@ baseline). This lift is contrast-invariant — verified on the local batch,
 where raw edge-hit fractions scored aligned dark scenes below misaligned
 bright ones. A second check compares the same probes under a deliberately
 perturbed camera (PERTURB_DEG about the camera y axis): a correct calibration
-beats its perturbation by a clear margin. Decision D-28: these two floors are
+beats its perturbation by a clear margin. These two floors are
 the admission criterion for every DROID stream — streams failing them never
 enter the rendered tree.
 """

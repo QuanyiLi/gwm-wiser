@@ -1,4 +1,4 @@
-"""FrankaRobotRenderer: state -> robot-only RGB (ADR-0017).
+"""FrankaRobotRenderer: state -> robot-only RGB.
 
 One SAPIEN scene holding one welded arm+gripper articulation renders the
 robot alone against black. Camera intrinsics/extrinsics/resolution are
@@ -77,7 +77,7 @@ ARM_JOINTS = {
 def gl_to_sapien_pose(cam2world_gl: np.ndarray):
     """OpenGL camera-to-world (x right, y up, -z forward) -> SAPIEN pose.
 
-    Mapping verified empirically (2026-08-06) against MolmoBot's paired
+    Mapping verified empirically against MolmoBot's paired
     extrinsic_cv/cam2world_gl: after set_entity_pose with this rotation,
     camera.get_extrinsic_matrix() reproduces extrinsic_cv to 0 and a sphere
     placed 1 m along the CV forward axis renders at the principal point.

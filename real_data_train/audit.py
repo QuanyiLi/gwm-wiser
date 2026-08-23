@@ -2,9 +2,9 @@
 
 Source-agnostic: it walks the normalized rendered clips, enumerates the
 timestamped windows exactly as training will, counts Qwen visual tokens
-through the production preprocessing path, and enforces the exact-grid policy
-(decision D-2): every clip must land on the operating grid — off-grid clips
-are violations, not curiosities.
+through the production preprocessing path, and enforces the exact-grid policy:
+every clip must land on the operating grid — off-grid clips are violations,
+not curiosities.
 
     python -m real_data_train.audit --data_root real_data_train/data \\
         --out audit_manifest.json [--min_pixels ...] [--max_pixels ...]
@@ -27,7 +27,7 @@ from real_data_train.rendered import (
 )
 from real_data_train.windows import DEFAULT_TOLERANCE_S, enumerate_timed_windows
 
-OPERATING_GRID = [3, 18, 30]   # ADR-0019: 1620 tokens
+OPERATING_GRID = [3, 18, 30]   # 1620 tokens
 
 
 def qwen_token_counter(preprocessor, min_pixels=None, max_pixels=None):
@@ -90,7 +90,7 @@ def build_manifest(
                 max(abs(ts[k] - (t0 + off)) for k, off in zip(w, SCHEDULE)),
             )
         h, w_px = clip.meta["height"], clip.meta["width"]
-        # Windows are anchor-resized before preprocessing (decision D-29), so
+        # Windows are anchor-resized before preprocessing, so
         # the token grid is a property of the anchor, not the native size.
         aw, ah = OPERATING_ANCHOR_WH
         tk = token_counter(ah, aw)

@@ -1,6 +1,6 @@
 """Per-clip video: FFV1 bit-exact roundtrip is a hard requirement for real
-sources (D-27); the sim tree's near-lossless VP9 must stay inside its
-calibrated tolerance gates (D-32)."""
+sources; the sim tree's near-lossless VP9 must stay inside its
+calibrated tolerance gates."""
 
 import numpy as np
 import pytest

@@ -134,7 +134,7 @@ def main() -> None:
     if "fs" not in args.skip:
         ok &= _health(args.fs_url, "FoundationStereo")
     if not ok:
-        sys.exit("start the servers first (see droid/README.md)")
+        sys.exit("start the M2T2 / FoundationStereo servers first")
 
     print("warming (first call JITs compute_90 PTX for sm_120):")
     if "m2t2" not in args.skip:

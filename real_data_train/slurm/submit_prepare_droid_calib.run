@@ -14,7 +14,7 @@
 # CPU-bound DROID calibration join (prepare_droid_calibration.py): matches
 # MolmoAct2-DROID episodes to the KarlP/droid release by their verbatim
 # language-annotation triple and writes
-# $DATA_ROOT/molmoact2_droid_calib/calibration.json (decision D-28).
+# $DATA_ROOT/molmoact2_droid_calib/calibration.json.
 # Kuma rejects GPU-less jobs (QOSMinGRES), so 1 GPU is requested; cheapest:
 #     sbatch -p mig12gb --cpus-per-task=2 --mem=11G \
 #         real_data_train/slurm/submit_prepare_droid_calib.run

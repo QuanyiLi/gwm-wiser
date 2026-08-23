@@ -1,6 +1,6 @@
 """Provision the selected training corpora under real_data_train/data/.
 
-Two sources (plan of record, ADR-0016):
+Two sources:
 
 - molmoact2_droid: allenai/MolmoAct2-DROID-Dataset (LeRobot v3.0). Downloaded
   as repo files (meta/data parquets + concatenated AV1 mp4s); the reader in
@@ -10,12 +10,12 @@ Two sources (plan of record, ADR-0016):
   Shards are pulled through the HF cache and scene packages are extracted to
   the same layout the authors' bulk_download.py produces:
       molmobot/<Config>/part0/<split>/<package_name>/...
-  Run-1 corpus (decision D-31): ONLY the plain Pick-and-Place config
+  Training corpus: ONLY the plain Pick-and-Place config
   (train shards 0-100 of 1,598 — ~217 GB fetched, ~53 GB kept after
   pruning); Pick-only, Color, and NextTo are excluded. The Pick config
   survives solely inside the frozen --test-split smoke fixture.
 
---test-split provisions the fixed smoke-test subset used by the Stage-1 E2E
+--test-split provisions the fixed smoke-test subset used by the E2E
 gate on the dev machine (~1.4 GB total):
   - DROID episodes 0..148 with both exterior streams (one file per modality)
   - MolmoBot FrankaPickOmniCamConfig val shard 0, first N scene packages
@@ -29,7 +29,7 @@ Examples:
     # dev machine, smoke subset
     python -m real_data_train.scripts.setup_data --test-split
 
-    # cluster, the MolmoBot run-1 corpus (PnP-only, D-31)
+    # cluster, the MolmoBot training corpus (PnP-only)
     python -m real_data_train.scripts.setup_data --source molmobot \\
         --split train --shards 0 100 --prune-extracted --purge-shard-cache
 
@@ -62,7 +62,7 @@ KARLP_FILES = (
     "episode_id_to_path.json",
 )
 
-# Run-1 MolmoBot corpus (decision D-31, supersedes D-13's all-four-configs):
+# MolmoBot training corpus:
 # ONLY the plain Pick-and-Place config is admitted — the Pick-only, Color,
 # and NextTo variants are excluded from the training corpus. The Pick config
 # remains referenced solely by the frozen --test-split smoke fixture.
@@ -95,7 +95,7 @@ def parse_args(argv=None):
     # molmobot selectors
     p.add_argument("--configs", nargs="+", default=[PNP_CONFIG],
                    help="MolmoBot task configs (default: the PnP-only "
-                        "run-1 corpus, decision D-31)")
+                        "training corpus)")
     p.add_argument("--split", choices=["train", "val"], default="train")
     p.add_argument("--shards", type=int, nargs=2, metavar=("FROM", "TO"),
                    default=None,

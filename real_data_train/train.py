@@ -1,11 +1,11 @@
-"""Train the GWM on the Molmo corpora (Stage 1, plan of record).
+"""Train the GWM on the Molmo corpora.
 
 Consumes the normalized rendered tree (rendered.py) — the single training-side
-data contract for MolmoAct2-DROID and MolmoBot (decision D-18) — with frozen
+data contract for MolmoAct2-DROID and MolmoBot — with frozen
 Qwen online embedding, MSE objective with cosine logging, Muon+AuxAdam, bf16,
-step-granular checkpoint/resume, and canonical fixed-1620 exports (ADR-0007).
+step-granular checkpoint/resume, and canonical fixed-1620 exports.
 Open-loop development metrics run on the deterministic episode-level held-out
-split (decision D-10); WISER and VRS are fully retired.
+split.
 
 Local smoke example (RTX 3090; reduced GWM because the full 4096-dim training
 state plus the frozen embedder exceeds 24 GB):
@@ -65,8 +65,8 @@ def parse_args(argv=None):
     p.add_argument("--time_scale", type=float, nargs=2, default=None,
                    metavar=("MIN", "MAX"),
                    help="global schedule time-scale range, sampled "
-                        "log-uniformly per training sample (D-30); omitted = "
-                        "the per-source defaults (D-33: DROID 0.5-1.5, "
+                        "log-uniformly per training sample; omitted = "
+                        "the per-source defaults (DROID 0.5-1.5, "
                         "molmobot 1-3); '1 1' disables")
     p.add_argument("--eval_scale_sweep", type=float, nargs="*",
                    default=[0.5, 1.5],
@@ -144,7 +144,7 @@ def qwen_collate(samples):
                 if len(shapes) > 1:
                     raise RuntimeError(
                         f"mixed Qwen grids in one batch ({key}/{name}: "
-                        f"{shapes}); the exact-grid policy (D-2) admits one "
+                        f"{shapes}); the exact-grid policy admits one "
                         "operating grid — run the audit"
                     )
                 tensors[name] = torch.stack(values)
@@ -346,7 +346,7 @@ def main(argv=None):
             )
     if manifest["off_grid_violations"]:
         raise SystemExit(
-            "clips off the operating grid (exact-grid policy D-2):\n"
+            "clips off the operating grid (exact-grid policy):\n"
             + json.dumps(manifest["off_grid_violations"][:5], indent=1)
         )
     if manifest["token_ceiling_violations"]:
@@ -377,7 +377,7 @@ def main(argv=None):
         )
 
     if args.time_scale is None:
-        train_scale = DEFAULT_SCALE_RANGES     # per-source (D-33)
+        train_scale = DEFAULT_SCALE_RANGES     # per-source
     elif tuple(args.time_scale) == (1.0, 1.0):
         train_scale = None
     else:
@@ -461,7 +461,7 @@ def main(argv=None):
 
     # ---- held-out open-loop loaders (episode-level split, jitter off) ----
     # Canonical scale 1 is THE comparable metric; the fixed-scale sweep
-    # loaders are the time-scale robustness dashboard (D-30).
+    # loaders are the time-scale robustness dashboard.
     def heldout_loader(scale_range=None, anchor_jitter_s=None):
         ds = TokenCeilingDataset(
             build_split("heldout", 0.0, scale_range=scale_range,
