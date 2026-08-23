@@ -49,3 +49,53 @@ __pycache__/
 /third_party/**/__pycache__/
 third_party
 /wiser_dataset/
+/real_data_train/viz/
+/real_data_train/droid_viz/
+/real_data_train/molmobot_viz/
+/real_data_train/data/
+/.wandb_api_key.env
+
+# droid/: env dirs, weights, secrets, run artifacts
+/droid/**/.pixi/
+/droid/**/.venv/
+/droid/tiptop/.env
+/droid/tiptop/tiptop/.cache/
+/droid/M2T2/weights/
+/droid/droid-sim-evals/runs/
+/droid/droid-sim-evals-ours/runs/
+/droid/droid-sim-evals-ours/scenes/captures/
+/droid/droid-sim-evals/assets.zip
+/droid/droid-sim-evals/assets/
+
+# FoundationStereo is a real-robot-only dep
+# (droid-sim used GT depth), cloned in-tree like the other absorbed repos.
+# Its own .git is kept, so it is ignored wholesale rather than absorbed.
+/droid/FoundationStereo/
+# cuRobo / cuTAMP are cloned into droid/tiptop/ by setup-planners
+/droid/tiptop/curobo/
+/droid/tiptop/cutamp/
+
+# Hardware rig (droid/gwm_hardware/): the generated Panda + 2F-140 model carries
+# absolute mesh paths into the gitignored cuTAMP/cuRobo clones, so it is
+# machine-local. The GENERATORS are versioned; regenerate after any reinstall:
+#   python -m gwm_hardware.common.build_2f140 && python -m gwm_hardware.common.build_2f140_cfg
+/droid/gwm_hardware/assets/
+
+# Pristine copies the gwm_hardware install_* scripts keep before patching the
+# tiptop worktree. Regenerated on demand; the patches themselves are versioned.
+/droid/tiptop/tiptop/**/*.py.orig
+/droid/gwm_hardware/.service-logs/
+
+# Rig run artefacts: captures, proposals, scores, RAT strips, overlays.
+# Same rule as droid-sim-evals/runs/ -- these are outputs, sometimes hundreds of
+# MB, and every one is regenerable from the capture plus the committed drivers.
+/droid/gwm_hardware/runs/
+
+# Kept outside git: upstream M2T2 sample data / figures, the candidate-plan
+# pools and overlay images the selection scripts read, and the droid-sim-evals
+# harness (upstream tiptop-robot/droid-sim-evals plus local eval scripts).
+/droid/M2T2/sample_data/
+/droid/M2T2/figures/
+/droid/gwm_integrate_doc/proposals/
+/droid/gwm_integrate_doc/overlays/
+/droid/droid-sim-evals/

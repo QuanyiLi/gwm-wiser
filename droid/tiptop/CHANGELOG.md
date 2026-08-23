@@ -1,0 +1,101 @@
+# Changelog
+
+All notable changes to TiPToP are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.3.0] - 2026-08-03
+
+### Added
+
+- Experimental support for "place X next to Y" tasks via a `Near` predicate in cuTAMP,
+  behind `experimental.pick_place_next_to` in `tiptop.yml` (off by default) ([#30]).
+- Experimental RecGen shape completion: reconstructs a complete mesh per object instead of
+  the convex hull of its observed point cloud, behind `perception.recgen.enabled` (off by
+  default). Runs as a microservice ([#28]).
+- Perception server health checks now run before the cuRobo warmup, so an unreachable
+  FoundationStereo, M2T2, or RecGen server fails fast instead of after the warmup ([#28]).
+- Blog section in the docs, with English and Chinese versions of "Achieving SOTA on the
+  MolmoSpaces benchmark with Inference-Time Search" ([#25]).
+
+### Changed
+
+- TiPToP now requires cuTAMP 0.0.6, which provides the `Near` predicate ([#30]).
+- Offline replay fills missing config keys from the packaged defaults, so run directories
+  recorded by older versions still replay ([#34]).
+- Pinned `warp-lang` below 1.13 ([#32]).
+
+### Fixed
+
+- `viz-tiptop-run` no longer crashes on plan labels containing punctuation, such as
+  `Rubik's_cube` ([#35]).
+- Git output and prompt files are read as UTF-8 rather than the locale's preferred
+  encoding, which could mangle or crash on non-ASCII content ([#33]).
+
+## [0.2.0] - 2026-06-05
+
+### Breaking Changes
+
+- `viz-tiptop-run` renamed its `--save-dir` flag to `--run-dir` ([#16]).
+- `tiptop_cfg()` no longer accepts `force_reload` and no longer merges CLI overrides
+  from `sys.argv` via `OmegaConf.from_cli`. Load a specific config with the new
+  `set_tiptop_cfg_from_file()` before the first `tiptop_cfg()` call. The
+  `tiptop.config.tiptop_config_path` constant is no longer exported ([#16]).
+
+### Added
+
+- `tiptop-rerun` CLI: re-runs the pipeline from a saved run directory, reusing the
+  recorded observation. Task instruction and planning parameters default to the
+  original run's values and can be overridden via flags ([#16]).
+- Pick-only tasks: the pipeline now supports plans that just pick an object, including
+  a prompt to safely catch the object on the real robot after a pick ([#27]).
+- Rerun-disabled mode and a config option to run without applying M2T2 bounds ([#27]).
+- `save_dir` is now included in the `tiptop-server` response ([#27]).
+- `set_tiptop_cfg_from_file()` and `get_tiptop_cfg_path()` in `tiptop.config` for
+  loading a config from an explicit path and querying the cached config's source path ([#16]).
+- Integration tests for the offline H5 pipeline, runnable via the `test-integration`
+  pixi task ([#14]).
+
+### Changed
+
+- `tiptop-h5` and the offline rerun logic are consolidated into `tiptop/tiptop_offline.py`
+  (entry points `h5_entrypoint` and `rerun_entrypoint`); `tiptop/tiptop_h5.py` is removed.
+  The `tiptop-h5` CLI and its flags are unchanged ([#16]).
+- Offline runs save the merged config into the run directory so re-runs are reproducible ([#16]).
+- Logging setup moved to the entrypoint level ([#16]).
+- Updated the Gemini perception model from `gemini-robotics-er-1.5-preview` to
+  `gemini-robotics-er-1.6-preview` ([#26]).
+- Updated cuTAMP to 0.0.4 and added a configurable max number of motion-refinement
+  attempts ([#19], [#20]).
+- `tiptop-server` serializes pipeline runs with an asyncio lock so concurrent requests
+  no longer interleave ([#23]).
+- Point-cloud erosion falls back to no erosion when it would leave too few points ([#27]).
+
+### Fixed
+
+- Fixed broken intrinsics imports in `calibrate_wrist_cam` ([#21]).
+
+## [0.1.0]
+
+Initial tagged release.
+
+[0.3.0]: https://github.com/tiptop-robot/tiptop/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/tiptop-robot/tiptop/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/tiptop-robot/tiptop/releases/tag/v0.1.0
+
+[#14]: https://github.com/tiptop-robot/tiptop/pull/14
+[#16]: https://github.com/tiptop-robot/tiptop/pull/16
+[#19]: https://github.com/tiptop-robot/tiptop/pull/19
+[#20]: https://github.com/tiptop-robot/tiptop/pull/20
+[#21]: https://github.com/tiptop-robot/tiptop/pull/21
+[#23]: https://github.com/tiptop-robot/tiptop/pull/23
+[#25]: https://github.com/tiptop-robot/tiptop/pull/25
+[#26]: https://github.com/tiptop-robot/tiptop/pull/26
+[#27]: https://github.com/tiptop-robot/tiptop/pull/27
+[#28]: https://github.com/tiptop-robot/tiptop/pull/28
+[#30]: https://github.com/tiptop-robot/tiptop/pull/30
+[#32]: https://github.com/tiptop-robot/tiptop/pull/32
+[#33]: https://github.com/tiptop-robot/tiptop/pull/33
+[#34]: https://github.com/tiptop-robot/tiptop/pull/34
+[#35]: https://github.com/tiptop-robot/tiptop/pull/35

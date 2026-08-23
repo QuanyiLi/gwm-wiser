@@ -1,0 +1,144 @@
+# TiPToP configuration for the `zhiwei` hardware rig.
+#
+# This is the AUTHORITATIVE copy. `tiptop/config/tiptop.yml` is a symlink to
+# this file, installed by `gwm_hardware/common/install_rig_config.py`, so the rig
+# config is versioned here instead of in the pristine tiptop tree.
+# `tiptop-config` writes through the symlink, so running it edits this
+# file -- review the diff afterwards rather than letting it drift.
+
+# == Robot connection and control ==
+robot:
+  # `panda_robotiq` is redirected to our 2F-140 model by
+  # gwm_hardware/common/install_2f140_cutamp.py -- the rig carries a 2F-140, whose TCP
+  # sits 62 mm further out than the stock 2F-85 cuTAMP would otherwise load.
+  # Set GWM_TIPTOP_GRIPPER=2f85 to get the stock model back (droid-sim).
+  type: panda_robotiq
+  dof: 7
+
+  # Bamboo control node (the RT machine), reached over the local 192.168.68.x
+  # network: far lower RTT and jitter than the Tailscale path, so this address
+  # rather than the Tailscale one.
+  host: "192.168.68.132"
+
+  port: 5555
+  gripper_port: 5559
+
+  # Trajectory speed scale, 1.0 = full speed; 0.6 is upstream's value. Applied
+  # as cuRobo post-process retiming, so it stretches the finished trajectory
+  # and leaves the optimizer and cost terms alone.
+  #
+  # Worth knowing at speed: execution is open-loop -- the whole trajectory goes
+  # up in one shot and execute_plan.py only checks that the controller accepted
+  # it, never that anything was grasped. Nothing notices an object knocked over
+  # on a fast approach.
+  time_dilation_factor: 0.6
+
+  # Robot configurations
+  q_home: [0.0, -0.628, 0.0, -2.513, 0.0, 1.885, 0.0]
+  # Capture pose, found with `gwm_hardware.common.find_capture_pose`: TiPToP
+  # plans an entire episode from ONE wrist frame taken here, so this pose sets
+  # what the system can see at all.
+  #
+  # TCP [0.45, 0.00, 0.55] straight down, yaw -90 deg. The camera sits about
+  # 0.63 m above the table with a footprint of roughly 0.87 x 0.50 m.
+  #
+  # yaw is the redundant DOF for a straight-down TCP and it is NOT free here --
+  # the wrist camera is offset from the TCP axis, so yaw swings where the
+  # footprint lands; -90 keeps the robot's own base out of frame entirely and
+  # shows the most table.
+  #
+  # Centred on y = 0, which is both the middle of the 1 m table and the middle
+  # of M2T2's own y in [-0.30, +0.30] input crop.
+  q_capture: [-0.2099, -0.1645, 0.1760, -1.3773, 0.0306, 1.2154, -0.0256]
+
+# == Camera configurations ==
+# Both are RealSense D400s; tiptop feeds their IR stereo pair to
+# FoundationStereo rather than using the ASIC depth. Run
+# `python -m gwm_hardware.common.rs_preflight` before every session -- the rig comes
+# up with IR auto-exposure off, which saturates the pair and guts the depth.
+cameras:
+  # Wrist camera: TiPToP's only perception viewpoint.
+  hand:
+    serial: "035422072950"      # D435i
+    type: realsense
+
+  # Third-person camera: recording, viz-scene, and the GWM scorer's viewpoint.
+  # tiptop itself reads only `hand` and `external`.
+  external:
+    serial: "348522073586"      # D435
+    type: realsense
+    # Fraction of the frame width kept at capture (left-aligned); the rest is
+    # discarded before the frame enters external_obs.h5. With this mount the
+    # robot's perception field and the scene's left/right layout -- what GWM's
+    # spatial grounding feeds on -- sit in the left two thirds, and the right
+    # third only dilutes the frame. Right-edge crop only, so K is untouched.
+    # Read by gwm_hardware.gwm_arm.capture (external_camera_crops); tiptop
+    # itself ignores this key. Delete the line to go back to full frames.
+    keep_left_frac: 0.667
+
+  # SECOND third-person camera, read only by gwm_hardware.gwm_arm (tiptop never
+  # looks at this key). It exists for two-camera score fusion: per-object
+  # scores from two viewpoints are only partly correlated, so averaging them is
+  # more robust to score noise than any single view.
+  #
+  # NOTE this camera produces NO depth for the pipeline -- it is an RGB scoring
+  # viewpoint only. `rs_preflight` fails it on IR saturation, and that verdict
+  # is about FoundationStereo's stereo pair, which nothing asks this camera for.
+  # Wrist depth is the only depth the planner uses.
+  # Optional: gwm_arm skips any declared camera that is not connected rather
+  # than failing, so it may be left unplugged (e.g. when its only mount faces
+  # a window, which blows out the RGB the scorer relies on).
+  external_2:
+    serial: "134322070906"      # D435i, faces the robot from the opposite side
+    type: realsense
+
+# == Perception services ==
+perception:
+  foundation_stereo:
+    url: "http://localhost:1234"
+
+  m2t2:
+    url: "http://localhost:8123"
+    apply_bounds: true
+    # M2T2's scene sampling is stochastic, and small flat objects sit at the
+    # edge of what it proposes for, so a single draw can leave an object with
+    # ZERO associated grasps. grasp_threshold (score cut-off) and num_runs
+    # (sampling passes per call) widen the draw; graspless_retries re-samples
+    # M2T2 and merges while any cluster still has no grasps (the zero-grasp
+    # rate falls geometrically per retry, at a few seconds each).
+    # Read by both arms: gwm_hardware.gwm_arm.propose, and tiptop's own
+    # perception_wrapper.predict_depth_and_grasps + tiptop_run (graspless
+    # re-sampling loop). When the keys are absent the M2T2 client defaults
+    # apply.
+    grasp_threshold: 0.02
+    num_runs: 10
+    graspless_retries: 2
+
+  sam:
+    mode: "local"
+
+  recgen:
+    url: "http://<endpoint>:18324"
+    enabled: false
+    target_faces: 10000
+    concurrency: 6
+
+  # Depth sanity gate: the table is bolted down, its top at z = 0.055 m (must
+  # match gwm_hardware.common.rig_workspace.TABLE_TOP_Z). A RANSAC table fit
+  # further than max_surface_drift_m (metres) from it means the DEPTH is wrong
+  # -- FoundationStereo occasionally emits a whole warped sheet -- so refuse to
+  # plan and re-capture instead of building clusters/grasps/collision meshes on
+  # bad geometry. Read by tiptop_run's process_scene_geometry (both arms gate:
+  # gwm_arm has its own check_surface_z). Delete either key to disable; upstream
+  # never defines them.
+  table_top_z_m: 0.055
+  max_surface_drift_m: 0.02
+
+  depth_trunc_m: 5.0
+  voxel_downsample_size: 0.0075
+  contact_threshold_m: 0.01
+  mask_erosion_pixels: 3
+
+# == Experimental features ==
+experimental:
+  pick_place_next_to: false
