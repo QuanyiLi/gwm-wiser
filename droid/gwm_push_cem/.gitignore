@@ -1,0 +1,8 @@
+# generated data — never commit
+results/
+captures/
+__pycache__/
+scene9_0.usd
+*.mp4
+*.png
+*.zip
