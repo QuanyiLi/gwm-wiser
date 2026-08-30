@@ -1,0 +1,23 @@
+#usda 1.0
+(
+    defaultPrim = "banana"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "banana" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyAPI"]
+    prepend payload = @./ycb/011_banana.usd@
+)
+{
+    bool physics:kinematicEnabled = 0
+    bool physics:rigidBodyEnabled = 1
+
+    over "_11_banana" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysxCollisionAPI", "PhysxConvexHullCollisionAPI", "PhysicsMeshCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token physics:approximation = "convexDecomposition"
+        bool physics:collisionEnabled = 1
+    }
+}
