@@ -1,0 +1,14 @@
+fastapi
+h5py
+hydra-core
+matplotlib
+meshcat
+numpy
+requests
+scikit-learn
+scipy
+tensorboard
+torch
+torchvision
+trimesh
+uvicorn

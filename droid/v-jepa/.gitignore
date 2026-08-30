@@ -1,0 +1,12 @@
+# environments, weights, the upstream clone, run artifacts and the results
+# bundle are not tracked: only code and docs live in the repo.
+.venv/
+checkpoints/
+vjepa2/
+runs/
+logs/
+vjepa_ret/
+__pycache__/
+*.png
+*.jpg
+*.npz

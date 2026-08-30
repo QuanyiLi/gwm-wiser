@@ -1,0 +1,140 @@
+{
+  "cameras": {
+    "external_cam": {
+      "world_from_cam": [
+        [
+          0.9440977481925571,
+          -0.15157410416961964,
+          0.29275370672789136,
+          0.23118404543482962
+        ],
+        [
+          -0.3295216360104477,
+          -0.46013493271764566,
+          0.8244339482905382,
+          -1.0489090664178462
+        ],
+        [
+          0.009743369988918777,
+          -0.8748149145036936,
+          -0.48435930062625404,
+          0.8089020224876349
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "position": [
+        0.23118404543482962,
+        -1.0489090664178462,
+        0.8089020224876349
+      ],
+      "convention": "CV-axis cam2world (x right, y down, z forward), robot base frame"
+    }
+  },
+  "quality": {
+    "external_cam": {
+      "n_placements": 6,
+      "n_corners": 336,
+      "reproj_rms_px": 1.0841685362297169,
+      "reproj_p95_px": 2.326475577897588,
+      "pose_spread_m": 0.03890612051621697,
+      "pose_spread_deg": 1.7232440244689475,
+      "verdict": "PASS",
+      "placements": [
+        "shot_00",
+        "shot_01",
+        "shot_02",
+        "shot_03",
+        "shot_04",
+        "shot_05"
+      ]
+    }
+  },
+  "verdict": "PASS",
+  "max_reproj_px": 2.0,
+  "shots_dir": "droid/gwm_hardware/runs/extcal_0821",
+  "per_shot": [
+    {
+      "shot": "shot_00",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.379,
+      "external_corners": 60,
+      "external_rms_px": 0.487,
+      "board_in_base": [
+        0.3697,
+        -0.1676,
+        0.0684
+      ]
+    },
+    {
+      "shot": "shot_01",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.379,
+      "external_corners": 47,
+      "external_rms_px": 0.537,
+      "board_in_base": [
+        0.3785,
+        -0.0922,
+        0.0633
+      ]
+    },
+    {
+      "shot": "shot_02",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.374,
+      "external_corners": 65,
+      "external_rms_px": 0.402,
+      "board_in_base": [
+        0.3611,
+        -0.2442,
+        0.0742
+      ]
+    },
+    {
+      "shot": "shot_03",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.401,
+      "external_corners": 64,
+      "external_rms_px": 0.431,
+      "board_in_base": [
+        0.5727,
+        0.2231,
+        0.0645
+      ]
+    },
+    {
+      "shot": "shot_04",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.391,
+      "external_corners": 56,
+      "external_rms_px": 0.535,
+      "board_in_base": [
+        0.6703,
+        0.1601,
+        0.0653
+      ]
+    },
+    {
+      "shot": "shot_05",
+      "cam": "external_cam",
+      "wrist_corners": 70,
+      "wrist_rms_px": 0.409,
+      "external_corners": 44,
+      "external_rms_px": 0.491,
+      "board_in_base": [
+        0.6514,
+        0.2781,
+        0.0717
+      ]
+    }
+  ]
+}
