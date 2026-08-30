@@ -1,8 +1,0 @@
-__pycache__/
-experiments/
-captures/
-assets/ycb/
-*.png
-*.mp4
-*.h5
-*.npz
