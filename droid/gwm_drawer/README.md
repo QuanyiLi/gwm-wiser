@@ -49,7 +49,7 @@ phrasings) on both external cameras, fuses cameras by the per-candidate mean
 and averages each task's phrasings into a 6x6 matrix; the selection for a
 task is the argmax of its row.
 
-## Results (2026-08-24, ckpt 0810_gwm step 34000)
+## Results (ckpt 0810_gwm step 34000)
 
 Ensembled fused matrix (rows = tasks, columns = candidates):
 

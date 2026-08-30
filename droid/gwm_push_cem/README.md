@@ -116,18 +116,11 @@ Three things hold across all 300 rollouts:
   separately** as well as after fusing them, with margins of +0.030 / +0.047 /
   +0.037 fused.
 
-Two things are worth knowing about what the search does *not* do:
-
-- **The blue cube is the one that grazes.** It is touched 58 times but carried
-  only 42, against 47/47 for red — its endpoints sit slightly off the line
-  through the cube, so the knuckles clip it where the blade would have carried it.
-- **The score map's global argmax is not where the search ends up, and that is
-  why the search works.** For the red prompt the argmax sits at (0.70, 0.18),
-  18 cm from the red cube, and a slide to it would miss entirely. CEM starts at
-  the home position and converges to a nearer local optimum at (0.665, 0.081),
-  which does reach the cube. Read-off matters for the same reason: taking a draw
-  from the converged Gaussian instead of its best sample gives 19 / 46 / 33
-  instead of 47 / 64 / 42.
+Per prompt, the fraction of touches that are grazes rather than blade pushes:
+red 0/47, green 2/66, blue 16/58. The score map's global argmax for the red
+prompt is at (0.70, 0.18), 18 cm from the red cube; the CEM runs converge to
+(0.665, 0.081). Read-off `sample` gives 19 / 46 / 33 pushed against
+47 / 64 / 42 for `winner`.
 
 ![where the cubes end up](results/fig_cube_final_winner.png)
 

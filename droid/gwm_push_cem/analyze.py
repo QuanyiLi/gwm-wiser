@@ -19,9 +19,7 @@ from config import CUBES, DIRECTIONS, HOME_XY, PROMPTS, RESULTS
 # Two thresholds, because the outcomes are bimodal. The closed hand is 2.4 cm
 # wide at the fingertips but its knuckles sit at table + 4.7 cm, exactly the
 # height of a cube top, and are much wider -- so a sweep that passes 6-8 cm
-# clear of a cube can still clip it and nudge it a centimetre. Those grazes are
-# not what the prompt asked for, and counting them as successes inflates the
-# short cube distances, where the crowded cubes are brushed constantly.
+# clear of a cube can still clip it and nudge it a centimetre.
 MOVED_M = 0.01          # touched at all, grazes included
 PUSHED_M = 0.03         # carried by the blade, which is what the prompt asked for
 ON_TARGET_DEG = 45.0    # displacement within this of the asked-for direction
