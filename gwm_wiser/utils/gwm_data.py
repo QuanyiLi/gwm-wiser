@@ -105,6 +105,48 @@ def compute_embeddings_sequentially(embedder, batch_dict, test=False):
     return current_image_embeddings, trajectory_embeddings
 
 
+def compute_pooled_targets(embedder, batch_dict):
+    """
+    z-direct training targets.
+
+    For every sample: the condition latent (1620, 4096) of the current
+    segmentation clip exactly as for the GWM, and the L2-normalised pooled
+    embedding (4096,) of the REAL future clip obtained with the frozen readout:
+    encode_video_to_latent -> embed_video_latent -> pooling_video_latent, i.e.
+    the same three calls RetrievalBasedPlanner.get_video_embedding makes at
+    inference (default system instruction, no text).
+
+    Returns:
+        (current_image_embeddings (B, 1620, 4096), pooled_targets (B, 4096))
+    """
+    assert "qwen_trajectory_gt" in batch_dict and "qwen_current_inputs" in batch_dict
+    traj_inputs_batch = batch_dict["qwen_trajectory_gt"]
+    curr_inputs_batch = batch_dict["qwen_current_inputs"]
+    batch_size = traj_inputs_batch["input_ids"].shape[0]
+    device = embedder.model.device
+
+    cur_emb_list, target_list = [], []
+    with torch.no_grad():
+        for i in range(batch_size):
+            t_in = {
+                k: v[i].unsqueeze(0).to(device)
+                for k, v in traj_inputs_batch.items()
+                if isinstance(v, torch.Tensor)
+            }
+            c_in = {
+                k: v[i].unsqueeze(0).to(device)
+                for k, v in curr_inputs_batch.items()
+                if isinstance(v, torch.Tensor)
+            }
+            cur_emb_list.append(encode_trajectory(embedder, c_in))  # (1620, 4096)
+
+            video_latent, deepstack = embedder.encode_video_to_latent(**t_in)
+            outputs = embedder.embed_video_latent(video_latent, deepstack, **t_in)
+            target_list.append(embedder.pooling_video_latent(outputs)[0])  # (4096,)
+
+    return torch.stack(cur_emb_list), torch.stack(target_list)
+
+
 def tensor_images_to_pil(images: torch.Tensor) -> list:
     """
     Convert tensor images to PIL format for embedder.

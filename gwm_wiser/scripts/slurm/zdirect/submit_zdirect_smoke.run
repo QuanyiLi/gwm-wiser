@@ -1,0 +1,59 @@
+#!/bin/bash -l
+#SBATCH --job-name=zdirect_smoke
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=debug
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:2
+#SBATCH --time=00:59:00
+#SBATCH --exclude=kh044,kh045,kh082,kh083
+# Free smoke test of the whole z-direct pipeline on 2 GPUs:
+#   (1) 12 optimiser steps of DDP training with grad accumulation (mse), 4 with cos
+#   (2) zdirect_check.py: target == planner path, checkpoint loads into ZDirectPlanner
+#   (3) gwm_eval.py --zdirect on config_0/train with the smoke checkpoint
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/zdirect/common.sh
+trap cleanup_job_tmp EXIT
+SMOKE_OUT=$OUT_ROOT/smoke
+SKIP_TRAIN=${SKIP_TRAIN:-0}   # SKIP_TRAIN=1: re-run only stages (2) and (3) on the existing smoke checkpoint
+[ "$SKIP_TRAIN" = 1 ] || rm -rf "$SMOKE_OUT"; mkdir -p "$SMOKE_OUT"
+echo "== $(date) smoke on $(hostname) gpus=$CUDA_VISIBLE_DEVICES"
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | head -2
+
+COMMON_ARGS="--dataset.repo_id=unused --dataset.root=$DATA_ROOT --output_dir=$SMOKE_OUT \
+  --embedder_model_path=$EMBEDDER --wandb.enable=false --batch_size=32 --grad_accum_steps=3 \
+  --num_workers=8 --total_learning_epoches=3 --eval_subset_size=128 --log_every_steps=2 \
+  --eval_every_steps=6 --full_eval_at_end=false"
+RC=0
+if [ "$SKIP_TRAIN" != 1 ]; then
+echo "== $(date) (1a) train smoke, loss=mse, 12 steps"
+torchrun --nproc_per_node=2 --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
+  "$REPO/gwm_wiser/scripts/zdirect_train.py" $COMMON_ARGS --job_name=smoke_mse --zdirect_loss=mse --max_steps=12 \
+  > "$SMOKE_OUT/train_mse.log" 2>&1 || RC=$?
+echo "exit=$RC"; grep -E "step |eval subset|Saved|Effective|Error|error|Traceback" "$SMOKE_OUT/train_mse.log" | tail -25
+echo "== $(date) (1b) train smoke, loss=cos, 4 steps"
+torchrun --nproc_per_node=2 --rdzv_id=${SLURM_JOB_ID}b --rdzv_backend=c10d --rdzv_endpoint=$MASTER_ADDR:$((MASTER_PORT + 1)) \
+  "$REPO/gwm_wiser/scripts/zdirect_train.py" $COMMON_ARGS --job_name=smoke_cos --zdirect_loss=cos --max_steps=4 \
+  > "$SMOKE_OUT/train_cos.log" 2>&1 || RC=$?
+echo "exit=$RC"; grep -E "step |eval subset|Saved|Error|error|Traceback" "$SMOKE_OUT/train_cos.log" | tail -12
+fi
+
+echo "== $(date) (2) zdirect_check.py"
+CUDA_VISIBLE_DEVICES=0 python -u "$REPO/gwm_wiser/scripts/zdirect_check.py" --dataset_root "$DATA_ROOT" \
+  --embedder_model_path "$EMBEDDER" --ckpt "$SMOKE_OUT/smoke_mse/last/checkpoint.pt" --n 4 \
+  > "$SMOKE_OUT/check.log" 2>&1 || RC=$?
+echo "exit=$RC"; grep -E "CHECK|window|target|PASSED|Error|error|Traceback|loaded" "$SMOKE_OUT/check.log" | tail -20
+
+echo "== $(date) (3) gwm_eval.py --zdirect config_0 train"
+mkdir -p "$RET_ROOT/.cwd" "$SMOKE_OUT/eval"; cd "$RET_ROOT/.cwd"
+CUDA_VISIBLE_DEVICES=0 python -u "$EVAL_PY" --zdirect --gwm_ckpt_path "$SMOKE_OUT/smoke_mse/last/checkpoint.pt" \
+  --embedder_model_path "$EMBEDDER" --result_dir "$SMOKE_OUT/eval" --start_subset 0 --end_subset 1 \
+  --split train --eval_rounds 1 > "$SMOKE_OUT/eval.log" 2>&1 &
+wait_with_watchdog $! "$SMOKE_OUT/eval.log" 900 || RC=$?
+echo "exit=$RC"; grep -E "Performance|success|Error|error|Traceback|loaded" "$SMOKE_OUT/eval.log" | tail -12
+f=$SMOKE_OUT/eval/config_0_train/episode_metrics.json; [ -f "$f" ] && summarize_metrics "$f"
+echo "== $(date) smoke done exit=$RC"
+exit $RC

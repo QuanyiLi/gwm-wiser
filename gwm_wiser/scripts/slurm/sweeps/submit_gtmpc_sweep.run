@@ -1,0 +1,71 @@
+#!/bin/bash -l
+#SBATCH --job-name=gtmpc_sweep
+#SBATCH --output=/work/vita/lanfeng/task_logs/%A_%a.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:1
+#SBATCH --time=01:00:00
+#SBATCH --array=0-63%4
+#SBATCH --exclude=kh044,kh045,kh082,kh083
+# GT-MPC (oracle) planning-hyper-parameter sweeps on the WISER *train* split.
+# 16 runs x 4 shards of 6 configs = 64 single-GPU array tasks (%4 = one node's
+# worth of GPUs at a time). Each run is one (experiment, value) folder under
+# $RET_ROOT, mirroring the February test-split layout:
+#   gt_based_replanning/<N>   replan interval N in {10,15,20,25,30}   (H=60, K=6)
+#   gwm_planning_horizon/<H>  prediction horizon H in {30,...,90}     (N=20, K=6)
+#   gwm_subsample_exp/<K>     keyframe count K in {2,4,6,8,10}        (N=20, H=60)
+# The default point 20/60/6 is therefore run three times (one per folder);
+# the eval pipeline is deterministic so the three copies must agree.
+# SPLIT=both re-runs test as well (env override).
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/sweeps/common.sh
+trap cleanup_job_tmp EXIT
+SPLIT=${SPLIT:-train}
+CONFIGS_PER_SHARD=${CONFIGS_PER_SHARD:-6}
+SHARDS=$((24 / CONFIGS_PER_SHARD))
+
+# exp value N H K
+RUNS=(
+  "gt_based_replanning 10 10 60 6"
+  "gt_based_replanning 15 15 60 6"
+  "gt_based_replanning 20 20 60 6"
+  "gt_based_replanning 25 25 60 6"
+  "gt_based_replanning 30 30 60 6"
+  "gwm_planning_horizon 30 20 30 6"
+  "gwm_planning_horizon 45 20 45 6"
+  "gwm_planning_horizon 60 20 60 6"
+  "gwm_planning_horizon 65 20 65 6"
+  "gwm_planning_horizon 75 20 75 6"
+  "gwm_planning_horizon 90 20 90 6"
+  "gwm_subsample_exp 2 20 60 2"
+  "gwm_subsample_exp 4 20 60 4"
+  "gwm_subsample_exp 6 20 60 6"
+  "gwm_subsample_exp 8 20 60 8"
+  "gwm_subsample_exp 10 20 60 10"
+)
+NTASKS=$(( ${#RUNS[@]} * SHARDS ))
+if [ "$SLURM_ARRAY_TASK_ID" -ge "$NTASKS" ]; then echo "task $SLURM_ARRAY_TASK_ID >= $NTASKS, nothing to do"; exit 0; fi
+RUN_IDX=$((SLURM_ARRAY_TASK_ID / SHARDS))
+SHARD=$((SLURM_ARRAY_TASK_ID % SHARDS))
+read -r EXP VALUE N H K <<< "${RUNS[$RUN_IDX]}"
+START=$((SHARD * CONFIGS_PER_SHARD))
+END=$((START + CONFIGS_PER_SHARD))
+RESULT_DIR=$RET_ROOT/$EXP/$VALUE
+mkdir -p "$RESULT_DIR" "$RET_ROOT/logs"
+TAG=${EXP}_${VALUE}_${SPLIT}_${START}_${END}_job${SLURM_JOB_ID}
+echo "== $(date) $TAG node=$(hostname) N=$N H=$H K=$K configs [$START,$END) split=$SPLIT"
+
+RC=0
+if [ "$SPLIT" = both ]; then
+    for s in train test; do
+        run_eval "$RESULT_DIR" "$s" "$START" "$END" "$N" "$H" "$K" "$RET_ROOT/logs/${TAG}_${s}.log" || RC=$?
+    done
+else
+    run_eval "$RESULT_DIR" "$SPLIT" "$START" "$END" "$N" "$H" "$K" "$RET_ROOT/logs/${TAG}.log" || RC=$?
+fi
+echo "== $(date) done exit=$RC"
+exit $RC

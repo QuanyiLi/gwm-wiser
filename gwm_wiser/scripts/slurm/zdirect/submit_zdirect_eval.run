@@ -1,0 +1,50 @@
+#!/bin/bash -l
+#SBATCH --job-name=zdirect_eval
+#SBATCH --output=/work/vita/lanfeng/task_logs/%A_%a.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:1
+#SBATCH --time=01:30:00
+#SBATCH --array=0-11%4
+#SBATCH --exclude=kh044,kh045,kh082,kh083
+# Planning evaluation of a z-direct checkpoint with the paper's WISER protocol
+# (k=12, replan 20, H=60, K=6, 24 configs x 12 episodes) on train AND test:
+# 12 single-GPU tasks = 2 splits x 6 shards of 4 configs.
+#   LOSS=mse sbatch submit_zdirect_eval.run   (CKPT overrides the checkpoint path)
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/zdirect/common.sh
+trap cleanup_job_tmp EXIT
+LOSS=${LOSS:?set LOSS=mse|cos}
+JOB_NAME=${JOB_NAME:-zdirect_${LOSS}}
+CKPT=${CKPT:-$OUT_ROOT/$JOB_NAME/last/checkpoint.pt}
+RESULT_DIR=${RESULT_DIR:-$ZRET_ROOT/$JOB_NAME}
+CONFIGS_PER_SHARD=4
+SHARDS=$((24 / CONFIGS_PER_SHARD))
+SPLITS=(train test)
+SPLIT=${SPLITS[$((SLURM_ARRAY_TASK_ID / SHARDS))]}
+START=$(( (SLURM_ARRAY_TASK_ID % SHARDS) * CONFIGS_PER_SHARD ))
+END=$((START + CONFIGS_PER_SHARD))
+mkdir -p "$RESULT_DIR" "$RET_ROOT/.cwd" "$ZRET_ROOT/logs"
+TAG=${JOB_NAME}_${SPLIT}_${START}_${END}_job${SLURM_JOB_ID}
+echo "== $(date) $TAG node=$(hostname) ckpt=$CKPT configs [$START,$END) split=$SPLIT"
+cat > "$RESULT_DIR/run_config_${START}_${END}_${SPLIT}.json" <<JSON
+{"script": "gwm_wiser/scripts/gwm_eval.py --zdirect", "planner": "ZDirectPlanner", "gwm_ckpt_path": "$CKPT",
+ "embedder_model_path": "$EMBEDDER", "replan_horizon": 20, "num_future_frames": 60, "video_frame_subsample": 6,
+ "k": 12, "num_env": 12, "eval_rounds": 1, "split": "$SPLIT", "start_subset": $START, "end_subset": $END,
+ "slurm_job_id": "$SLURM_JOB_ID", "hostname": "$(hostname)", "git_commit": "$(git -C $REPO rev-parse HEAD)", "date": "$(date -Is)"}
+JSON
+cd "$RET_ROOT/.cwd"
+python -u "$EVAL_PY" --zdirect --gwm_ckpt_path "$CKPT" --embedder_model_path "$EMBEDDER" \
+  --result_dir "$RESULT_DIR" --start_subset $START --end_subset $END --split "$SPLIT" --eval_rounds 1 \
+  > "$ZRET_ROOT/logs/${TAG}.log" 2>&1 &
+wait_with_watchdog $! "$ZRET_ROOT/logs/${TAG}.log" 1800; RC=$?
+echo "== $(date) eval exit=$RC"
+for i in $(seq $START $((END - 1))); do
+  f=$RESULT_DIR/config_${i}_${SPLIT}/episode_metrics.json
+  if [ -f "$f" ]; then printf "config_%s_%s:" "$i" "$SPLIT"; summarize_metrics "$f"; else echo "config_${i}_${SPLIT}: MISSING"; fi
+done
+exit $RC

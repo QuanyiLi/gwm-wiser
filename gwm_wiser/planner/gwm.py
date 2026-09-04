@@ -90,10 +90,7 @@ class GWMBasedPlanner(RetrievalBasedPlanner):
             )
 
         # Initialize GWM model
-        self.gwm_model = GroundedWorldModel(
-            config=config,
-            output_dim=4096,
-        )
+        self.gwm_model = self._build_gwm(config)
 
         # load compiled models
         model_state_dict = {}
@@ -117,6 +114,9 @@ class GWMBasedPlanner(RetrievalBasedPlanner):
             print(f"  Test cosine similarity: {checkpoint['test_cos_sim']:.4f}")
         if "test_mse" in checkpoint:
             print(f"  Test MSE: {checkpoint['test_mse']:.4f}")
+
+    def _build_gwm(self, config):
+        return GroundedWorldModel(config=config, output_dim=4096)
 
     def get_video_embedding(self, traj: RetrievedTrajectory, current_frame_image):
         # only segmentation image should be available, which is also available during the test time

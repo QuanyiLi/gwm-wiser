@@ -99,3 +99,7 @@ third_party
 /droid/gwm_integrate_doc/proposals/
 /droid/gwm_integrate_doc/overlays/
 /droid/droid-sim-evals/
+
+# advisor-review experiment outputs (never committed)
+/gwm_wiser_exp_ret/
+/gwm_wiser_zdirect_ret/

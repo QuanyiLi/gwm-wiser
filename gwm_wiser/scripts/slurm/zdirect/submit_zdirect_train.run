@@ -1,0 +1,42 @@
+#!/bin/bash -l
+#SBATCH --job-name=zdirect_train
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=64
+#SBATCH --gpus-per-node=4
+#SBATCH --time=36:00:00
+#SBATCH --exclude=kh044,kh045,kh082,kh083
+# z-direct training, one node x 4 H100, global batch 32 x 4 x 3 (accum) = 384.
+#   LOSS=mse sbatch submit_zdirect_train.run      LOSS=cos sbatch submit_zdirect_train.run
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/zdirect/common.sh
+trap cleanup_job_tmp EXIT
+LOSS=${LOSS:?set LOSS=mse|cos}
+EPOCHS=${EPOCHS:-3}
+# GPUS x ACCUM x 32 = 384 (the GWM global batch) whatever the GPU count; to run on a
+# partially free node: GPUS=2 sbatch --gpus-per-node=2 --cpus-per-task=32 --export=ALL,LOSS=mse,GPUS=2 ...
+GPUS=${GPUS:-4}
+ACCUM=$((12 / GPUS))
+[ $((GPUS * ACCUM)) -eq 12 ] || { echo "GPUS=$GPUS must divide 12" >&2; exit 1; }
+JOB_NAME=${JOB_NAME:-zdirect_${LOSS}}
+EXTRA_ARGS=${EXTRA_ARGS:-}
+mkdir -p "$OUT_ROOT"
+echo "== $(date) $JOB_NAME on $(hostname) loss=$LOSS epochs=$EPOCHS gpus=$GPUS accum=$ACCUM out=$OUT_ROOT/$JOB_NAME commit=$(git -C $REPO rev-parse --short HEAD)"
+srun torchrun --nnodes=1 --nproc_per_node=$GPUS --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d \
+  --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
+  "$REPO/gwm_wiser/scripts/zdirect_train.py" \
+  --dataset.repo_id=unused --dataset.root="$DATA_ROOT" \
+  --output_dir="$OUT_ROOT" --job_name="$JOB_NAME" \
+  --embedder_model_path="$EMBEDDER" \
+  --zdirect_loss="$LOSS" --total_learning_epoches="$EPOCHS" \
+  --batch_size=32 --grad_accum_steps=$ACCUM --num_workers=8 \
+  --log_every_steps=20 --eval_every_steps=100 --eval_subset_size=1024 --full_eval_at_end=true \
+  --wandb.enable=true --wandb.project=gwm_zdirect \
+  $EXTRA_ARGS
+RC=$?
+echo "== $(date) train exit=$RC"
+exit $RC

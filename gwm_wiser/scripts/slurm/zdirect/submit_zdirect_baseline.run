@@ -1,0 +1,20 @@
+#!/bin/bash -l
+#SBATCH --job-name=zdirect_baseline
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=debug
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:1
+#SBATCH --time=00:40:00
+#SBATCH --exclude=kh044,kh045,kh082,kh083
+# Constant / random / condition-clip reference cosines on the same 1024-window
+# held-out subset the training curve uses (free debug QoS).
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/zdirect/common.sh
+trap cleanup_job_tmp EXIT
+mkdir -p "$OUT_ROOT"
+python -u "$REPO/gwm_wiser/scripts/zdirect_baseline.py" --dataset_root "$DATA_ROOT" \
+  --embedder_model_path "$EMBEDDER" --eval_subset_size 1024 --out "$OUT_ROOT/heldout_subset_baselines.json" 2>&1 | grep -v "it/s\]"

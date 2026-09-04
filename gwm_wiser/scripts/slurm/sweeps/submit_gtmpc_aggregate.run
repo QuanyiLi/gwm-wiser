@@ -1,0 +1,25 @@
+#!/bin/bash -l
+#SBATCH --job-name=gtmpc_aggregate
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=mig24gb
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:1
+#SBATCH --mem=23G
+#SBATCH --time=00:30:00
+# Official aggregation (gwm_eval.py --aggregate_only -> final_results_<split>.json)
+# for every <exp>/<value> folder, then a compact summary table. Submit with
+# --dependency=afterany:<sweep array job id>.
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/sweeps/common.sh
+trap cleanup_job_tmp EXIT
+cd "$RET_ROOT"
+for d in gt_based_replanning/* gwm_planning_horizon/* gwm_subsample_exp/*; do
+    [ -d "$d" ] || continue
+    echo "== aggregate $d"
+    python "$EVAL_PY" --aggregate_only --result_dir "$RET_ROOT/$d" 2>&1 | grep -v "^$"
+done
+python "$REPO/gwm_wiser/scripts/slurm/sweeps/summarize.py" "$RET_ROOT"

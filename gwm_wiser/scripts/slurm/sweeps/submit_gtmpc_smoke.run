@@ -1,0 +1,29 @@
+#!/bin/bash -l
+#SBATCH --job-name=gtmpc_smoke
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=h100
+#SBATCH --account=vita
+#SBATCH --qos=debug
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gres=gpu:1
+#SBATCH --time=00:55:00
+#SBATCH --exclude=kh044,kh045,kh082,kh083
+# Free (--qos=debug) smoke test before the paid sweep array: config_0 on the
+# train split at the default point 20/60/6 (must reproduce the February
+# success_at_end 0.75) and at the three most unusual sweep settings.
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/sweeps/common.sh
+trap cleanup_job_tmp EXIT
+SMOKE=$RET_ROOT/.smoke
+mkdir -p "$SMOKE"
+echo "== $(date) smoke on $(hostname), dataset=$DATASET"
+ls "$DATASET" | head -3
+RC=0
+for setting in "20 60 6" "20 90 6" "20 60 2" "20 60 10"; do
+    read -r N H K <<< "$setting"
+    run_eval "$SMOKE/N${N}_H${H}_K${K}" train 0 1 "$N" "$H" "$K" "$SMOKE/N${N}_H${H}_K${K}.log" || RC=$?
+done
+echo "== $(date) smoke done exit=$RC"
+exit $RC

@@ -1,0 +1,38 @@
+#!/bin/bash -l
+#SBATCH --job-name=zdirect_aggregate
+#SBATCH --output=/work/vita/lanfeng/task_logs/%j.log
+#SBATCH --partition=mig24gb
+#SBATCH --account=vita
+#SBATCH --qos=normal
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:1
+#SBATCH --mem=23G
+#SBATCH --time=00:30:00
+# Official aggregation (gwm_eval.py --aggregate_only) for every z-direct planning
+# result folder, then a train/test summary. Submit with
+# --dependency=afterany:<eval array job ids>.
+set -uo pipefail
+source /work/vita/lanfeng/vlas/gwm-wiser/gwm_wiser/scripts/slurm/zdirect/common.sh
+trap cleanup_job_tmp EXIT
+for d in "$ZRET_ROOT"/zdirect_*/; do
+    [ -d "$d" ] || continue
+    echo "== aggregate $d"
+    python "$EVAL_PY" --aggregate_only --result_dir "$d" 2>&1 | grep -v "^$"
+done
+python - "$ZRET_ROOT" <<'PY'
+import glob, json, os, sys
+root = sys.argv[1]
+print("| run | split | n_cfg | grasp | reach | success | min | max |")
+print("|---|---|---|---|---|---|---|---|")
+for run in sorted(glob.glob(os.path.join(root, "zdirect_*"))):
+    for split in ("train", "test"):
+        per = [json.load(open(f))["summary"] for f in sorted(glob.glob(os.path.join(run, f"config_*_{split}", "episode_metrics.json")))]
+        if not per:
+            continue
+        m = lambda k: sum(p[k] for p in per) / len(per)
+        s = [p["success_at_end_mean"] for p in per]
+        flag = "" if len(per) == 24 else " (INCOMPLETE)"
+        print(f"| {os.path.basename(run)} | {split} | {len(per)}{flag} | {m('is_grasped_mean'):.3f} | {m('tcp_near_goal_mean'):.3f} | {m('success_at_end_mean'):.3f} | {min(s):.3f} | {max(s):.3f} |")
+PY

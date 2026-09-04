@@ -106,6 +106,12 @@ def parse_args():
         help="Use retrieval-based planner (ground-truth) instead of GWM",
     )
     parser.add_argument(
+        "--zdirect",
+        action="store_true",
+        help="Checkpoint is a z-direct (PooledGWM) predictor: score with the "
+        "predicted pooled vector directly, no 8B readout on candidates",
+    )
+    parser.add_argument(
         "--dataset_root",
         type=str,
         default=None,
@@ -172,7 +178,22 @@ def main():
                 PROJECT_ROOT, "gwm_skills/config_0_train_xarm6/lerobot_data"
             )
 
-        if args.action_conditioned:
+        if args.zdirect:
+            from gwm_wiser.planner.zdirect import ZDirectPlanner
+
+            planner = ZDirectPlanner(
+                dataset_root=dataset_root,
+                embedder=embedder,
+                verbose=args.verbose,
+                replan_horizon=args.replan_horizon,
+                video_frame_subsample=args.video_frame_subsample,
+                num_future_frames=args.num_future_frames,
+                gwm_checkpoint_path=args.gwm_ckpt_path,
+                device="cuda",
+                dtype=torch.bfloat16,
+                robot=args.robot,
+            )
+        elif args.action_conditioned:
             planner = ActionConditionedGWMPlanner(
                 dataset_root=dataset_root,
                 embedder=embedder,

@@ -102,6 +102,27 @@ class GroundedWorldModel(nn.Module):
         return output
 
 
+class PooledGWM(GroundedWorldModel):
+    """
+    "z-direct" predictor: identical input projection / backbone / output
+    projection sizes as GroundedWorldModel (same 747M parameters), but the
+    backbone output is mean-pooled over the 1620 tokens before the linear
+    head, so the model predicts the pooled 4096-d clip embedding directly
+    instead of the token-level latent.
+
+    Output: (B, 4096), un-normalised (the loss / planner normalise as needed).
+    """
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        bs, seq_len, _ = x.shape
+        tokens = self.input_proj(x)
+        assert seq_len == self.image_seq_len
+        positions = self.positions.unsqueeze(0).expand(bs, -1, -1)
+        output, _ = self.backbone(tokens, positions)  # (B, 1620, dim)
+        pooled = output.mean(dim=1)  # (B, dim)
+        return self.output_proj(pooled)  # (B, 4096)
+
+
 class ActionConditionedGWM(nn.Module):
     """
     Action-Conditioned Grounded World Model.
