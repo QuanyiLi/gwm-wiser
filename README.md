@@ -1,4 +1,4 @@
-# Grounded World Model for Semantically Generalizable Planning
+# Grounded World Model: Latent Planning with Language Goals
 
 [Paper](https://arxiv.org/abs/2604.11751) · [Website](https://quanyili.github.io/gwm-wiser/) · [WISER checkpoint](https://huggingface.co/Shady0057/GWM) · [DROID checkpoint](https://huggingface.co/Shady0057/GWM/tree/main/real_data) · [WISER dataset](https://huggingface.co/datasets/Shady0057/WISER)
 
@@ -67,8 +67,8 @@ This is a source repository. Large datasets, checkpoints, simulator assets and g
 If you find this work useful, please cite our paper:
 
 ```bibtex
-@misc{li2026groundedworldmodelsemantically,
-      title={Grounded World Model for Semantically Generalizable Planning}, 
+@misc{li2026groundedworldmodellatentplanning,
+      title={Grounded World Model: Latent Planning with Language Goals},
       author={Quanyi Li and Lan Feng and Haonan Zhang and Wuyang Li and Letian Wang and Alexandre Alahi and Harold Soh},
       year={2026},
       eprint={2604.11751},
