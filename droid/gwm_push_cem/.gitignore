@@ -5,4 +5,5 @@ __pycache__/
 scene9_0.usd
 *.mp4
 *.png
+!docs/fig_cube_final_winner.png
 *.zip

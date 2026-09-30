@@ -15,6 +15,7 @@ change instead of a model rewrite.
 import torch
 
 from gwm_wiser.models.gwm import GroundedWorldModel
+from gwm_wiser.utils.checkpoint import load_gwm_checkpoint
 
 
 class VariableLenGWM(GroundedWorldModel):
@@ -83,7 +84,7 @@ def export_canonical(model, path, config, step: int, metadata: dict = None):
 
 def load_canonical_like_planner(path):
     """Replicate GWMBasedPlanner's checkpoint loading (planner/gwm.py)."""
-    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    checkpoint = load_gwm_checkpoint(path)
     config = checkpoint.get("config")
     if config is None:
         raise ValueError(f"canonical checkpoint missing 'config': {path}")

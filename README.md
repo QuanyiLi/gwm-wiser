@@ -29,7 +29,7 @@ This repository contains the core GWM implementation, the **WISER testbed**, rea
 Use Python 3.11+ and a compatible GPU environment. From the repository root:
 
 ```bash
-pip install -e '.[gwm+wiser]'
+pip install -e '.[gwm-wiser]'
 conda install ffmpeg==6.1.1
 ```
 
@@ -48,6 +48,8 @@ hf download Shady0057/GWM checkpoint.pt --local-dir gwm_ckpt
 
 The main entrypoints are [gwm_train.py](gwm_wiser/scripts/gwm_train.py) and [gwm_eval.py](gwm_wiser/scripts/gwm_eval.py). For concrete configurations, start with [submit_gwm.run](gwm_wiser/scripts/slurm/submit_gwm.run) and [submit_gwm_eval.run](gwm_wiser/scripts/slurm/submit_gwm_eval.run). Set the dataset, GWM checkpoint and Qwen3-VL-Embedding paths for your machine before running. The same directory contains collection and LeRobot baseline recipes.
 
+Before running a planner, follow the [checkpoint loading check](docs/checkpoints.md). The loader supports the legacy configuration class stored in the published WISER checkpoint.
+
 ## Real-data and robotics setup
 
 The [DROID checkpoint](https://huggingface.co/Shady0057/GWM/tree/main/real_data), trained on MolmoAct2-DROID and MolmoBot, is available for the simulation and hardware workflows:
@@ -61,6 +63,10 @@ Use `gwm_ckpt/real_data/checkpoint.pt` as the GWM checkpoint. The companion `Qwe
 Real-data preparation and training recipes are in [real_data_train/slurm](real_data_train/slurm). The robotics stack uses separate environments; start with the TiPToP [installation](droid/tiptop/docs/installation.md) and [simulation](droid/tiptop/docs/simulation.md) guides, then the relevant code-map entry above. Launch scripts contain machine-specific paths and service settings that need adapting.
 
 This is a source repository. Large datasets, checkpoints, simulator assets and generated robot assets are separate. The upstream DROID simulator, FoundationStereo, cuRobo/cuTAMP, V-JEPA 2 source and some VLA baseline forks must also be installed separately. Our drivers expect the simulator checkout at `droid/droid-sim-evals/` and V-JEPA 2 at `droid/v-jepa/vjepa2/`. TiPToP and M2T2 source are included under [droid/tiptop](droid/tiptop) and [droid/M2T2](droid/M2T2).
+
+## Licenses
+
+Our code is released under the [MIT license](LICENSE). Bundled third-party components retain their own licenses, including [TiPToP](droid/tiptop/LICENSE) and [M2T2](droid/M2T2/LICENSE). See the respective Hugging Face cards for checkpoint and dataset licenses.
 
 ## Citation
 

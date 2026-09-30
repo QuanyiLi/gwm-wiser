@@ -13,6 +13,7 @@ from gwm_wiser.planner.retrieval import (
     RetrievalBasedPlanner,
     RetrievedTrajectory,
 )
+from gwm_wiser.utils.checkpoint import load_gwm_checkpoint
 from gwm_wiser.utils.gwm_data import encode_trajectory, tensor_images_to_pil
 
 
@@ -76,9 +77,7 @@ class GWMBasedPlanner(RetrievalBasedPlanner):
 
         # Load GWM model
         print(f"Loading GWM model from {gwm_checkpoint_path}...")
-        checkpoint = torch.load(
-            gwm_checkpoint_path, map_location="cpu", weights_only=False
-        )
+        checkpoint = load_gwm_checkpoint(gwm_checkpoint_path)
 
         # Get config from checkpoint
         config = checkpoint.get("config")
@@ -191,9 +190,7 @@ class ActionConditionedGWMPlanner(RetrievalBasedPlanner):
 
         # Load ActionConditionedGWM model
         print(f"Loading Action-Conditioned GWM model from {gwm_checkpoint_path}...")
-        checkpoint = torch.load(
-            gwm_checkpoint_path, map_location="cpu", weights_only=False
-        )
+        checkpoint = load_gwm_checkpoint(gwm_checkpoint_path)
 
         config = checkpoint.get("config")
         if config is None:

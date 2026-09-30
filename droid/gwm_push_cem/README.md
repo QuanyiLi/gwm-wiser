@@ -122,7 +122,7 @@ prompt is at (0.70, 0.18), 18 cm from the red cube; the CEM runs converge to
 (0.665, 0.081). Read-off `sample` gives 19 / 46 / 33 pushed against
 47 / 64 / 42 for `winner`.
 
-![where the cubes end up](results/fig_cube_final_winner.png)
+![where the cubes end up](docs/fig_cube_final_winner.png)
 
 `results/fig_cube_zoom_winner.png` is the same data per prompt at cube scale,
 `results/fig_endpoints_winner.png` shows the endpoints the search chose, and
