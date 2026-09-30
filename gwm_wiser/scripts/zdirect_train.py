@@ -1,5 +1,5 @@
 """
-z-direct training (advisor question C012): predict the pooled 4096-d clip
+z-direct training: predict the pooled 4096-d clip
 embedding z_t = B(p_t) directly instead of the 1620 x 4096 token latent.
 
 Same corpus (merged_train / merged_test), condition clip, augmentation,

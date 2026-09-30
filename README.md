@@ -1,249 +1,66 @@
 # Grounded World Model for Semantically Generalizable Planning
 
-[[arXiv]](https://arxiv.org/abs/2604.11751) [[checkpoint]](https://huggingface.co/Shady0057/GWM) [[dataset]](https://huggingface.co/datasets/Shady0057/WISER)
+[Paper](https://arxiv.org/abs/2604.11751) · [Website](https://quanyili.github.io/gwm-wiser/) · [WISER checkpoint](https://huggingface.co/Shady0057/GWM) · [DROID checkpoint](https://huggingface.co/Shady0057/GWM/tree/main/real_data) · [WISER dataset](https://huggingface.co/datasets/Shady0057/WISER)
 
-![teaser](docs/teaser.png)
-This repository contains the code for **GWM (Grounded World Model)** and the **WISER** benchmark.
+**GWM (Grounded World Model)** predicts future visual embeddings from an observation and candidate actions. A frozen vision-language readout scores these predictions against language goals for planning.
 
-GWM is a vision-language aligned world model that predicts future visual embeddings grounded in natural language, enabling semantically generalizable planning in manipulation tasks. 
-WISER (**W**orld-knowledge **I**ntegrated **S**emantic **E**mbodied **R**easoning) is the accompanying benchmark — a language-conditioned pick-and-place benchmark built on [ManiSkill](https://github.com/haosulab/ManiSkill) with 576 tasks (288 training + 288 held-out testing) covering massive open-world visual signals and aligned referring expressions.
+![GWM plans toward language goals instead of requiring a goal image.](docs/teaser.png)
 
-## Performance
-![wiser_exp](docs/teaser_exp_ret_combined.png)
-The success rate gap on training and test tasks indicates the semantic generalizability. The larger the gap, the worse the generalizability.
+This repository contains the core GWM implementation, the **WISER testbed**, real-data training, and the GWM × TiPToP system for simulation and Franka hardware. WISER provides 288 training and 288 held-out test tasks in ManiSkill for studying semantic generalization.
 
+![WISER task success on training and test tasks, with VLA averages shown as dashed lines.](docs/teaser_exp_ret_combined.png)
 
-## Installation
+## Code map
 
-A bare `pip install -e .` is **not allowed** — you must specify an extras group:
+| Task | Start here |
+| --- | --- |
+| WISER environment, tasks and assets | [gwm_wiser/env](gwm_wiser/env), [gwm_wiser/assets](gwm_wiser/assets) |
+| GWM model and planning | [gwm_wiser/models](gwm_wiser/models), [gwm_wiser/planner](gwm_wiser/planner) |
+| WISER data collection, GWM/VLA training and evaluation | [gwm_wiser/scripts](gwm_wiser/scripts), [SLURM recipes](gwm_wiser/scripts/slurm) |
+| GT-MPC sweeps and z-direct ablation | [sweeps](gwm_wiser/scripts/slurm/sweeps), [zdirect](gwm_wiser/scripts/slurm/zdirect) |
+| DROID/MolmoBot data preparation and GWM training | [real_data_train](real_data_train), [training entrypoint](real_data_train/train.py), [recipes](real_data_train/slurm) |
+| GWM scoring service and TiPToP integration | [droid/server](droid/server), [droid/gwm_tiptop](droid/gwm_tiptop) |
+| DROID-sim evaluation and V-JEPA 2-AC baseline | [droid/droid-sim-evals-ours](droid/droid-sim-evals-ours), [droid/v-jepa](droid/v-jepa) |
+| Pointing, drawer selection and pushing probes | [pointing](droid/gwm_point_cem), [drawer](droid/gwm_drawer/README.md), [pushing](droid/gwm_push_cem/README.md) |
+| Franka hardware | [droid/gwm_hardware](droid/gwm_hardware), [GWM entrypoint](droid/gwm_hardware/gwm_arm/run.sh) |
+
+## WISER setup
+
+Use Python 3.11+ and a compatible GPU environment. From the repository root:
 
 ```bash
-# WISER benchmark + LeRobot Baselines only (ManiSkill + LeRobot + tensordict)
-pip install -e '.[wiser]'
-
-# GWM + WISER (adds transformers, scikit-learn for GWM training/eval)
 pip install -e '.[gwm+wiser]'
-```
-
-> **Note:** To train pi0/wall-x policies, also install the corresponding LeRobot extras:
-> `pip install lerobot[pi]`, `pip install lerobot[wallx]`.
-
-Also install ffmpeg for video decoding:
-
-```bash
 conda install ffmpeg==6.1.1
 ```
 
----
+Use `.[wiser]` for WISER and LeRobot workflows without GWM. Install the corresponding LeRobot extras for policies that require them.
 
-## Scripts Reference
-These scripts are the main entry points for training and evaluation. 
-They can run on a single machine or on a cluster like SLURM.
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/save_demo.py` | Collect expert demonstrations across all configs for both training and test |
-| `scripts/save_skill.py` | Collect a single-config skill dataset without RGB images for GWM/retrieval |
-| `scripts/gwm_train.py` | Train the Grounded World Model |
-| `scripts/gwm_eval.py` | Evaluate GWM or retrieval-based (GT-MPC) planners |
-| `scripts/lerobot_train.py` | Train LeRobot policies (pi0, SmolVLA, WallX, etc.) |
-| `scripts/lerobot_eval.py` | Evaluate trained LeRobot policies |
-
-SLURM submission scripts for each workflow are in `scripts/slurm/`. They also record the default parameters for these standalone scripts.
-
-> **Note:** The paths in SLURM scripts may need to be updated to match your environment.
-
----
-
-## Dataset
-
-The WISER dataset is collected with **LeRobot v0.4.3** in **LeRobotDataset v3.0** format. It is hosted on HuggingFace at [`Shady0057/WISER`](https://huggingface.co/datasets/Shady0057/WISER).
-
-| Split | Format | Size | Usage |
-|-------|--------|------|-------|
-| `merged_train` | LeRobot v3.0 | 2 GB | **Training** — used by all training scripts |
-| `merged_test` | LeRobot v3.0 | 332 MB | **Validation only** — validation loss during training and GT-MPC evaluation |
-| `no_noise_demo_1_round` | LeRobot v3.0 | 679 MB | **GT-MPC** — 1/6 of training data + all test data (pre-merged ) |
-| `rlds_train` | RLDS/TFDS | 21 GB | **Training** — for OpenVLA / InstructVLA / UniVLA baselines |
-
-> ⚠️ `merged_test` is **never** used for training. It is only loaded for computing validation metrics and running the GT-MPC planner.
-
-### Download
+Download the WISER data and checkpoint with the Hugging Face CLI:
 
 ```bash
-# Install HuggingFace CLI (if not already installed)
-pip install huggingface_hub[cli]
-
-# Download LeRobot splits + GT-MPC data into wiser_dataset/
-hf download Shady0057/WISER \
-    --repo-type dataset \
-    --include "merged_train/**" "merged_test/**" "no_noise_demo_1_round/**" "README.md" \
+hf download Shady0057/WISER --repo-type dataset \
+    --include 'merged_train/**' 'merged_test/**' 'no_noise_demo_1_round/**' \
     --local-dir wiser_dataset
+hf download Shady0057/GWM checkpoint.pt --local-dir gwm_ckpt
 ```
 
-This places the dataset at `wiser_dataset/` in the repo root, which is the default path expected by all training and evaluation scripts.
+`merged_train` is used for training; `merged_test` is held out for validation. GT-MPC uses recorded future observations from `no_noise_demo_1_round`. Learned GWM planning uses the RGB-free skill data in [gwm_skills](gwm_skills) and predicts future embeddings.
 
-### Collect Your Own
+The main entrypoints are [gwm_train.py](gwm_wiser/scripts/gwm_train.py) and [gwm_eval.py](gwm_wiser/scripts/gwm_eval.py). For concrete configurations, start with [submit_gwm.run](gwm_wiser/scripts/slurm/submit_gwm.run) and [submit_gwm_eval.run](gwm_wiser/scripts/slurm/submit_gwm_eval.run). Set the dataset, GWM checkpoint and Qwen3-VL-Embedding paths for your machine before running. The same directory contains collection and LeRobot baseline recipes.
 
-Alternatively, you can collect the dataset yourself using the rule-based mplib expert planner. This is useful if you need a different LeRobot version, a customized dataloader, or modified collection parameters:
+## Real-data and robotics setup
+
+The [DROID checkpoint](https://huggingface.co/Shady0057/GWM/tree/main/real_data), trained on MolmoAct2-DROID and MolmoBot, is available for the simulation and hardware workflows:
 
 ```bash
-python gwm_wiser/scripts/save_demo.py \
-    --start_index 0 --end_index 24 \
-    --dataset_name wiser_dataset
+hf download Shady0057/GWM real_data/checkpoint.pt --local-dir gwm_ckpt
 ```
 
-This collects 1 no-noise round for both train and test tasks, and 5 additional noised rounds for training tasks only, then merges into `wiser_dataset/merged_train` and `wiser_dataset/merged_test`. For parallel data collection on a cluster, use the provided SLURM script:
+Use `gwm_ckpt/real_data/checkpoint.pt` as the GWM checkpoint. The companion `Qwen/Qwen3-VL-Embedding-8B` encoder must be downloaded separately.
 
-```bash
-sbatch gwm_wiser/scripts/slurm/submit_save_demo.run
-```
+Real-data preparation and training recipes are in [real_data_train/slurm](real_data_train/slurm). The robotics stack uses separate environments; start with the TiPToP [installation](droid/tiptop/docs/installation.md) and [simulation](droid/tiptop/docs/simulation.md) guides, then the relevant code-map entry above. Launch scripts contain machine-specific paths and service settings that need adapting.
 
-> **Note:** If you are collecting demos with the mplib planner, make sure `numpy==1.26.4` is installed. Pip warnings can be safely ignored.
-
----
-
-## WISER Environment
-
-The core interface is simple — build an environment with `build_endless_env`, then use `rollout()` for evaluation and data collection:
-
-```python
-from gwm_wiser.env.config import get_env_cfg
-from gwm_wiser.utils.env import build_endless_env
-from gwm_wiser.utils.rollout import rollout
-
-# Configure and build the environment (12 parallel envs)
-env_cfg = get_env_cfg(
-    num_env=12,
-    max_steps=120,
-    obs_mode="rgb+segmentation",
-    scene_cfg_to_overwrite=dict(mode="train", cfg_name="config_0"),
-)
-envs = build_endless_env(env_cfg, record_video=False, data_record_dir="output")
-
-# Run rollout with any policy and optionally save demos
-results = rollout(
-    envs,
-    policy=your_policy_fn,  # (obs) -> (action, expert_action, info)
-    round_to_collect=1,  # total episodes = num_env × rounds
-    demo_saving_dir="./demos",  # None to skip saving
-)
-
-envs.unwrapped.close()
-```
-
-`scripts/save_demo.py` is a good example of using these interfaces for data collection.
-`scripts/lerobot_eval.py` is a good example of using these interfaces for evaluation.
-
-
----
-
-## Grounded World Model
-
-### 1. Ground-Truth Planner (GT-MPC)
-
-The GT-MPC planner retrieves future observations directly from the pre-collected demonstrations to plan actions.
-See `slurm/submit_gwm_eval.run` for the full distributed evaluation setup (set `USE_GT=true` to enable GT-MPC).
-It uses ground-truth observations from the `--dataset_root` path; by default this path points to the `wiser_dataset/no_noise_demo_1_round` folder.
-
-GT-MPC requires access to future observations — this is only feasible when the demonstrations are available. To evaluate on truly held-out test scenarios where future observations are unknown, we need to train GWM on the training set to **predict** future visual outcomes.
-
-### 2. Train GWM
-
-Train the Grounded World Model on `merged_train` with multi-node DDP. See `slurm/submit_gwm.run` for the full parameter configuration:
-```bash
-sbatch gwm_wiser/scripts/slurm/submit_gwm.run
-```
-For action-conditioned GWM without rendering-based-tokenization, see `slurm/submit_gwm_ac.run`.
-Pre-trained GWM checkpoints are available on HuggingFace:
-
-| Model | HuggingFace Repo |
-|-------|-----------------|
-| GWM | [`Shady0057/GWM`](https://huggingface.co/Shady0057/GWM) |
-
-Download:
-
-```bash
-hf download Shady0057/GWM --local-dir gwm_ckpt
-```
-
-Then point `--gwm_ckpt_path` to the downloaded checkpoint when running evaluation.
-
-### 3. Evaluate GWM
-
-Evaluate the trained GWM planner across all configs with `gwm_eval.py`.
-See `slurm/submit_gwm_eval.run` for the distributed evaluation setup:
-
-```bash
-sbatch gwm_wiser/scripts/slurm/submit_gwm_eval.run
-```
-
-Results are aggregated automatically at the end of the SLURM job. The distributed evaluation also supports restoring from interruption — only configs that have not yet been evaluated will be re-run.
-
-The GWM planner uses a KNN to retrieve skills from training dataset.
-To safely exclude any possibility of ground-truth observation leakage, we retrieve from a mini split of the full training set, where all RGB images are masked.
-This mini split is already prepared at `gwm_skills`, and is generated with the following scripts.
-
-```bash
-python gwm_wiser/scripts/save_skill.py --robot panda # or xarm6
-```
-
-Alternatively, you can use any subset of the training data, as long as they cover all 12 unique skills required by WISER, such as `config_0_train` from `no_noise_demo_1_round`.
-
----
-
-## VLA Baselines
-
-### Train
-
-Train any LeRobot-compatible policy (pi0, SmolVLA, WallX, etc.) on `merged_train`. Refer to the SLURM scripts for full parameter configurations:
-
-| Policy | SLURM Script |
-|--------|-------------|
-| pi0 | `slurm/submit_pi0.run` |
-| pi0-FAST | `slurm/submit_pi0fast.run` |
-| pi0.5 | `slurm/submit_pi05.run` |
-| SmolVLA | `slurm/submit_smolvla.run` |
-| WallX-OSS | `slurm/submit_walloss.run` |
-| xVLA | `slurm/submit_xvla.run` |
-| others | In forked repos |
-
-Example:
-
-```bash
-sbatch gwm_wiser/scripts/slurm/submit_pi0.run
-```
-
-### Evaluate
-
-Evaluate a trained LeRobot policy. Refer to the corresponding `*_eval.run` scripts (e.g. `slurm/submit_pi0_eval.run`) for full configurations:
-
-```bash
-sbatch gwm_wiser/scripts/slurm/submit_pi0_eval.run
-```
-
-Restore from interruption is also supported for baselines evaluation scripts.
-
----
-
-## Convert to RLDS
-
-The WISER dataset can be converted from LeRobot format to [RLDS/TFDS](https://github.com/google-research/rlds) for training external baselines (e.g. OpenVLA-OFT, InstructVLA). The RLDS-converted split is also available on the same huggingface repo. To download it:
-
-```bash
-hf download Shady0057/WISER \
-    --repo-type dataset \
-    --include "rlds_train/**" \
-    --local-dir wiser_dataset
-```
-
-Or you can convert the LeRobot dataset to RLDS with the following script:
-
-```bash
-sbatch gwm_wiser/scripts/slurm/submit_convert_rlds.run
-```
-
----
+This is a source repository. Large datasets, checkpoints, simulator assets and generated robot assets are separate. The upstream DROID simulator, FoundationStereo, cuRobo/cuTAMP, V-JEPA 2 source and some VLA baseline forks must also be installed separately. Our drivers expect the simulator checkout at `droid/droid-sim-evals/` and V-JEPA 2 at `droid/v-jepa/vjepa2/`. TiPToP and M2T2 source are included under [droid/tiptop](droid/tiptop) and [droid/M2T2](droid/M2T2).
 
 ## Citation
 
