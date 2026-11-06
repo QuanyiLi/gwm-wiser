@@ -408,7 +408,9 @@ def st_gradient(sc, R, chunks, r, te, batch):
         s = sc.score(frames_from(c, r["cur_rgb"], R, "st", kf_actions=kf), te)
         (g,) = torch.autograd.grad(s.sum(), kf)
         grads.append(g.detach().cpu()); scores.append(s.detach().cpu())
-    return torch.cat(grads), torch.cat(scores)
+    g = torch.cat(grads)
+    st_gradient.nonfinite = int((~torch.isfinite(g)).flatten(1).any(1).sum())
+    return torch.nan_to_num(g, nan=0.0, posinf=0.0, neginf=0.0), torch.cat(scores)
 
 
 # ── C4: local direction ───────────────────────────────────────────────────────
@@ -424,10 +426,12 @@ def stage_c4(args):
     picks = [reps[i] for i in sorted(rng.choice(len(reps), size=min(args.n, len(reps)), replace=False))]
     steps = [0.01, 0.03, 0.1]
     rows = {s: dict(rise=[], dscore=[], wrong_ddist=[]) for s in steps}
+    nonfinite = 0
     for r in picks:
         chunks = torch.from_numpy(r["chunks"]).float()
         te = stage_score_fn(sc, r)
         g, _ = st_gradient(sc, R, chunks, r, te, args.batch)
+        nonfinite += st_gradient.nonfinite
         ga = g[:, :, :7]
         dirn = ga / ga.abs().amax(dim=(1, 2), keepdim=True).clamp(min=1e-12)  # unit L-inf per sample
         g0, p0 = original_scores(planner, chunks, r["cur_rgb"], r["first_rgb"], r["task"], R)
@@ -449,7 +453,7 @@ def stage_c4(args):
                     if d1 is not None:
                         rows[s]["wrong_ddist"].append(d1 - d0[k])
         print(f"c4 {r['file']}: " + " ".join(f"{s}: rise {np.mean(rows[s]['rise']):.3f}" for s in steps), flush=True)
-    res = {"n_replans": len(picks), "n_samples": len(rows[steps[0]]["rise"]),
+    res = {"n_replans": len(picks), "n_samples": len(rows[steps[0]]["rise"]), "nonfinite_gradients": nonfinite,
            "step_normalisation": "unit L-inf over the 5x7 keyframe arm gradient (max joint offset = step)"}
     for s in steps:
         w = np.array(rows[s]["wrong_ddist"])

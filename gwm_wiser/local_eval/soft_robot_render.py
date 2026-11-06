@@ -228,7 +228,9 @@ def soft_rasterize(xy, inv_z, attrs, faces, H, W, sigma=0.5, gamma=1e-3, margin=
         wa = cr(b, c, p) / area
         wb = cr(c, a, p) / area
         wc = cr(a, b, p) / area
-        lens = torch.stack([(c - b).norm(dim=-1), (a - c).norm(dim=-1), (b - a).norm(dim=-1)], -1)
+        def safe_norm(x):  # finite gradient at 0 (a pixel centre exactly on an edge or vertex)
+            return torch.sqrt((x * x).sum(-1) + 1e-12)
+        lens = torch.stack([safe_norm(c - b), safe_norm(a - c), safe_norm(b - a)], -1)
         w = torch.stack([wa, wb, wc], -1)
         inside_d = (w * area.abs()[:, None] / lens.clamp(min=1e-8)).min(-1).values  # distance to boundary
         # outside: true distance to the triangle (nearest of the 3 segments), so the coverage
@@ -237,7 +239,7 @@ def soft_rasterize(xy, inv_z, attrs, faces, H, W, sigma=0.5, gamma=1e-3, margin=
         def seg(u, v):
             e = v - u
             t = (((p - u) * e).sum(-1) / (e * e).sum(-1).clamp(min=1e-12)).clamp(0, 1)
-            return (p - (u + t[:, None] * e)).norm(dim=-1)
+            return safe_norm(p - (u + t[:, None] * e))
         out_d = torch.minimum(torch.minimum(seg(b, c), seg(c, a)), seg(a, b))
         sd = torch.where((w >= 0).all(-1), inside_d, -out_d)  # >0 inside, continuous at the boundary
         return w, sd
