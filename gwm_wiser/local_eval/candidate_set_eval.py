@@ -7,6 +7,9 @@ Variants (``--variant``):
                   (renderer control for the noisy variants)
     keep          ``--keep_n`` candidates, the correct one kept when present
     drop_correct  the correct candidate removed
+    drop_correct_slot  every candidate whose stage-relevant slot matches the instruction
+                  removed (instructed cube while grasping, instructed placard while placing),
+                  so the set is all-wrong at each stage
     noise         smooth Gaussian noise (``--noise_sigma`` rad) on every candidate's
                   arm-joint trajectory; videos re-rendered, noisy actions executed
 
@@ -92,7 +95,7 @@ class CandidateSetPlanner(GWMBasedPlanner):
         self.context = context
 
     # ── candidate set ────────────────────────────────────────────────────
-    def _candidate_set(self, state, env_idx, rng):
+    def _candidate_set(self, state, env_idx, rng, is_grasped=False):
         everything = self.retriever.retrieve(state, k=self.k, mse_threshold=float("inf"))
         passed = [t for t in everything if t.mse <= MSE_THRESHOLD]
         base = passed if passed else everything  # same fallback as retrieve()
@@ -116,6 +119,13 @@ class CandidateSetPlanner(GWMBasedPlanner):
             cands = [t for t in base if t.episode_index != correct_ep]
             if not cands:  # only the correct one passed the threshold
                 cands = [t for t in everything if t.episode_index != correct_ep]
+                info["drop_fallback"] = True
+        elif self.variant == "drop_correct_slot":
+            cube_slot, place_slot = task_mode(env_idx)
+            wrong = (lambda ep: ep % 3 != place_slot) if is_grasped else (lambda ep: ep // 3 != cube_slot)
+            cands = [t for t in base if wrong(t.episode_index)]
+            if not cands:
+                cands = [t for t in everything if wrong(t.episode_index)]
                 info["drop_fallback"] = True
         else:
             cands = list(base)
@@ -187,7 +197,7 @@ class CandidateSetPlanner(GWMBasedPlanner):
                     [self.seed, self.context.get("config", 0),
                      self.context.get("split_id", 0), env_idx, step]
                 )
-                cands, info = self._candidate_set(state, env_idx, rng)
+                cands, info = self._candidate_set(state, env_idx, rng, is_grasped)
                 g, p, g32, p32 = self._score(cands, task_prompt, first_img, cur_img)
                 active = p if is_grasped else g
                 top, margin, best = self._top_and_margin(active)
@@ -229,7 +239,7 @@ class CandidateSetPlanner(GWMBasedPlanner):
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", required=True,
-                    choices=["full", "rerender", "keep", "drop_correct", "noise"])
+                    choices=["full", "rerender", "keep", "drop_correct", "drop_correct_slot", "noise"])
     ap.add_argument("--keep_n", type=int, default=12)
     ap.add_argument("--noise_sigma", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
