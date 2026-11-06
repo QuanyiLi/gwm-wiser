@@ -66,8 +66,14 @@ class KeyframeRenderer:
     """
 
     def __init__(self, device: str = "cuda"):
+        import sapien.physx as physx
+
         from gwm_wiser.utils.robot_renderer import RobotRenderer
 
+        # GPU PhysX must be enabled before any PhysX system exists, or the evaluation
+        # env (GPU physics) created afterwards fails to start.
+        if not physx.is_gpu_enabled():
+            physx.enable_gpu()
         self.renderer = RobotRenderer(num_envs=1, device=device, robot="panda")
         self.tcp_link = self.renderer.robot.links_map[TCP_LINK]
 
