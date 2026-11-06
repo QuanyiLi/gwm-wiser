@@ -109,6 +109,27 @@ class DiffusionProposalPlanner(GWMBasedPlanner):
         return SimpleNamespace(images_main=None, images_wrist=None,
                                images_robot_state=self.renderer.render_qpos(qpos))
 
+    def _dump_replan(self, obs, e, step, chunks, rec, is_grasped):
+        """Everything needed to re-score this replan offline (opt-in, --dump_replans)."""
+        os.makedirs(self.dump_dir, exist_ok=True)
+        c = self.context
+        np.savez_compressed(
+            os.path.join(self.dump_dir, f"{c.get('split')}_c{c.get('config')}_e{e:02d}_s{step:03d}.npz"),
+            history=self.history[e].float().cpu().numpy(),
+            qpos=obs[obs_state_key][e].float().cpu().numpy(),
+            cur_rgb=obs[image_1_key][e].cpu().numpy().astype(np.uint8),
+            first_rgb=obs[image_1_key + "_first_frame"][e].cpu().numpy().astype(np.uint8),
+            task=bytes(obs["task"][e].tolist()).decode("utf-8").rstrip("\x00"),
+            is_grasped=is_grasped, step=step, env=e, config=c.get("config"), split=c.get("split"),
+            target_cube_slot=rec["target_cube_slot"], target_place_slot=rec["target_place_slot"],
+            chunks=chunks.float().cpu().numpy(),
+            grasp_cos=np.array(rec.get("grasp_cos", [])), place_cos=np.array(rec.get("place_cos", [])),
+            grasp_cos_fp32=np.array(rec.get("grasp_cos_fp32", [])),
+            place_cos_fp32=np.array(rec.get("place_cos_fp32", [])),
+            sample_modes=np.array([[-1 if v is None else v for v in m] for m in rec["sample_modes"]]),
+            selected=rec["selected"],
+        )
+
     def act(self, obs: dict) -> torch.Tensor:
         env = self.env
         steps = obs["elapsed_steps"]
@@ -195,6 +216,8 @@ class DiffusionProposalPlanner(GWMBasedPlanner):
         self.log_file.write(json.dumps(rec) + "\n")
         self.log_file.flush()
         self.chunks_log.append(dict(env=e, step=step, chunks=chunks.cpu().half().numpy(), selected=best))
+        if getattr(self, "dump_dir", None):
+            self._dump_replan(obs, e, step, chunks, rec, is_grasped)
         self.current_trajectories[e] = chunks[best]
         self.steps_in_trajectory[e] = 0
 
@@ -215,6 +238,8 @@ def parse_args():
     ap.add_argument("--replan_horizon", type=int, default=20)
     ap.add_argument("--num_future_frames", type=int, default=60)
     ap.add_argument("--save_videos", action="store_true")
+    ap.add_argument("--dump_replans", default=None,
+                    help="directory: save each replan's inputs, samples and scores (off by default)")
     return ap.parse_args()
 
 
@@ -247,6 +272,7 @@ def main():
             policy=policy, num_samples=args.num_samples, use_gwm=True, seed=args.seed,
             renderer=KeyframeRenderer(),
         )
+    planner.dump_dir = args.dump_replans
     with open(os.path.join(args.result_dir, f"args_{args.split}_{args.start_subset}_{args.end_subset}.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
 
