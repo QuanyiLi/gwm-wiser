@@ -62,9 +62,11 @@ def chunk_mode(tcp_xy: np.ndarray, gripper: np.ndarray, grasped_now: bool):
         t_close = close_steps[0] if len(close_steps) else len(gripper) - 1
         cube = int(np.argmin(np.linalg.norm(CUBE_SLOTS_XY - tcp_xy[t_close], axis=1)))
         if len(close_steps):
+            # placard only when the chunk itself releases; a chunk that ends while carrying
+            # has not committed to a placard yet
             after = np.nonzero(~closed[t_close:])[0]
-            t_rel = t_close + after[0] if len(after) else len(gripper) - 1
-            if t_rel > t_close + 5:
+            if len(after) and after[0] > 5:
+                t_rel = t_close + after[0]
                 place = int(np.argmin(np.linalg.norm(PLACARD_SLOTS_XY - tcp_xy[t_rel], axis=1)))
     else:
         opens = np.nonzero(~closed)[0]
