@@ -101,28 +101,20 @@ def candidate_set(args):
         rows.append((run, t))
 
     det = {}
-    if args.nocorrect:
-        ref = replans(os.path.join(args.root, args.reference), args.split)
-        bad = replans(os.path.join(args.root, args.nocorrect), args.split)
-        for name, kw in {
-            "fp32_top_cos_all_replans": dict(key="top_cos32"),
-            "fp32_top_cos_first_replan": dict(key="top_cos32", first_only=True),
-            "fp32_margin_other_mode_all_replans": dict(key="margin32_other_mode"),
-            "fp32_margin_other_mode_first_replan": dict(key="margin32_other_mode", first_only=True),
-            "fp32_top_cos_grasp_stage": dict(key="top_cos32", stage="grasp"),
-            "fp32_top_cos_place_stage": dict(key="top_cos32", stage="place"),
-            "fp32_margin_other_mode_grasp_stage": dict(key="margin32_other_mode", stage="grasp"),
-            "fp32_margin_other_mode_place_stage": dict(key="margin32_other_mode", stage="place"),
-            "active_top_cos_all_replans": dict(key="top_cos"),
-            "active_margin_all_replans": dict(key="margin"),
-            "active_top_cos_first_replan": dict(key="top_cos", first_only=True),
-            "active_margin_first_replan": dict(key="margin", first_only=True),
-            "grasp_stage_top_cos": dict(key="top_cos", stage="grasp"),
-            "grasp_stage_margin": dict(key="margin", stage="grasp"),
-            "place_stage_top_cos": dict(key="top_cos", stage="place"),
-            "place_stage_margin": dict(key="margin", stage="place"),
-        }.items():
-            det[name] = detection(ref, bad, **kw)
+    for comp in args.compare:  # "ref:bad[:stage1,stage2]"
+        parts = comp.split(":")
+        ref_name, bad_name = parts[0], parts[1]
+        stages = parts[2].split(",") if len(parts) > 2 else ["grasp", "place", "all"]
+        ref = replans(os.path.join(args.root, ref_name), args.split)
+        bad = replans(os.path.join(args.root, bad_name), args.split)
+        for stage in stages:
+            for first in (False, True):
+                if first and stage == "place":
+                    continue  # the first replan is always in the grasp stage
+                for key, label in (("top_cos32", "a_top_cos"), ("margin32", "b_top1_top2_margin"),
+                                   ("margin32_other_mode", "c_margin_other_slot")):
+                    d = detection(ref, bad, key, stage=None if stage == "all" else stage, first_only=first)
+                    det[f"{ref_name}_vs_{bad_name}|{stage}|{'first' if first else 'all'}|{label}"] = d
     out["_detection"] = det
 
     lines = ["| run | success | grasp | reach | first-replan correct (episode) | first-replan correct cube | "
@@ -133,8 +125,8 @@ def candidate_set(args):
                      f"{f(t['first_replan_correct'])} | {f(t['first_replan_correct_cube'])} | "
                      f"{f(t['all_replan_correct'])} | {f(t['mean_candidates'])} | {f(t['correct_in_base'])} |")
     if det:
-        lines += ["", f"Detection ({args.reference} vs {args.nocorrect}); threshold keeps 95 % of {args.reference}",
-                  "| score | n ref | n no-correct | AUROC | threshold | no-correct rejected | ref mean | no-correct mean |",
+        lines += ["", "Detection (fp32 scores of the selected candidate); threshold keeps 95 % of the reference run's selections",
+                  "| comparison / stage / replans / score | n ref | n wrong | AUROC | threshold | wrong sets rejected | ref mean | wrong mean |",
                   "|---" * 8 + "|"]
         for k, v in det.items():
             if v:
@@ -203,8 +195,8 @@ if __name__ == "__main__":
     ap.add_argument("--root", required=True)
     ap.add_argument("--split", default="test")
     ap.add_argument("--runs", nargs="+", default=[])
-    ap.add_argument("--reference", default="full")
-    ap.add_argument("--nocorrect", default=None)
+    ap.add_argument("--compare", nargs="*", default=[],
+                    help='"ref:wrong[:stage,...]", stages from grasp,place,all')
     a = ap.parse_args()
     res, md = candidate_set(a) if a.kind == "candidate_set" else proposals(a)
     print(md)
