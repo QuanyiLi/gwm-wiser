@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.utils.checkpoint
 
 PANDA_BASE = (-0.615, 0.0, 0.0)
 ARM_JOINTS = [f"panda_joint{i}" for i in range(1, 8)]
@@ -109,8 +110,11 @@ class PandaMeshModel(torch.nn.Module):
                 T = _origin(vis.find("origin"))
                 v_l, f_l, c_l, base = [], [], [], 0
                 for g in geoms:
-                    c = g.visual.to_color().vertex_colors[:, :3] / 255.0 if hasattr(g.visual, "to_color") \
-                        else np.asarray(g.visual.vertex_colors)[:, :3] / 255.0
+                    vis = g.visual.to_color() if hasattr(g.visual, "to_color") else g.visual
+                    c = np.asarray(vis.vertex_colors, dtype=np.float64)
+                    if c.ndim == 1:  # a single colour for the whole mesh
+                        c = np.tile(c[None], (len(g.vertices), 1))
+                    c = c[:, :3] / 255.0
                     v_l.append(np.asarray(g.vertices)); f_l.append(np.asarray(g.faces) + base); c_l.append(c)
                     base += len(g.vertices)
                 v = np.concatenate(v_l) @ T[:3, :3].T + T[:3, 3]
@@ -184,7 +188,7 @@ def _segment_softmax_weights(score, key, n_keys):
 
 
 def soft_rasterize(xy, inv_z, attrs, faces, H, W, sigma=0.5, gamma=1e-3, margin=2.0,
-                   front_facing=None, max_pairs=60_000_000):
+                   front_facing=None, max_pairs=80_000_000):
     """
     xy (N, V, 2) pixel coordinates (pixel i spans [i, i+1]); inv_z (N, V) inverse depth;
     attrs (N, V, C) per-vertex attributes; faces (F, 3).
@@ -226,7 +230,16 @@ def soft_rasterize(xy, inv_z, attrs, faces, H, W, sigma=0.5, gamma=1e-3, margin=
         wc = cr(a, b, p) / area
         lens = torch.stack([(c - b).norm(dim=-1), (a - c).norm(dim=-1), (b - a).norm(dim=-1)], -1)
         w = torch.stack([wa, wb, wc], -1)
-        sd = (w * area.abs()[:, None] / lens.clamp(min=1e-8)).min(-1).values  # >0 inside
+        inside_d = (w * area.abs()[:, None] / lens.clamp(min=1e-8)).min(-1).values  # distance to boundary
+        # outside: true distance to the triangle (nearest of the 3 segments), so the coverage
+        # support is the triangle dilated by `margin` with rounded corners (no miter spikes at
+        # sliver vertices that would reach past the enumeration window)
+        def seg(u, v):
+            e = v - u
+            t = (((p - u) * e).sum(-1) / (e * e).sum(-1).clamp(min=1e-12)).clamp(0, 1)
+            return (p - (u + t[:, None] * e)).norm(dim=-1)
+        out_d = torch.minimum(torch.minimum(seg(b, c), seg(c, a)), seg(a, b))
+        sd = torch.where((w >= 0).all(-1), inside_d, -out_d)  # >0 inside, continuous at the boundary
         return w, sd
 
     p = torch.stack([px, py], -1).to(dt) + 0.5
@@ -236,7 +249,11 @@ def soft_rasterize(xy, inv_z, attrs, faces, H, W, sigma=0.5, gamma=1e-3, margin=
         pn, pf, px, py, p = pn[keep], pf[keep], px[keep], py[keep], p[keep]
     t = tri[pn, pf]
     w, sd = barycentric(t, p)
-    D = torch.sigmoid(sd / sigma)
+    # compact-support coverage: smoothstep over [-margin, margin], exactly 0 at the window edge
+    # (a sigmoid is not, and a far-in-front face entering the window would make the depth-softmax
+    # colour jump); slope at the edge = 0.75 / margin, i.e. a sigmoid of width margin / 3
+    tt = (sd / margin * 0.5 + 0.5).clamp(0, 1)
+    D = tt * tt * (3 - 2 * tt)
     wc = w.clamp(min=0)
     wc = wc / wc.sum(-1, keepdim=True).clamp(min=1e-8)
     fv = faces[pf]  # (P, 3)
@@ -250,6 +267,9 @@ def soft_rasterize(xy, inv_z, attrs, faces, H, W, sigma=0.5, gamma=1e-3, margin=
     den = torch.zeros(n_keys, device=dev, dtype=dt).index_add(0, key, zw)
     num = torch.zeros(n_keys, attr.shape[1], device=dev, dtype=dt).index_add(0, key, zw[:, None] * attr)
     img = num / den.clamp(min=1e-12)[:, None]
+    with torch.no_grad():  # exact mesh silhouette (pixel centre inside any face), for parity checks
+        hard = torch.zeros(n_keys, device=dev, dtype=torch.bool).index_fill_(0, key[sd.detach() > 0], True)
+    soft_rasterize.last_hard = hard.view(N, H, W)
     return img.view(N, H, W, -1), alpha.view(N, H, W)
 
 
@@ -273,8 +293,27 @@ class SoftRobotRenderer(torch.nn.Module):
         self.H, self.W, self.sigma, self.gamma = H, W, sigma, gamma
         self.cull, self.srgb = cull_backfaces, srgb
 
-    def forward(self, qpos, return_alpha=False):
-        """qpos (N, 9) -> images (N, 3, H, W) in [0, 1], premultiplied over black."""
+    def forward(self, qpos, return_alpha=False, frames_per_call=None):
+        """qpos (N, 9) -> images (N, 3, H, W) in [0, 1], premultiplied over black.
+
+        Frames are rasterized in groups; with gradients each group is checkpointed, so the
+        face/pixel pair tensors are rebuilt in backward instead of being kept alive.
+        """
+        if frames_per_call is None:  # face/pixel pairs grow with the (6 sigma) margin
+            frames_per_call = 6 if self.sigma <= 0.5 else (3 if self.sigma <= 1.0 else 1)
+        outs, alphas, hards = [], [], []
+        for i in range(0, qpos.shape[0], frames_per_call):
+            q = qpos[i: i + frames_per_call]
+            if torch.is_grad_enabled() and q.requires_grad:
+                o, a = torch.utils.checkpoint.checkpoint(self._render, q, use_reentrant=False)
+            else:
+                o, a = self._render(q)
+            outs.append(o); alphas.append(a); hards.append(soft_rasterize.last_hard)
+        self.last_hard = torch.cat(hards)
+        out, alpha = torch.cat(outs), torch.cat(alphas)
+        return (out, alpha) if return_alpha else out
+
+    def _render(self, qpos):
         dt = self.R.dtype
         v, n = self.mesh.posed(qpos.to(dt))
         vc = v @ self.R.T + self.t  # OpenCV camera frame
@@ -292,9 +331,9 @@ class SoftRobotRenderer(torch.nn.Module):
             fn = torch.cross(vc[:, f[:, 1]] - vc[:, f[:, 0]], vc[:, f[:, 2]] - vc[:, f[:, 0]], dim=-1)
             front = (fn * -vc[:, f].mean(2)).sum(-1) > 0
         img, alpha = soft_rasterize(xy, 1.0 / z, shade, self.mesh.faces, self.H, self.W,
-                                    sigma=self.sigma, gamma=self.gamma, front_facing=front)
+                                    sigma=self.sigma, gamma=self.gamma, margin=3 * self.sigma, front_facing=front)
         if self.srgb:
             img = img.clamp(min=0)
             img = torch.where(img <= 0.0031308, img * 12.92, 1.055 * img.clamp(min=1e-8) ** (1 / 2.4) - 0.055)
         out = (alpha[..., None] * img.clamp(0, 1)).permute(0, 3, 1, 2)  # NHWC -> NCHW
-        return (out, alpha) if return_alpha else out
+        return out, alpha

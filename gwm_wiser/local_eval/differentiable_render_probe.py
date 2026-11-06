@@ -39,6 +39,9 @@ def load_planner(dtype):
     from gwm_wiser.models.qwen3_vl_embedding import Qwen3VLEmbedder
     from gwm_wiser.planner.gwm import GWMBasedPlanner
 
+    if dtype == torch.float32:  # cuDNN TF32 (default on) makes the Conv3d patch embedding non-smooth
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cuda.matmul.allow_tf32 = False
     emb = Qwen3VLEmbedder(EMBEDDER, torch_dtype=dtype)
     return GWMBasedPlanner(
         dataset_root=os.path.join(PROJECT_ROOT, "gwm_skills/config_0_train/lerobot_data"),
@@ -62,7 +65,7 @@ def load_replans(d, limit=None):
 class Renderers:
     """RobotRenderer (+ mask) and the soft renderer with the same SAPIEN camera."""
 
-    def __init__(self, voxel=0.0015, sigma=0.4, cull=False, srgb=True, pixel_offset=0.0):
+    def __init__(self, voxel=0.0015, sigma=0.3, cull=False, srgb=True, pixel_offset=0.0, gamma=1e-2):
         from gwm_wiser.local_eval.soft_robot_render import SoftRobotRenderer
         from gwm_wiser.local_eval.traj_tools import KeyframeRenderer
 
@@ -73,7 +76,7 @@ class Renderers:
         K[0, 2] += pixel_offset
         K[1, 2] += pixel_offset
         self.E, self.K = E, K
-        self.soft = SoftRobotRenderer(E, K, voxel=voxel, sigma=sigma, cull_backfaces=cull, srgb=srgb)
+        self.soft = SoftRobotRenderer(E, K, voxel=voxel, sigma=sigma, gamma=gamma, cull_backfaces=cull, srgb=srgb)
 
     @torch.no_grad()
     def sapien(self, qpos):
@@ -203,37 +206,35 @@ def stage_c2(args):
         k = rng.integers(0, r["chunks"].shape[0])
         states.append(actions_to_qpos(torch.from_numpy(r["chunks"][k, ACT_IDX]).float()))
     states = torch.cat(states)[: max(args.n_states, 200)]
+    states = torch.cat([states, states])[: max(args.n_states, 200)] if len(states) < 200 else states
     res = {"n_states": int(states.shape[0]), "settings": {}}
-    best = None
-    for voxel, off, cull in [(0.0015, 0.0, False), (0.0015, -0.5, False), (0.001, 0.0, False),
-                             (0.002, 0.0, False), (0.0015, 0.0, True)]:
-        R = Renderers(voxel=voxel, pixel_offset=off, cull=cull)
-        ious, mad, t_soft = [], [], []
-        for i in range(0, len(states), 10):
-            q = states[i: i + 10]
+    for voxel, sigma in [(0.0015, 0.3), (0.0015, 0.15), (0.00075, 0.15)]:
+        R = Renderers(voxel=voxel, sigma=sigma)
+        hard_iou, soft_iou, mad, t_soft = [], [], [], []
+        for i in range(0, len(states), 5):
+            q = states[i: i + 5]
             img_s, m_s = R.sapien(q)
             torch.cuda.synchronize(); t0 = time.time()
             with torch.no_grad():
                 img_d, a_d = R.soft(q.cuda(), return_alpha=True)
             torch.cuda.synchronize(); t_soft.append((time.time() - t0) / len(q))
+            for m_d, acc in ((R.soft.last_hard.cpu(), hard_iou), ((a_d > 0.5).cpu(), soft_iou)):
+                acc += ((m_s & m_d).sum((1, 2)).float() / (m_s | m_d).sum((1, 2)).float().clamp(min=1)).tolist()
             m_d = (a_d > 0.5).cpu()
-            inter, union = (m_s & m_d).sum((1, 2)).float(), (m_s | m_d).sum((1, 2)).float()
-            ious.append((inter / union.clamp(min=1)).numpy())
             region = (m_s | m_d)[:, None].expand(-1, 3, -1, -1)
-            mad.append(np.array([float((img_s[j] - img_d[j].cpu()).abs()[region[j]].mean()) * 255 for j in range(len(q))]))
-        iou, md = np.concatenate(ious), np.concatenate(mad)
-        key = f"voxel{voxel * 1000:.1f}mm_off{off}_cull{int(cull)}"
-        res["settings"][key] = dict(faces=int(R.soft.mesh.faces.shape[0]), faces_full=int(R.soft.mesh.n_faces_full),
-                                    mask_iou_mean=float(iou.mean()), mask_iou_min=float(iou.min()),
-                                    robot_region_mean_abs_pixel_diff_0_255=float(md.mean()),
+            mad += [float((img_s[j] - img_d[j].cpu()).abs()[region[j]].mean()) * 255 for j in range(len(q))]
+        key = f"voxel{voxel * 1000:.2f}mm_sigma{sigma}"
+        res["settings"][key] = dict(voxel=voxel, sigma=sigma, faces=int(R.soft.mesh.faces.shape[0]),
+                                    faces_full=int(R.soft.mesh.n_faces_full),
+                                    hard_mask_iou_mean=float(np.mean(hard_iou)), hard_mask_iou_min=float(np.min(hard_iou)),
+                                    soft_alpha_gt_0_5_iou_mean=float(np.mean(soft_iou)),
+                                    robot_region_mean_abs_pixel_diff_0_255=float(np.mean(mad)),
                                     soft_render_ms_per_frame=1000 * float(np.mean(t_soft)))
         print(key, res["settings"][key], flush=True)
-        if best is None or iou.mean() > res["settings"][best]["mask_iou_mean"]:
-            best = key
         del R
-    res["chosen"] = best
+    res["chosen"] = dict(voxel=args.voxel, sigma=args.sigma, gamma=args.gamma, pixel_offset=0.0, cull=False)
     # FK check vs SAPIEN
-    R = Renderers(**_setting(best))
+    R = Renderers(**res["chosen"])
     tcp_s = np.stack([R.kr.tcp_positions(q[None])[0] for q in states[:50]])
     tcp_d = R.soft.mesh.tcp(states[:50].cuda()).detach().cpu().numpy()
     res["fk_tcp_max_abs_diff_m"] = float(np.abs(tcp_s - tcp_d).max())
@@ -256,15 +257,12 @@ def stage_c2(args):
     print(json.dumps(res, indent=2))
 
 
-def _setting(key):
-    s = dict(voxel=float(key.split("voxel")[1].split("mm")[0]) / 1000, pixel_offset=float(key.split("_off")[1].split("_")[0]),
-             cull=key.endswith("cull1"))
-    return s
-
-
 def chosen_renderer(args):
     c2 = json.load(open(os.path.join(args.out, "c2.json")))
-    return Renderers(**_setting(c2["chosen"]))
+    ch = dict(c2["chosen"])
+    if args.sigma_override:
+        ch["sigma"] = args.sigma_override
+    return Renderers(**ch)
 
 
 def stage_score_fn(sc, r):
@@ -303,17 +301,20 @@ def stage_c3(args):
         # central differences, eps = 1e-3 rad, several coordinates
         coords = [(k, j) for k in range(5) for j in range(8)]
         for (k, j) in [coords[i] for i in rng.choice(len(coords), size=args.coords, replace=False)]:
-            vals = []
-            for sgn in (1, -1):
-                kp = keyframe_actions(chunks).clone().cuda()
-                kp[0, k, j] += sgn * args.eps
-                with torch.no_grad():
-                    vals.append(float(score_of(kp, chunks, r, te, "soft")[0]))
-            fd = (vals[0] - vals[1]) / (2 * args.eps)
             ad = float(g[k, j])
-            res["fd_pure_soft"].append(dict(set=ci, keyframe=k, joint=j, autograd=ad, fd=fd,
-                                            rel_err=abs(ad - fd) / max(abs(ad), abs(fd), 1e-12)))
-            print(f"c3 set {ci} kf {k} j {j}: ad {ad:+.4e} fd {fd:+.4e}", flush=True)
+            row = dict(set=ci, keyframe=k, joint=j, autograd=ad)
+            for eps, tag in ((args.eps, ""), (args.eps / 10, "_small")):
+                vals = []
+                for sgn in (1, -1):
+                    kp = keyframe_actions(chunks).clone().cuda()
+                    kp[0, k, j] += sgn * eps
+                    with torch.no_grad():
+                        vals.append(float(score_of(kp, chunks, r, te, "soft")[0]))
+                fd = (vals[0] - vals[1]) / (2 * eps)
+                row["fd" + tag] = fd
+                row["rel_err" + tag] = abs(ad - fd) / max(abs(ad), abs(fd), 1e-12)
+            res["fd_pure_soft"].append(row)
+            print(f"c3 set {ci} kf {k} j {j}: ad {ad:+.4e} fd {row['fd']:+.4e} fd_small {row['fd_small']:+.4e}", flush=True)
         # straight-through gradient vs central differences of the ORIGINAL pipeline (fp32, eps 1e-2)
         if ci < args.n_st:
             kf = keyframe_actions(chunks).clone().cuda().requires_grad_(True)
@@ -337,16 +338,19 @@ def stage_c3(args):
                                                  fd_norm=float(np.linalg.norm(fd_vec))))
             print(f"c3 set {ci}: cos(st grad, original FD) = {cos:.3f}", flush=True)
     rel = np.array([d["rel_err"] for d in res["fd_pure_soft"]])
+    rel_s = np.array([d["rel_err_small"] for d in res["fd_pure_soft"]])
     gn = res["grad_norms"]
     res["summary"] = dict(
         n_candidates=len(picks), n_fd_coords=int(rel.size), rel_err_median=float(np.median(rel)),
         rel_err_mean=float(rel.mean()), frac_rel_err_below_0_1=float((rel < 0.1).mean()),
+        eps=args.eps, eps_small=args.eps / 10, rel_err_small_median=float(np.median(rel_s)),
+        frac_rel_err_small_below_0_1=float((rel_s < 0.1).mean()),
         grad_norm_per_keyframe_mean=np.mean([g["per_keyframe"] for g in gn], 0).tolist(),
         grad_norm_arm_mean=float(np.mean([g["arm"] for g in gn])),
         grad_norm_gripper_mean=float(np.mean([g["gripper"] for g in gn])),
         st_vs_original_fd_cosine_mean=float(np.mean([d["cosine"] for d in res["st_vs_original_fd"]])) if res["st_vs_original_fd"] else None,
         st_vs_original_fd_cosine_all=[round(d["cosine"], 3) for d in res["st_vs_original_fd"]])
-    json.dump(res, open(os.path.join(args.out, "c3.json"), "w"), indent=2)
+    json.dump(res, open(os.path.join(args.out, f"c3{args.tag}.json"), "w"), indent=2)
     print(json.dumps(res["summary"], indent=2))
 
 
@@ -598,6 +602,11 @@ def main():
     ap.add_argument("--n_place", type=int, default=20)
     ap.add_argument("--n_grasp", type=int, default=20)
     ap.add_argument("--betas", type=float, nargs="+", default=[0.01, 0.03])
+    ap.add_argument("--voxel", type=float, default=0.0015)
+    ap.add_argument("--sigma", type=float, default=0.3)
+    ap.add_argument("--gamma", type=float, default=1e-2)
+    ap.add_argument("--sigma_override", type=float, default=None)
+    ap.add_argument("--tag", default="")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     {"c1": stage_c1, "c2": stage_c2, "c3": stage_c3, "c4": stage_c4, "c5": stage_c5, "cost": stage_cost}[args.stage](args)
