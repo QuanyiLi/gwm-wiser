@@ -150,7 +150,10 @@ class DiffusionProposalPlanner(GWMBasedPlanner):
             gen = torch.Generator(device=s_now.device).manual_seed(
                 hash((self.seed, self.context.get("config", 0), self.context.get("split_id", 0), step)) % (2 ** 31))
             t0 = time.perf_counter()
-            samples = self.policy.sample(self.history[need].float(), self.num_samples, generator=gen)
+            if getattr(self, "guide", None) is not None:
+                samples = self._guided_samples(obs, need, step)
+            else:
+                samples = self.policy.sample(self.history[need].float(), self.num_samples, generator=gen)
             sample_s = (time.perf_counter() - t0) / (len(need) * self.num_samples)
             for j, e in enumerate(need):
                 self._replan(obs, e, samples[j, :, : self.num_future_frames], sample_s)
@@ -160,6 +163,35 @@ class DiffusionProposalPlanner(GWMBasedPlanner):
             actions.append(self.current_trajectories[e][self.steps_in_trajectory[e]])
             self.steps_in_trajectory[e] += 1
         return torch.stack(actions, 0).to(obs[obs_state_key].device).float()
+
+    def setup_guidance(self, schedule, beta, batch=8):
+        """GWM-score guidance through x0_hat (straight-through render gradient), see
+        ``differentiable_render_probe.guided_sample``; the final best-of-K stays the planner's."""
+        from gwm_wiser.local_eval.diff_gwm_score import DiffGWMScorer
+        from gwm_wiser.local_eval.differentiable_render_probe import Renderers, SCHEDULES
+
+        steps, points = SCHEDULES[schedule]
+        self.guide = dict(scorer=DiffGWMScorer(self), renderers=Renderers(), steps=steps, points=points,
+                          beta=beta, batch=batch)
+
+    def _guided_samples(self, obs, need, step):
+        from PIL import Image
+
+        from gwm_wiser.local_eval.differentiable_render_probe import guided_sample
+
+        g = self.guide
+        out = []
+        for e in need:
+            task = bytes(obs["task"][e].tolist()).decode("utf-8").rstrip("\x00")
+            cur = obs[image_1_key][e].cpu().numpy().astype(np.uint8)
+            first = obs[image_1_key + "_first_frame"][e].cpu().numpy().astype(np.uint8)
+            ge, pe = g["scorer"].task_embeddings(task, Image.fromarray(first), Image.fromarray(cur))
+            grasped = bool(obs[obs_state_key][e][-1].item() < PANDA_GRASP_QPOS)
+            r = dict(history=self.history[e].float().cpu().numpy(), cur_rgb=cur)
+            seed = hash((self.seed, self.context.get("config", 0), self.context.get("split_id", 0), e, step)) % (2 ** 31)
+            out.append(guided_sample(self.policy, g["scorer"], g["renderers"], r, pe if grasped else ge, seed,
+                                     g["beta"], g["points"], g["batch"], infer_steps=g["steps"], K=self.num_samples))
+        return torch.stack(out).cuda()
 
     def _replan(self, obs, e, chunks, sample_s):
         state = obs[obs_state_key][e]
@@ -238,6 +270,9 @@ def parse_args():
     ap.add_argument("--replan_horizon", type=int, default=20)
     ap.add_argument("--num_future_frames", type=int, default=60)
     ap.add_argument("--save_videos", action="store_true")
+    ap.add_argument("--guide_schedule", default=None,
+                    help="guided sampling schedule (differentiable_render_probe.SCHEDULES); off by default")
+    ap.add_argument("--guide_beta", type=float, default=0.1, help="guidance step, joint radians")
     ap.add_argument("--dump_replans", default=None,
                     help="directory: save each replan's inputs, samples and scores (off by default)")
     return ap.parse_args()
@@ -273,6 +308,9 @@ def main():
             renderer=KeyframeRenderer(),
         )
     planner.dump_dir = args.dump_replans
+    if args.guide_schedule:
+        assert not args.no_gwm, "guidance needs the GWM"
+        planner.setup_guidance(args.guide_schedule, args.guide_beta)
     with open(os.path.join(args.result_dir, f"args_{args.split}_{args.start_subset}_{args.end_subset}.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
 
