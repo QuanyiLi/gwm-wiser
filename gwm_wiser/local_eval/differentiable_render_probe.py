@@ -545,6 +545,7 @@ def stage_c5s(args):
         place = [place[i] for i in sorted(rng.choice(len(place), size=min(args.n_place, len(place)), replace=False))]
         grasp = [grasp[i] for i in sorted(rng.choice(len(grasp), size=min(args.n_grasp, len(grasp)), replace=False))]
         reps = place + grasp
+    reps = reps[args.shard::args.num_shards]
     lo, hi = panda_limits()
     settings = []
     for name in args.schedules:
@@ -584,7 +585,8 @@ def stage_c5s(args):
             print(f"c5s {rec['stage']} {r['file']} {name}: on-target {rec['target_frac']:.3f} sel {int(rec['selected_on_target'])} "
                   f"best {rec['best_score']:.4f} jump {rec['mean_max_step_joint_change']:.4f} ({dt:.0f}s)", flush=True)
     fh.close()
-    recs = [json.loads(l) for l in open(out_path)]
+    recs = [json.loads(l) for f in sorted(glob.glob(os.path.join(args.out, f"c5s{args.tag.split('_shard')[0]}*.jsonl")))
+            for l in open(f)]
     summ = {}
     for name in sorted({d["setting"] for d in recs}):
         for stage in ("place", "grasp", "all"):
@@ -715,6 +717,8 @@ def main():
     ap.add_argument("--tag", default="")
     ap.add_argument("--schedules", nargs="+", default=list(SCHEDULES))
     ap.add_argument("--subset", default="c5", choices=["c5", "all"])
+    ap.add_argument("--shard", type=int, default=0)
+    ap.add_argument("--num_shards", type=int, default=1)
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     {"c1": stage_c1, "c2": stage_c2, "c3": stage_c3, "c4": stage_c4, "c5": stage_c5, "c5s": stage_c5s, "cost": stage_cost}[args.stage](args)
