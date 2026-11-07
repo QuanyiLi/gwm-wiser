@@ -94,6 +94,10 @@ class CandidateSetPlanner(GWMBasedPlanner):
         self.log_file = open(log_path, "a")
         self.context = context
 
+    def _extra_record(self) -> dict:
+        """Additional per-replan fields a subclass wants logged (none by default)."""
+        return {}
+
     # ── candidate set ────────────────────────────────────────────────────
     def _candidate_set(self, state, env_idx, rng, is_grasped=False):
         everything = self.retriever.retrieve(state, k=self.k, mse_threshold=float("inf"))
@@ -222,6 +226,7 @@ class CandidateSetPlanner(GWMBasedPlanner):
                     selected_ep=chosen.episode_index,
                     selected_correct=chosen.episode_index == info["correct_ep"],
                     selected_correct_cube=chosen.episode_index // 3 == cube_slot,
+                    **self._extra_record(),
                     top_cos=top, margin=margin,
                     grasp_top_cos=g_top, grasp_margin=g_margin,
                     place_top_cos=p_top, place_margin=p_margin,
