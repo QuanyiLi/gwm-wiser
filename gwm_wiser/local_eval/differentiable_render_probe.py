@@ -467,24 +467,31 @@ def stage_c4(args):
 
 
 # ── C5: guided sampling smoke test ────────────────────────────────────────────
-def guided_sample(policy, sc, R, r, te, seed, beta, guided_steps, batch):
-    """DDIM (eta 0) with reconstruction guidance on x0_hat; same noise for every setting."""
+def guided_sample(policy, sc, R, r, te, seed, beta, guided_steps, batch, infer_steps=None, K=16):
+    """DDIM (eta 0) with guidance on x0_hat; same noise for every setting of a replan.
+
+    ``guided_steps``: iterable of DDIM step indices (one gradient step each) or a dict
+    {step index: n_g gradient steps}. Each gradient step: straight-through d score / d x0_hat
+    on the 5 keyframe arm targets, unit L-inf, applied as the C4 smooth offset of ``beta`` rad;
+    DDIM then continues from the moved x0_hat with the predicted eps.
+    """
     sched = policy.infer_sched
-    sched.set_timesteps(policy.infer_steps)
+    sched.set_timesteps(infer_steps or policy.infer_steps)
+    gsteps = guided_steps if isinstance(guided_steps, dict) else {i: 1 for i in guided_steps}
     obs = torch.from_numpy(r["history"]).float().cuda()[None]
-    cond = policy.state_norm.norm(obs).flatten(1).repeat(16, 1)
+    cond = policy.state_norm.norm(obs).flatten(1).repeat(K, 1)
     gen = torch.Generator(device="cuda").manual_seed(seed)
-    x = torch.randn((16, policy.pred_horizon, policy.action_dim), device="cuda", generator=gen)
+    x = torch.randn((K, policy.pred_horizon, policy.action_dim), device="cuda", generator=gen)
     an = policy.action_norm
     acp = sched.alphas_cumprod.cuda()
     ts = sched.timesteps
     for i, t in enumerate(ts):
         with torch.no_grad():
-            eps = policy.net(x, t.expand(16).cuda(), cond)
+            eps = policy.net(x, t.expand(K).cuda(), cond)
         a_t = acp[t]
         a_prev = acp[ts[i + 1]] if i + 1 < len(ts) else sched.final_alpha_cumprod.cuda()
         x0 = ((x - (1 - a_t).sqrt() * eps) / a_t.sqrt()).clamp(-1, 1)
-        if beta > 0 and i in guided_steps:
+        for _ in range(gsteps.get(i, 0) if beta > 0 else 0):
             acts = an.unnorm(x0)[:, :60].cpu()
             g, _ = st_gradient(sc, R, acts, r, te, batch)
             ga = g[:, :, :7]
@@ -495,6 +502,101 @@ def guided_sample(policy, sc, R, r, te, seed, beta, guided_steps, batch):
             x0[:, :60, :7] = (x0[:, :60, :7] + off / scale).clamp(-1, 1)
         x = a_prev.sqrt() * x0 + (1 - a_prev).sqrt() * eps
     return an.unnorm(x.clamp(-1, 1))[:, :60].detach().cpu()
+
+
+def panda_limits():
+    import xml.etree.ElementTree as ET
+
+    from mani_skill import PACKAGE_ASSET_DIR
+
+    u = ET.parse(f"{PACKAGE_ASSET_DIR}/robots/panda/panda_v3.urdf").getroot()
+    lim = {j.get("name"): (float(j.find("limit").get("lower")), float(j.find("limit").get("upper")))
+           for j in u.findall("joint") if j.find("limit") is not None}
+    lo = np.array([lim[f"panda_joint{i}"][0] for i in range(1, 8)])
+    hi = np.array([lim[f"panda_joint{i}"][1] for i in range(1, 8)])
+    return lo, hi
+
+
+SCHEDULES = {  # name: (DDIM steps, {guided step index: n_g})
+    "unguided16": (16, {}),
+    "unguided32": (32, {}),
+    "g0x1": (16, {0: 1}),
+    "g0x2": (16, {0: 2}),
+    "g3x1": (16, {3: 1}),
+    "g0g16x1_d32": (32, {0: 1, 16: 1}),
+}
+
+
+def stage_c5s(args):
+    """Guided-point schedule family on matched replans/seeds (extends c5; also the offline screen)."""
+    from gwm_wiser.local_eval.diff_gwm_score import DiffGWMScorer
+    from gwm_wiser.local_eval.state_dp import StateDiffusionPolicy
+
+    planner = load_planner(torch.bfloat16)
+    sc = DiffGWMScorer(planner)
+    R = chosen_renderer(args)
+    policy = StateDiffusionPolicy.load(args.policy)
+    reps = load_replans(args.replans)
+    if args.subset == "c5":  # the same place / grasp replans as stage_c5
+        place = [r for r in reps if r["is_grasped"]
+                 and sum(int(m[1]) == int(r["target_place_slot"]) for m in r["sample_modes"]) <= 4]
+        grasp = [r for r in reps if not r["is_grasped"]]
+        rng = np.random.default_rng(3)
+        place = [place[i] for i in sorted(rng.choice(len(place), size=min(args.n_place, len(place)), replace=False))]
+        grasp = [grasp[i] for i in sorted(rng.choice(len(grasp), size=min(args.n_grasp, len(grasp)), replace=False))]
+        reps = place + grasp
+    lo, hi = panda_limits()
+    settings = []
+    for name in args.schedules:
+        steps, gp = SCHEDULES[name]
+        if not gp:
+            settings.append((name, steps, gp, 0.0))
+        else:
+            settings += [(f"{name}_b{b}", steps, gp, b) for b in args.betas]
+    rows = []
+    out_path = os.path.join(args.out, f"c5s{args.tag}.jsonl")
+    done = set()
+    if os.path.exists(out_path):
+        done = {(d["file"], d["setting"]) for d in map(json.loads, open(out_path))}
+    fh = open(out_path, "a")
+    for r in reps:
+        te = stage_score_fn(sc, r)
+        seed = zlib.crc32(r["file"].encode()) % (2 ** 31)
+        tgt = int(r["target_place_slot"] if r["is_grasped"] else r["target_cube_slot"])
+        for name, steps, gp, beta in settings:
+            if (r["file"], name) in done:
+                continue
+            t0 = time.time()
+            chunks = guided_sample(policy, sc, R, r, te, seed, beta, gp, args.batch, infer_steps=steps)
+            dt = time.time() - t0
+            modes = sample_modes(chunks, R.soft.mesh, r["is_grasped"])
+            on = [(m[1] if r["is_grasped"] else m[0]) == tgt for m in modes]
+            g, p = original_scores(planner, chunks, r["cur_rgb"], r["first_rgb"], r["task"], R)
+            sc_ = p if r["is_grasped"] else g
+            sel = int(np.argmax(sc_))
+            arm = chunks[:, :, :7].numpy()
+            rec = dict(file=r["file"], setting=name, stage="place" if r["is_grasped"] else "grasp",
+                       target_frac=float(np.mean(on)), selected_on_target=bool(on[sel]), best_score=float(sc_[sel]),
+                       seconds=dt, joint_limit_violation_frac=float(((arm < lo) | (arm > hi)).any(-1).mean()),
+                       max_step_joint_change=float(np.abs(np.diff(arm, axis=1)).max()),
+                       mean_max_step_joint_change=float(np.abs(np.diff(arm, axis=1)).max(-1).max(-1).mean()))
+            fh.write(json.dumps(rec) + "\n"); fh.flush()
+            print(f"c5s {rec['stage']} {r['file']} {name}: on-target {rec['target_frac']:.3f} sel {int(rec['selected_on_target'])} "
+                  f"best {rec['best_score']:.4f} jump {rec['mean_max_step_joint_change']:.4f} ({dt:.0f}s)", flush=True)
+    fh.close()
+    recs = [json.loads(l) for l in open(out_path)]
+    summ = {}
+    for name in sorted({d["setting"] for d in recs}):
+        for stage in ("place", "grasp", "all"):
+            rs = [d for d in recs if d["setting"] == name and (stage == "all" or d["stage"] == stage)]
+            if not rs:
+                continue
+            summ[f"{name}|{stage}"] = {k: float(np.mean([d[k] for d in rs])) for k in
+                                       ("target_frac", "selected_on_target", "best_score", "seconds",
+                                        "joint_limit_violation_frac", "mean_max_step_joint_change")}
+            summ[f"{name}|{stage}"]["n"] = len(rs)
+    json.dump(summ, open(os.path.join(args.out, f"c5s{args.tag}_summary.json"), "w"), indent=2)
+    print(json.dumps(summ, indent=1))
 
 
 def stage_c5(args):
@@ -592,7 +694,7 @@ def stage_cost(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("stage", choices=["c1", "c2", "c3", "c4", "c5", "cost"])
+    ap.add_argument("stage", choices=["c1", "c2", "c3", "c4", "c5", "c5s", "cost"])
     ap.add_argument("--replans", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--n", type=int, default=50)
@@ -611,9 +713,11 @@ def main():
     ap.add_argument("--gamma", type=float, default=1e-2)
     ap.add_argument("--sigma_override", type=float, default=None)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--schedules", nargs="+", default=list(SCHEDULES))
+    ap.add_argument("--subset", default="c5", choices=["c5", "all"])
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
-    {"c1": stage_c1, "c2": stage_c2, "c3": stage_c3, "c4": stage_c4, "c5": stage_c5, "cost": stage_cost}[args.stage](args)
+    {"c1": stage_c1, "c2": stage_c2, "c3": stage_c3, "c4": stage_c4, "c5": stage_c5, "c5s": stage_c5s, "cost": stage_cost}[args.stage](args)
 
 
 if __name__ == "__main__":
